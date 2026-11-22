@@ -79,9 +79,9 @@ func _run() -> void:
 		and is_equal_approx(ammo[&"556nato"].attachment_spread_scale, 1.0),
 		"5.56 开镜收紧强 / 配件完整生效")
 	_check(is_equal_approx(ammo[&"556nato"].muzzle_velocity_mps, 940.0)
-		and is_equal_approx(ammo[&"556nato"].bullet_time_scale, 0.25)
+		and is_equal_approx(ammo[&"556nato"].bullet_time_scale, 0.294)
 		and is_equal_approx(ammo[&"556nato"].drag_per_m, 0.0035),
-		"5.56 初速 940 m/s / 时间压缩 0.25 / 衰减 0.0035")
+		"5.56 初速 940 m/s / 时间压缩 0.294（旧手感补偿）/ 衰减 0.0035")
 	_check(is_equal_approx(ammo[&"45acp"].muzzle_velocity_mps, 260.0)
 		and ammo[&"45acp"].muzzle_velocity_mps < ammo[&"9mm"].muzzle_velocity_mps
 		and ammo[&"9mm"].muzzle_velocity_mps < ammo[&"762nato"].muzzle_velocity_mps,

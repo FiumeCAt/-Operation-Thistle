@@ -231,7 +231,7 @@ static func ammo_table() -> Dictionary:
 		a.muzzle_velocity_mps = clampf(
 			float(rec.get("muzzle_velocity_mps", 400.0)), 50.0, 2500.0)
 		a.bullet_time_scale = clampf(
-			float(rec.get("bullet_time_scale", 0.25)), 0.05, 1.0)
+			float(rec.get("bullet_time_scale", 0.294)), 0.05, 1.0)
 		a.drag_per_m = clampf(float(rec.get("drag_per_m", 0.005)), 0.0, 0.05)
 		a.ads_spread_mul = clampf(float(rec.get("ads_spread_mul", 0.45)), 0.05, 1.0)
 		a.attachment_spread_scale = clampf(

@@ -13,8 +13,8 @@ class_name AmmoData
 @export var spread: float = 0.33
 ## 现实世界常见初速（m/s），用于建立弹种之间的相对速度排序。
 @export var muzzle_velocity_mps: float = 400.0
-## 游戏时间压缩：游戏内初速 = 真实初速 × 该系数；0.25 表示飞行时间放慢 4 倍。
-@export var bullet_time_scale: float = 0.25
+## 游戏时间压缩：游戏内初速 = 真实初速 × 该系数；0.294 对应统一 64 px/m 后维持旧 75.29 px/m 屏幕弹速体感。
+@export var bullet_time_scale: float = 0.294
 ## 每米速度衰减：v(s) = v0 * exp(-drag_per_m * s)，s 为已飞行米数。
 @export var drag_per_m: float = 0.005
 ## 开镜散布收紧系数（1 = 不收，越小越准）；按弹种区分。

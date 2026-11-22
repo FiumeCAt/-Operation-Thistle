@@ -128,7 +128,7 @@ func _run() -> void:
 		and menu.armory._weapon_buttons[&"g17"].text.contains("[副]"),
 		"weapon list marks the primary and secondary slots")
 	_check(menu.armory._detail_values["弹匣容量"].text.contains("5"), "M870 magazine stat shown")
-	_check(menu.armory._detail_values["射程"].text.contains("28"), "M870 range stat shown")
+	_check(menu.armory._detail_values["射程"].text.contains("33"), "M870 range stat shown")
 	_check(menu.armory._detail_values["子弹速度"].text == "400 m/s",
 		"M870 bullet speed stat shown in m/s")
 	_check(menu.armory._weapon_buttons[&"m870"].text.contains("弹速 400 m/s"),
