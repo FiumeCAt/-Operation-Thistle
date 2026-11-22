@@ -21,8 +21,8 @@ const MAG_TEX := preload("res://assets/art/weapons/fx/mag_pistol.png")
 const SHELL_TEX := preload("res://assets/art/weapons/fx/mag_shell.png")
 
 const UNITS := preload("res://scripts/core/GameUnits.gd")
-## 角色世界身高 128px 对应约 1.7m，枪长换算统一来自 GameUnits。
-const WORLD_PER_METER := UNITS.WORLD_PER_METER
+## 枪械贴图视觉缩放标尺（按参考角色 128px ≈ 1.7m 匹配握持长度，与世界 64 px/m 距离解耦）。
+const SPRITE_PX_PER_METER := UNITS.SPRITE_PX_PER_METER
 ## 像素风里手枪需要适度夸张，否则只有 15px 看不清；长枪按真实比例即可。
 const SIZE_BOOST := 1.35
 const LONG_GUN_BOOST := 1.0
@@ -292,7 +292,7 @@ func setup(id: StringName) -> void:
 	var tex_len := (muzzle_px - grip_px).length()
 	# 长枪不再额外放大，否则 M870 会和角色一样高
 	var boost := SIZE_BOOST if data.visual_length < 0.5 else LONG_GUN_BOOST
-	var world_len: float = data.visual_length * WORLD_PER_METER * boost
+	var world_len: float = data.visual_length * SPRITE_PX_PER_METER * boost
 	# 手枪按真实比例只有 20px，在 128px 角色尺度下看不清握持关系，统一抬到可见长度
 	world_len = maxf(world_len, MIN_GUN_LEN) * GUN_WORLD_SCALE
 	_gun_scale = world_len / maxf(tex_len, 1.0)

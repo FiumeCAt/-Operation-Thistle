@@ -12,8 +12,8 @@ class_name VisionFog2D
 
 const UNITS := preload("res://scripts/core/GameUnits.gd")
 const TILE := UNITS.TILE
-## 视野距离按“格 = 米”换算，与敌人 view_range 的约定一致（统一来自 GameUnits）。
-const PIXELS_PER_METER := UNITS.VISION_PIXELS_PER_METER
+## 全项目统一世界距离标尺：1 格 = 1 米 = 64 px（来自 GameUnits）。
+const PIXELS_PER_METER := UNITS.PIXELS_PER_METER
 ## 视线与视野锥的原点：优先使用角色头部；没有头部节点时回退到该高度。
 const EYE_HEIGHT := 82.0
 

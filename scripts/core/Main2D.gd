@@ -81,8 +81,8 @@ const CONTAINER_SECONDARY_CHANCE := 0.68
 const CONTAINER_ADVANCED_CHANCE := 0.084
 ## 敌人也能掉多种资源，但第二种的触发率明显低于容器，不减少原有必掉物。
 const ENEMY_SECONDARY_CHANCE := 0.37
-## 角色 128px ≈ 1.7m，武器射程与弹速换算统一来自 GameUnits。
-const WORLD_PER_METER := UNITS.WORLD_PER_METER
+## 全项目统一世界距离标尺：1 格 = 1 米 = 64 px（来自 GameUnits）。
+const WORLD_PER_METER := UNITS.PIXELS_PER_METER
 const INTERACT_RADIUS := 96.0
 const EXIT_RADIUS := 118.0
 const SHOT_ORIGIN_OFFSET := Vector2(0, -8)
