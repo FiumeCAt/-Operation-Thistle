@@ -55,7 +55,8 @@ const VIEW_ZOOM_LERP := 260.0
 ## pixelfx 枪口特效的原点是枪口下方的地面参考点；插件的 height 默认 26px，
 ## 所以节点要沿枪管下移 26px，闪光才会正好落在枪口上。
 const MUZZLE_FX_GROUND := 26.0
-const TILE := 64.0
+const UNITS := preload("res://scripts/core/GameUnits.gd")
+const TILE := UNITS.TILE
 ## 新脚本用 preload 引用，避免依赖编辑器生成的全局类缓存。
 const HIT_FX := preload("res://scripts/fx/HitFX2D.gd")
 const PLAYER_BULLET := preload("res://scripts/fx/PlayerBullet2D.gd")
@@ -80,8 +81,8 @@ const CONTAINER_SECONDARY_CHANCE := 0.68
 const CONTAINER_ADVANCED_CHANCE := 0.084
 ## 敌人也能掉多种资源，但第二种的触发率明显低于容器，不减少原有必掉物。
 const ENEMY_SECONDARY_CHANCE := 0.37
-## 角色 128px ≈ 1.7m，世界米与像素的换算不能直接用地块尺寸。
-const WORLD_PER_METER := 128.0 / 1.7
+## 角色 128px ≈ 1.7m，武器射程与弹速换算统一来自 GameUnits。
+const WORLD_PER_METER := UNITS.WORLD_PER_METER
 const INTERACT_RADIUS := 96.0
 const EXIT_RADIUS := 118.0
 const SHOT_ORIGIN_OFFSET := Vector2(0, -8)
@@ -115,7 +116,7 @@ var hitstop_enabled := false
 var shake_scale := 1.0
 ## 设置项：命中特写层级 2 完整 / 1 减弱 / 0 关闭。
 var hit_fx_level := 1
-## 设置项：弹道线条（曳光/弹头）默认开启；关闭后弹丸仍正常飞行与结算。
+## 设置项：弹道线条（枪口到弹丸的长曳光线）默认开启；关闭后仅隐藏长线，弹丸实体与飞行/结算不变。
 var bullet_trail_enabled := true
 ## 滑杆 100% 对应旧版 500% 的实际震动强度，统一在这里换算。
 const SHAKE_SCALE_BASE := 5.0

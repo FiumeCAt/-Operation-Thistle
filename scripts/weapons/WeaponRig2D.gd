@@ -20,8 +20,9 @@ const FLASH_TEX := preload("res://assets/art/weapons/fx/flash_strip.png")
 const MAG_TEX := preload("res://assets/art/weapons/fx/mag_pistol.png")
 const SHELL_TEX := preload("res://assets/art/weapons/fx/mag_shell.png")
 
-## 角色世界身高 128px 对应约 1.7m，用它把枪的真实长度换算成像素。
-const WORLD_PER_METER := 128.0 / 1.7
+const UNITS := preload("res://scripts/core/GameUnits.gd")
+## 角色世界身高 128px 对应约 1.7m，枪长换算统一来自 GameUnits。
+const WORLD_PER_METER := UNITS.WORLD_PER_METER
 ## 像素风里手枪需要适度夸张，否则只有 15px 看不清；长枪按真实比例即可。
 const SIZE_BOOST := 1.35
 const LONG_GUN_BOOST := 1.0

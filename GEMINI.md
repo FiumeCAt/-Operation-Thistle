@@ -30,9 +30,9 @@
 
 ## 4. 关键数值、单位债与数据规范
 1. **单位不统一设计债（高风险）**：
-   - 地图格、寻路、敌人感知与视野迷雾使用 `TILE = 64.0 px = 1 m`（见 `Main2D`、`Level2D`、`Enemy2D`、`VisionFog2D.PIXELS_PER_METER`、`HearingIndicator2D`）。
-   - 武器射程、枪长、弹速与角色身高使用 `WORLD_PER_METER = 128.0 / 1.7 ≈ 75.294 px/m`（见 `Main2D`、`WeaponRig2D`）。
-   - 不同系统中的“米”不能直接横向换算；**未经用户明确决策，不要擅自调整射程/视野数值或合并单位常量**。
+   - 所有 2D 单位常量已收口至单一来源 [GameUnits.gd](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/scripts/core/GameUnits.gd)（`Main2D`、`Level2D`、`Enemy2D`、`VisionFog2D`、`HearingIndicator2D`、`WeaponRig2D`、`Doll2D` 均直接引用其常量，禁止再散落硬编码）。
+   - 当前仍保留历史两套换算标尺：地图格、寻路、敌人感知与视野迷雾使用 `TILE = VISION_PIXELS_PER_METER = 64.0 px/m`；武器射程、枪长、弹速与角色身高使用 `WORLD_PER_METER = 128.0 / 1.7 ≈ 75.294 px/m`。
+   - 不同系统中的“米”不能直接横向换算；**未经用户明确决策，不要擅自调整射程/视野数值或合并两套换算比例**。
 2. **数据单一真相源**：
    - 武器、弹药、敌人、配件、资源、成长数值以 `data/*.json` 为准。
    - `GameData.table()` 使用 `static var _cache` 进程内缓存，修改 JSON 后必须开启新进程/重启游戏才生效。
@@ -44,8 +44,8 @@
    & "D:\Godot\Godot_v4.7.2-stable_win64_console.exe" --headless --path "D:\AI Game\HellWalker\HellWalker_DollProtocol" --import
    ```
    否则会触发全局类缓存缺失导致的连锁解析错误。（注：若编辑器正在运行且未修改脚本/资源，跑纯测试时可跳过 `--import` 避免竞争 `.godot` 缓存。）
-2. **核心测试门禁（33 个 2D 回归）**：
-   - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 33 个核心 2D 测试（基线 1182 条断言，0 失败，已纳入修复后的 `tests/stage1_2d_test.gd`）。
+2. **核心测试门禁（34 个 2D 回归）**：
+   - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 34 个核心 2D 测试（基线 1202 条断言，0 失败，含 `stage1_2d_test` 与 `game_units_test`）。
    - 21 个 3D 遗留测试**不纳入 2D 回归门禁**。
 3. **版本控制与回滚规范**：
    - 在 Git 仓库正式初始化并完成首提交前，重大修改须沿用 `backups/<YYYYMMDD_topic>/` + `ROLLBACK.txt` 备份机制；**严禁混用不同检查点文件回滚**（注意 `backups/20261122_bullet_velocity/ROLLBACK.txt` 已过期）。

@@ -6,7 +6,8 @@ class_name HearingIndicator2D
 
 const RADIUS := 92.0
 const HEARING_METERS := 10.0
-const TILE := 64.0
+const UNITS := preload("res://scripts/core/GameUnits.gd")
+const TILE := UNITS.TILE
 const BUCKETS := 12
 const ARC_DEG := 26.0
 const RING_ALPHA := 0.10

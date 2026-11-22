@@ -1,19 +1,21 @@
 extends CharacterBody2D
 class_name Doll2D
 
-## 4 向角色，图集 12 行 × 4 帧：
+## 4 向角色，图集 16 行 × 4 帧：
 ##   0-3   站立 idle_0..3（下 / 上 / 左 / 右）
 ##   4-7   行走 walk_0..3
 ##   8-11  跑步 run_0..3
+##   12-15 瞄准 aim_0..3
 ## 默认使用 256 px 身高版本（与 1024 母版同比例导出），可通过 configure() 切换。
 ## 整身图集拆成「无头身体」与「独立头部」两张图，头部才能独立绕脖子摆动。
+const UNITS := preload("res://scripts/core/GameUnits.gd")
 const BODY_SHEET := preload("res://assets/art/characters/doll_b/lod/doll_lod_256_body.png")
 const HEAD_SHEET := preload("res://assets/art/characters/doll_b/lod/doll_lod_256_head.png")
 const LOD_BODY := "res://assets/art/characters/doll_b/lod/doll_lod_%d_body.png"
 const LOD_HEAD := "res://assets/art/characters/doll_b/lod/doll_lod_%d_head.png"
 const LOD_SHEET := "res://assets/art/characters/doll_b/lod/doll_lod_%d.png"
 const DEFAULT_BODY_PX := 256
-const WORLD_BODY := 128.0  # 角色在世界里的身高（2 格）
+const WORLD_BODY := UNITS.DOLL_WORLD_HEIGHT_PX  # 角色在世界里的身高（2 格）
 const FEET_RATIO := 0.95
 const COLUMNS := 4
 const DIRECTIONS := 4

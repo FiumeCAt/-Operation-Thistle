@@ -7,7 +7,8 @@ class_name Level2D
 ## 走廊宽窄不一（6 格主廊 / 4 格服务廊 / 8 格大厅门厅），房间互相穿插形成多入口。
 ## 1 格 = 64 px；整图 176×116 格。
 
-const TILE := 64.0
+const UNITS := preload("res://scripts/core/GameUnits.gd")
+const TILE := UNITS.TILE
 const MAP_W := 176
 const MAP_H := 116
 const DOOR_W := 3.0

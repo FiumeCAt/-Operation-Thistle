@@ -3,16 +3,17 @@ class_name VisionFog2D
 ## 玩家分层视野 + 视野迷雾。
 ##
 ## 三层可见度：
-##   2 清晰视野：前方主锥（40° 半角 / 32 米），由主 Light2D 照亮；
-##   1 相对暗：外圈余光（60° 半角 / 32 米）与近身黑暗视野（4.5 米），由弱光与径向光覆盖；
+##   2 清晰视野：前方主锥（40° 半角 / 40 米），由主 Light2D 照亮；
+##   1 相对暗：外圈余光（60° 半角 / 40 米）与近身黑暗视野（4.5 米），由弱光与径向光覆盖；
 ##   0 视野迷雾：三层之外，世界被 CanvasModulate 压成灰暗阴影，敌人直接隐藏。
 ##
 ## 墙体与大型家具挂了 LightOccluder2D，光照会被正确遮挡；
 ## 敌人可见性额外用关卡导航网格做视线采样，避免隔墙看到敌人。
 
-const TILE := 64.0
-## 视野距离按“格 = 米”换算，与敌人 view_range 的约定一致。
-const PIXELS_PER_METER := TILE
+const UNITS := preload("res://scripts/core/GameUnits.gd")
+const TILE := UNITS.TILE
+## 视野距离按“格 = 米”换算，与敌人 view_range 的约定一致（统一来自 GameUnits）。
+const PIXELS_PER_METER := UNITS.VISION_PIXELS_PER_METER
 ## 视线与视野锥的原点：优先使用角色头部；没有头部节点时回退到该高度。
 const EYE_HEIGHT := 82.0
 
@@ -36,7 +37,7 @@ const SELF_ENERGY := 0.18
 const SELF_RADIUS_METERS := 1.1
 const LIGHT_COLOR := Color(1.0, 0.97, 0.92)
 const DARK_COLOR := Color(0.72, 0.82, 1.0)
-## 光照贴图分辨率：384 配合大角度羽化与软阴影，让 32 米视野锥边缘平滑无锯齿。
+## 光照贴图分辨率：384 配合大角度羽化与软阴影，让 40 米视野锥边缘平滑无锯齿。
 const TEX_SIZE := 384
 ## 敌人可见性刷新间隔：50ms 一次，避免每帧遍历与视线采样。
 const ENEMY_REFRESH := 0.05

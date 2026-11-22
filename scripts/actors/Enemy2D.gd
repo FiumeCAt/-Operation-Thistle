@@ -7,7 +7,8 @@ class_name Enemy2D
 
 signal died(enemy)
 
-const TILE := 64.0
+const UNITS := preload("res://scripts/core/GameUnits.gd")
+const TILE := UNITS.TILE
 const LOST_SIGHT := 7.0
 const SEARCH_TIME := 12.0
 ## 发现玩家时的红色感叹号：8 帧贴图，带发光与 Wi-Fi 式外扩波纹。

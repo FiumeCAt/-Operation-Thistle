@@ -22,6 +22,7 @@ $DefaultCoreTests = @(
     "enemy_attack_test",
     "flow_2d_test",
     "fx_warmup_test",
+    "game_units_test",
     "goliath_arena_test",
     "map_2d_test",
     "menu_2d_test",

@@ -158,7 +158,7 @@ func _defaults() -> Dictionary:
 		"sfx_volume": 0.8,
 		"music_volume": 0.8,
 		"screen_shake": true,
-		## 弹道线条：默认开启；关闭后弹丸仍正常飞行/命中，只是不画曳光与弹头。
+		## 弹道线条：默认开启；关闭后仅隐藏枪口到弹丸的长曳光线，弹丸实体与飞行/命中不变。
 		"bullet_trail_enabled": true,
 		## 命中顿帧默认关闭；开火震动幅度以百分比保存（0–1000）。
 		"hitstop_enabled": false,
@@ -939,7 +939,7 @@ func set_screen_shake(enabled: bool) -> bool:
 	return save_data()
 
 
-## 弹道线条：关闭后只隐藏曳光与弹头，弹丸飞行与命中判定不变。
+## 弹道线条：关闭后仅隐藏枪口到弹丸的长曳光线，弹丸实体与飞行/命中判定不变。
 func set_bullet_trail_enabled(enabled: bool) -> bool:
 	data["bullet_trail_enabled"] = enabled
 	return save_data()

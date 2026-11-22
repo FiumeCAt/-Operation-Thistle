@@ -547,7 +547,7 @@ func _set_screen_shake(enabled: bool) -> void:
 	_refresh_shake_buttons(enabled)
 
 
-## 弹道线条：只影响曳光/弹头绘制，弹丸飞行与命中逻辑保持不变。
+## 弹道线条：仅影响枪口到弹丸的长曳光线，弹丸实体与飞行/命中逻辑保持不变。
 func _set_bullet_trail(enabled: bool) -> void:
 	var p := get_node_or_null("/root/Progress")
 	if p != null:
