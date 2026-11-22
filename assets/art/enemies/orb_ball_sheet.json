@@ -1,0 +1,45 @@
+{
+  "id": "orb_ball",
+  "cell": [
+    512,
+    384
+  ],
+  "columns": 4,
+  "rows": 12,
+  "ground": 372,
+  "animations": {
+    "walk": {
+      "row_start": 0,
+      "frames": 4,
+      "fps": 8,
+      "dirs": {
+        "down": 0,
+        "left": 1,
+        "right": 2,
+        "up": 3
+      }
+    },
+    "attack": {
+      "row_start": 4,
+      "frames": 3,
+      "fps": 10,
+      "dirs": {
+        "down": 4,
+        "left": 5,
+        "right": 6,
+        "up": 7
+      }
+    },
+    "alert": {
+      "row_start": 8,
+      "frames": 1,
+      "fps": 1,
+      "dirs": {
+        "down": 8,
+        "left": 9,
+        "right": 10,
+        "up": 11
+      }
+    }
+  }
+}

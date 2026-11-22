@@ -1,0 +1,21 @@
+{
+  "_note": "成长 / 天赋 / 经济表。credit_cost_mul 为所有信用点花费倍率（3.0 = +200%），credit_gain_mul 为信用点获取倍率。",
+  "credit_cost_mul": 3.0,
+  "credit_gain_mul": 0.5,
+  "upgrade_max": {"hp": 5, "support": 2, "gun": 3, "fov": 4, "sight": 4},
+  "talent_max": {
+    "hp": 5, "gun": 3, "move": 4, "reload": 3, "scavenge": 3, "loading": 1,
+    "armor": 3, "magazine": 3, "reserve": 3, "magnet": 3
+  },
+  "talent_prereq": {
+    "move": "hp", "reload": "gun", "magazine": "reload",
+    "loading": "magazine", "reserve": "magazine",
+    "armor": "move", "magnet": "scavenge"
+  },
+  "talent_material": {
+    "hp": "energy", "move": "energy",
+    "gun": "electronics", "reload": "electronics", "magazine": "electronics",
+    "scavenge": "parts", "loading": "parts", "armor": "parts",
+    "reserve": "parts", "magnet": "electronics"
+  }
+}

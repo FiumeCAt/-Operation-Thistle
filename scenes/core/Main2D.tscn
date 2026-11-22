@@ -1,0 +1,75 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/core/Main2D.gd" id="1_main2d"]
+[ext_resource type="PackedScene" path="res://scenes/actors/Doll2D.tscn" id="2_doll2d"]
+[ext_resource type="Script" path="res://scripts/level/Level2D.gd" id="3_level"]
+[ext_resource type="Script" path="res://scripts/ui/RunHUD2D.gd" id="4_hud2d"]
+[ext_resource type="Script" path="res://scripts/fx/AimReticle2D.gd" id="5_reticle2d"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_debug"]
+bg_color = Color(0.02, 0.05, 0.07, 0.92)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.86, 0.61, 0.22, 0.9)
+
+[node name="Main2D" type="Node2D"]
+script = ExtResource("1_main2d")
+
+[node name="World2D" type="Node2D" parent="."]
+y_sort_enabled = true
+
+[node name="FloorLayer" type="Node2D" parent="World2D"]
+z_index = -100
+
+[node name="SortLayer" type="Node2D" parent="World2D"]
+y_sort_enabled = true
+
+[node name="Doll2D" parent="World2D/SortLayer" instance=ExtResource("2_doll2d")]
+position = Vector2(768, 620)
+
+[node name="FXLayer" type="Node2D" parent="World2D"]
+z_index = 50
+
+[node name="LightLayer" type="Node2D" parent="World2D"]
+
+[node name="CanvasModulate" type="CanvasModulate" parent="World2D"]
+color = Color(0.9, 0.9, 0.92, 1)
+
+[node name="Level2D" type="Node" parent="."]
+script = ExtResource("3_level")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+zoom = Vector2(2, 2)
+limit_left = 0
+limit_top = 0
+limit_right = 1536
+limit_bottom = 1152
+position_smoothing_enabled = true
+position_smoothing_speed = 9.0
+
+[node name="Reticle2D" type="CanvasLayer" parent="."]
+layer = 5
+script = ExtResource("5_reticle2d")
+
+[node name="HUD2D" type="CanvasLayer" parent="."]
+layer = 40
+script = ExtResource("4_hud2d")
+
+[node name="DebugOverlay2D" type="CanvasLayer" parent="."]
+visible = false
+layer = 50
+
+[node name="Panel" type="PanelContainer" parent="DebugOverlay2D"]
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 520.0
+offset_bottom = 250.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_debug")
+
+[node name="Label" type="Label" parent="DebugOverlay2D/Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.95, 0.86, 0.62, 1)
+theme_override_font_sizes/font_size = 22
+text = "TOP-DOWN 2D"

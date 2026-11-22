@@ -1,0 +1,33 @@
+{
+  "id": "hunter_type1",
+  "cell": [
+    640,
+    384
+  ],
+  "rows": 4,
+  "columns": 4,
+  "ground": 372,
+  "facing": "front (mirror on X for left/right)",
+  "animations": {
+    "alert": {
+      "row": 0,
+      "frames": 4,
+      "fps": 8
+    },
+    "attack": {
+      "row": 1,
+      "frames": 4,
+      "fps": 10
+    },
+    "move": {
+      "row": 2,
+      "frames": 4,
+      "fps": 7
+    },
+    "death": {
+      "row": 3,
+      "frames": 4,
+      "fps": 8
+    }
+  }
+}

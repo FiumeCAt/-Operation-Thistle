@@ -1,0 +1,135 @@
+[gd_resource type="SpriteFrames" load_steps=18 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/art/enemies/mobile_turret_anim_sheet.png" id="1_sheet"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_alert_0"]
+atlas = ExtResource("1_sheet")
+region = Rect2(0, 0, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_alert_1"]
+atlas = ExtResource("1_sheet")
+region = Rect2(640, 0, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_alert_2"]
+atlas = ExtResource("1_sheet")
+region = Rect2(1280, 0, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_alert_3"]
+atlas = ExtResource("1_sheet")
+region = Rect2(1920, 0, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_attack_0"]
+atlas = ExtResource("1_sheet")
+region = Rect2(0, 384, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_attack_1"]
+atlas = ExtResource("1_sheet")
+region = Rect2(640, 384, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_attack_2"]
+atlas = ExtResource("1_sheet")
+region = Rect2(1280, 384, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_attack_3"]
+atlas = ExtResource("1_sheet")
+region = Rect2(1920, 384, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_move_0"]
+atlas = ExtResource("1_sheet")
+region = Rect2(0, 768, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_move_1"]
+atlas = ExtResource("1_sheet")
+region = Rect2(640, 768, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_move_2"]
+atlas = ExtResource("1_sheet")
+region = Rect2(1280, 768, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_move_3"]
+atlas = ExtResource("1_sheet")
+region = Rect2(1920, 768, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_death_0"]
+atlas = ExtResource("1_sheet")
+region = Rect2(0, 1152, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_death_1"]
+atlas = ExtResource("1_sheet")
+region = Rect2(640, 1152, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_death_2"]
+atlas = ExtResource("1_sheet")
+region = Rect2(1280, 1152, 640, 384)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_death_3"]
+atlas = ExtResource("1_sheet")
+region = Rect2(1920, 1152, 640, 384)
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_alert_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_alert_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_alert_2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_alert_3")
+}],
+"loop": true,
+"name": &"alert",
+"speed": 8.0}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_attack_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_attack_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_attack_2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_attack_3")
+}],
+"loop": true,
+"name": &"attack",
+"speed": 10.0}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_move_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_move_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_move_2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_move_3")
+}],
+"loop": true,
+"name": &"move",
+"speed": 7.0}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_death_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_death_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_death_2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_death_3")
+}],
+"loop": false,
+"name": &"death",
+"speed": 8.0
+}]

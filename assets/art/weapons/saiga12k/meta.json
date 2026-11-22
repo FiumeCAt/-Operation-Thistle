@@ -1,0 +1,25 @@
+{
+  "id": "saiga12k",
+  "grip_px": [
+	588,
+	303
+  ],
+  "muzzle_px": [
+	1372,
+	116
+  ],
+  "bolt_px": [
+	900,
+	110
+  ],
+  "magazine_px": [
+	765,
+	400
+  ],
+  "muzzle_mod_px": [
+	1368,
+	112
+  ],
+  "visual_length": 0.82,
+  "barrel_angle_deg": -10.5
+}

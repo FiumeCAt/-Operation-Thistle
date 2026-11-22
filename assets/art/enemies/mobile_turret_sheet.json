@@ -1,0 +1,42 @@
+{
+  "id": "mobile_turret",
+  "cell": [
+    640,
+    384
+  ],
+  "rows": 4,
+  "columns": 4,
+  "ground": 372,
+  "dirs": {
+    "down": 0,
+    "left": 1,
+    "right": 2,
+    "up": 3
+  },
+  "columns_map": {
+    "alert": 0,
+    "walk_a": 1,
+    "walk_b": 2,
+    "attack": 3
+  },
+  "animations": {
+    "alert": {
+      "column": 0,
+      "frames": 1,
+      "fps": 1
+    },
+    "walk": {
+      "columns": [
+        1,
+        2
+      ],
+      "frames": 2,
+      "fps": 6
+    },
+    "attack": {
+      "column": 3,
+      "frames": 1,
+      "fps": 1
+    }
+  }
+}

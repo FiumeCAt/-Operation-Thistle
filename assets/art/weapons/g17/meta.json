@@ -1,0 +1,25 @@
+{
+  "id": "g17",
+  "grip_px": [
+	388,
+	467
+  ],
+  "muzzle_px": [
+	1143,
+	92
+  ],
+  "bolt_px": [
+	660,
+	130
+  ],
+  "magazine_px": [
+	370,
+	615
+  ],
+  "muzzle_mod_px": [
+	1143,
+	92
+  ],
+  "visual_length": 0.2,
+  "barrel_angle_deg": -4.5
+}

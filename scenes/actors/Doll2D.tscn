@@ -1,0 +1,25 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/actors/Doll2D.gd" id="1_doll2d"]
+[ext_resource type="Texture2D" path="res://assets/art/env/pixel_shadow_64.png" id="2_shadow"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_doll"]
+radius = 15.0
+
+[node name="Doll2D" type="CharacterBody2D"]
+collision_layer = 2
+collision_mask = 1
+script = ExtResource("1_doll2d")
+
+[node name="Body" type="AnimatedSprite2D" parent="."]
+offset = Vector2(0, -72)
+texture_filter = 1
+
+[node name="Collision" type="CollisionShape2D" parent="."]
+position = Vector2(0, -6)
+shape = SubResource("CircleShape2D_doll")
+
+[node name="Shadow" type="Sprite2D" parent="."]
+position = Vector2(0, 0)
+texture = ExtResource("2_shadow")
+texture_filter = 1

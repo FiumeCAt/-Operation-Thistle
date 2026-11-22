@@ -1,0 +1,62 @@
+{
+  "_note": "资源表。basic / advanced 的顺序决定 UI 列与存档清洗顺序；weights 用于进阶资源掉落权重。",
+  "basic": ["electronics", "energy", "parts"],
+  "advanced": ["weapon_parts", "electronic_core", "high_energy_cell", "military_alloy"],
+  "advanced_weights": {
+    "weapon_parts": 55,
+    "electronic_core": 15,
+    "high_energy_cell": 15,
+    "military_alloy": 15
+  },
+  "data": {
+    "electronics": {
+      "name": "电子元件",
+      "short": "电子",
+      "tier": "basic",
+      "color": "#73d9f2",
+      "desc": "攻击与枪械升级"
+    },
+    "energy": {
+      "name": "能量单元",
+      "short": "能量",
+      "tier": "basic",
+      "color": "#ffc752",
+      "desc": "人物性能升级"
+    },
+    "parts": {
+      "name": "机械零件",
+      "short": "零件",
+      "tier": "basic",
+      "color": "#b8c7d6",
+      "desc": "生存与搜刮升级"
+    },
+    "weapon_parts": {
+      "name": "枪械零件",
+      "short": "枪件",
+      "tier": "mid",
+      "color": "#eb7352",
+      "desc": "1.5 阶改造材料 · 稀有枪械改造"
+    },
+    "electronic_core": {
+      "name": "电子核心",
+      "short": "核心",
+      "tier": "advanced",
+      "color": "#ad85ff",
+      "desc": "高阶电子设备核心"
+    },
+    "high_energy_cell": {
+      "name": "高能电池组",
+      "short": "电池",
+      "tier": "advanced",
+      "color": "#6bff9e",
+      "desc": "高密度能源组件"
+    },
+    "military_alloy": {
+      "name": "军用合金",
+      "short": "合金",
+      "tier": "advanced",
+      "color": "#8c9ec7",
+      "desc": "军用级结构材料"
+    }
+  }
+}

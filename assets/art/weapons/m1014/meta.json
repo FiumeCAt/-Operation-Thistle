@@ -1,0 +1,25 @@
+{
+  "id": "m1014",
+  "grip_px": [
+	555,
+	177
+  ],
+  "muzzle_px": [
+	1489,
+	110
+  ],
+  "bolt_px": [
+	590,
+	140
+  ],
+  "magazine_px": [
+	1000,
+	208
+  ],
+  "muzzle_mod_px": [
+	1488,
+	105
+  ],
+  "visual_length": 0.89,
+  "barrel_angle_deg": 0.9
+}
