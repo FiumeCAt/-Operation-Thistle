@@ -50,8 +50,9 @@
    - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 34 个核心 2D 测试（基线 1206 条断言，0 失败，含 `stage1_2d_test` 与 `game_units_test`）。
    - 21 个 3D 遗留测试**不纳入 2D 回归门禁**。
 3. **版本控制与回滚规范**：
-   - 在 Git 仓库正式初始化并完成首提交前，重大修改须沿用 `backups/<YYYYMMDD_topic>/` + `ROLLBACK.txt` 备份机制；**严禁混用不同检查点文件回滚**（注意 `backups/20261122_bullet_velocity/ROLLBACK.txt` 已过期）。
-   - Git 建仓后，严格以原子 commit 作为安全回滚点。
+   - Git 仓库已建仓，日常开发严格以**本地原子 commit** 作为安全回滚点。
+   - **GitHub 推送纪律**：默认**只做本地提交，不要每次更新都自动 `git push` 到 GitHub**；仅在用户明确要求上传，或在重大里程碑完成后与用户讨论确认再推送。
+   - 历史 `backups/` 仅作只读参考，**严禁混用不同检查点文件回滚**（注意 `backups/20261122_bullet_velocity/ROLLBACK.txt` 已过期）。
 4. **密钥安全**：`.env` 共含 6 个键（`IMAGE_API_BASE`、`IMAGE_API_KEY`、`IMAGE_API_MODEL`、`SEEDREAM_API_BASE`、`SEEDREAM_API_KEY`、`SEEDREAM_API_MODEL`）。严禁打印、回显、提交或外传任何真实密钥值。
 5. **大文件重构护栏**：修改或拆分 `Main2D.gd`、`ArmoryMenu2D.gd`、`Level2D.gd`、`Enemy2D.gd`、`Progress.gd`、`WeaponRig2D.gd`、`Sfx.gd`、`SettingsMenu2D.gd` 前，必须先启用 `godot-refactor-guard` skill，锁定相关核心测试基线再动刀。
 6. **视觉与编辑器协同**：修改 UI、武器锚点、视野或特效后必须截屏并用 `read_file` 查看 PNG 确认；需要实时检查运行状态/日志/场景树时使用 `godot-ai` MCP，批量无头测试走命令行脚本。
