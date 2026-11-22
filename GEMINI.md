@@ -29,10 +29,12 @@
 - 未经用户明确要求，**不要修改或删除遗留 3D 代码**，也不要在 2D 新代码中引入对 3D 场景或节点的依赖。
 
 ## 4. 关键数值、单位债与数据规范
-1. **单位不统一设计债（高风险）**：
-   - 所有 2D 单位常量已收口至单一来源 [GameUnits.gd](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/scripts/core/GameUnits.gd)（`Main2D`、`Level2D`、`Enemy2D`、`VisionFog2D`、`HearingIndicator2D`、`WeaponRig2D`、`Doll2D` 均直接引用其常量，禁止再散落硬编码）。
-   - 当前仍保留历史两套换算标尺：地图格、寻路、敌人感知与视野迷雾使用 `TILE = VISION_PIXELS_PER_METER = 64.0 px/m`；武器射程、枪长、弹速与角色身高使用 `WORLD_PER_METER = 128.0 / 1.7 ≈ 75.294 px/m`。
-   - 不同系统中的“米”不能直接横向换算；**未经用户明确决策，不要擅自调整射程/视野数值或合并两套换算比例**。
+1. **单位已统一（2026-11-23 决策）**：
+   - 所有 2D 单位常量收口至单一来源 [GameUnits.gd](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/scripts/core/GameUnits.gd)，禁止再散落硬编码。
+   - **全游戏世界距离统一为 1 格 = 1 米 = 64 px**（`GameUnits.PIXELS_PER_METER`；`TILE` / `WORLD_PER_METER` / `VISION_PIXELS_PER_METER` 均为其别名）。地图、视野、声纹、敌人感知/移速/射程、玩家武器射程/弹速/衰减全部用这一把尺子，`data/*.json` 里的“米”即地图上的格数。
+   - `GameUnits.SPRITE_PX_PER_METER = 128 / 1.7 ≈ 75.294` **仅用于枪械贴图视觉缩放**（`WeaponRig2D`，按默认角色 128px 参考身高匹配握持），**严禁参与任何世界距离/射程/弹速/视野计算**。新增不同身高的角色时不要改世界米制。
+   - 历史补偿：为保持旧 75.29 px/m 时代的像素手感，`data/weapons.json` 的 `range` 已按 ×1.1765 换算（取整到 0.5 m），`data/ammo.json` 的 `bullet_time_scale` 为 `0.294`（原 0.25）。后续调数值以现值为准。
+   - 回滚点：标签 `backup/pre-unit-unify`（统一前，`015403d`）。
 2. **数据单一真相源**：
    - 武器、弹药、敌人、配件、资源、成长数值以 `data/*.json` 为准。
    - `GameData.table()` 使用 `static var _cache` 进程内缓存，修改 JSON 后必须开启新进程/重启游戏才生效。
@@ -45,7 +47,7 @@
    ```
    否则会触发全局类缓存缺失导致的连锁解析错误。（注：若编辑器正在运行且未修改脚本/资源，跑纯测试时可跳过 `--import` 避免竞争 `.godot` 缓存。）
 2. **核心测试门禁（34 个 2D 回归）**：
-   - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 34 个核心 2D 测试（基线 1202 条断言，0 失败，含 `stage1_2d_test` 与 `game_units_test`）。
+   - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 34 个核心 2D 测试（基线 1206 条断言，0 失败，含 `stage1_2d_test` 与 `game_units_test`）。
    - 21 个 3D 遗留测试**不纳入 2D 回归门禁**。
 3. **版本控制与回滚规范**：
    - 在 Git 仓库正式初始化并完成首提交前，重大修改须沿用 `backups/<YYYYMMDD_topic>/` + `ROLLBACK.txt` 备份机制；**严禁混用不同检查点文件回滚**（注意 `backups/20261122_bullet_velocity/ROLLBACK.txt` 已过期）。
