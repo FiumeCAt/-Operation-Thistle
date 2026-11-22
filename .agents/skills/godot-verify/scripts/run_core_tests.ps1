@@ -35,6 +35,7 @@ $DefaultCoreTests = @(
     "settings_2d_test",
     "shoot_2d_test",
     "spread_accumulation_test",
+    "spread_ballistics_model_test",
     "stage1_2d_test",
     "talents_2d_test",
     "vision_2d_test",

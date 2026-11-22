@@ -21,10 +21,12 @@ const ZOOM := 0.95
 ## 镜头上移，让玩家在画面里偏下，前方视野更大。
 const CAMERA_LIFT := 44.0
 const ADS_ZOOM_SPEED := 6.0
+const SPREAD_MODEL := preload("res://scripts/combat/SpreadModel.gd")
+const BALLISTICS_MODEL := preload("res://scripts/combat/BallisticsModel.gd")
 ## 开镜散布收紧系数改为按弹种配置（AmmoData.ads_spread_mul），此处不再全局固定。
-## 连发累积：开镜（ADS）时每发增长更慢；换弹/切枪期间回落更快。
-const BURST_ADS_GROWTH_MUL := 0.55
-const BURST_RECOVERY_BUSY_MUL := 1.8
+## 连发累积：开镜（ADS）时每发增长更慢；换弹/切枪期间回落更快（单一来源：SpreadModel）。
+const BURST_ADS_GROWTH_MUL := SPREAD_MODEL.BURST_ADS_GROWTH_MUL
+const BURST_RECOVERY_BUSY_MUL := SPREAD_MODEL.BURST_RECOVERY_BUSY_MUL
 ## 瞄准时镜头向准心方向前探，真正看清瞄准方向（仅非高倍镜使用）。
 const ADS_LOOK_AHEAD := 210.0
 const ADS_LOOK_SMOOTH := 8.0
@@ -39,8 +41,8 @@ const RECOIL_CAM_SCALE := 0.95
 const RECOIL_CAM_LIMIT := 26.0
 ## 连射时后坐力随累计量逐渐变强（1.0 → 1.0 + GAIN）。
 const RECOIL_BUILD_GAIN := 0.55
-## 首发散布窗口：停火超过该时长后的第一发按武器 first_shot_spread_mul 收紧。
-const FIRST_SHOT_WINDOW := 0.25
+## 首发散布窗口：停火超过该时长后的第一发按武器 first_shot_spread_mul 收紧（单一来源：SpreadModel）。
+const FIRST_SHOT_WINDOW := SPREAD_MODEL.FIRST_SHOT_WINDOW
 ## 多弹丸命中聚合窗口：同一发霰弹的弹丸在窗口内到达时合并为一次结算，
 ## 保持“护甲只减一次、伤害数字只跳一次”的旧手感。
 const BULLET_HIT_BATCH_WINDOW := 0.05
@@ -871,47 +873,30 @@ func current_ammo() -> AmmoData:
 	return table[&"buckshot"]
 
 
-## 全锥角（弧度）。霰弹 8 颗、手枪 1 颗，准心圆环按这个值换算半径。
-## 右键瞄准按弹种收紧（ammo.ads_spread_mul）；配件收益也按弹种缩放
-## （ammo.attachment_spread_scale：霰弹/大口径收益低，5.56/.338 完整生效）。
+## 全锥角（弧度）。统一委托 SpreadModel 计算，供准心圆环与开火共用。
 func get_aim_spread() -> float:
 	var ammo := current_ammo()
-	var base := 0.0
-	var recoil_spread := 0.0
 	var weapon_data: WeaponData = doll.weapon_rig.data if doll.weapon_rig != null else null
-	if weapon_data != null:
-		base = weapon_data.base_spread
-		# 累积后坐力会把散布锥一起撑大：连射越久，弹着点越散。
-		var cap := Vector2(
-			weapon_data.recoil_max_horizontal, weapon_data.recoil_max_vertical).length()
-		if cap > 1.0:
-			recoil_spread = weapon_data.spread_max * weapon_data.recoil_spread_mul \
-				* clampf(_recoil_offset.length() / cap, 0.0, 1.0)
-	var spread := maxf(ammo.spread + base + _burst_spread + recoil_spread, 0.004)
-	if doll.weapon_rig != null:
-		var attach := clampf(float(ammo.attachment_spread_scale), 0.0, 1.0)
-		spread *= lerpf(1.0, float(doll.weapon_rig.spread_mul), attach)
+	var has_rig := doll.weapon_rig != null
+	var rig_mul := float(doll.weapon_rig.spread_mul) if has_rig else 1.0
 	var dbg_progress := get_node_or_null("/root/Progress")
-	if dbg_progress != null:
-		spread *= float(dbg_progress.debug_mul("spread"))
-	var ads_mul := clampf(float(ammo.ads_spread_mul), 0.05, 1.0)
-	return spread * lerpf(1.0, ads_mul, _ads_t) * talent_accuracy
+	var dbg_mul := float(dbg_progress.debug_mul("spread")) if dbg_progress != null else 1.0
+	return SPREAD_MODEL.compute_aim_spread(
+		ammo, weapon_data, _burst_spread, _recoil_offset,
+		rig_mul, has_rig, dbg_mul, _ads_t, talent_accuracy
+	)
 
 
 ## 全锥角均匀采样：get_aim_spread() 返回完整张角，弹丸在 [-S/2, +S/2] 内均匀分布。
-## 这样实际弹着范围与准心缺口（tan(S/2)）一致，不再额外缩小 4 倍。
 func _spread_offset(spread: float) -> float:
-	return randf_range(-spread * 0.5, spread * 0.5)
+	return SPREAD_MODEL.sample_offset(spread)
 
 
 ## 每扣一次扳机累加一发散布（霰弹按一枪算，不按弹丸数）；开镜时增长更慢。
 func _add_burst_spread(data: WeaponData) -> void:
 	if data == null or data.spread_growth <= 0.0:
 		return
-	var growth := data.spread_growth
-	if doll.ads:
-		growth *= BURST_ADS_GROWTH_MUL
-	_burst_spread = minf(_burst_spread + growth, maxf(data.spread_max, 0.0))
+	_burst_spread = SPREAD_MODEL.next_burst_spread(_burst_spread, data, doll.ads)
 	# 立刻标记当前武器，避免下一帧因 _burst_weapon 还是空而把首发累积清掉。
 	_burst_weapon = data.id
 
@@ -927,12 +912,8 @@ func _update_burst_spread(delta: float) -> void:
 		_burst_spread = 0.0
 		_burst_weapon = data.id
 		return
-	if _burst_spread <= 0.0:
-		return
-	var recovery := maxf(data.spread_recovery, 0.0)
-	if doll.weapon_rig.is_busy():
-		recovery *= BURST_RECOVERY_BUSY_MUL
-	_burst_spread = maxf(_burst_spread - recovery * delta, 0.0)
+	_burst_spread = SPREAD_MODEL.recover_burst_spread(
+		_burst_spread, data, doll.weapon_rig.is_busy(), delta)
 
 
 ## 准心遮挡提示：身体中心到鼠标之间是否有墙。
@@ -951,29 +932,18 @@ func get_aim_block() -> Dictionary:
 
 func _shot_range() -> float:
 	var data: WeaponData = doll.weapon_rig.data if doll.weapon_rig != null else null
-	return (data.range_m if data != null else 20.0) * WORLD_PER_METER
+	return BALLISTICS_MODEL.shot_range_px(data, WORLD_PER_METER)
 
 
-## 游戏内初速（px/s）：武器现实初速（缺失时回退弹种初速）× 时间压缩 × 世界像素/米。
+## 游戏内初速（px/s）：统一委托 BallisticsModel 计算。
 func bullet_speed_px_s(ammo: AmmoData, weapon_data: WeaponData = null) -> float:
-	if ammo == null:
-		return 6000.0
-	var real_speed := float(ammo.muzzle_velocity_mps)
-	if weapon_data != null and float(weapon_data.bullet_speed_mps) > 0.0:
-		real_speed = float(weapon_data.bullet_speed_mps)
-	return maxf(real_speed * float(ammo.bullet_time_scale) * WORLD_PER_METER, 1.0)
+	return BALLISTICS_MODEL.bullet_speed_px_s(ammo, weapon_data, WORLD_PER_METER)
 
 
-## 带指数衰减的飞行时间（秒）：t = (e^(d·s) - 1) / (v·d)，d 为每米衰减系数。
+## 带指数衰减的飞行时间（秒）：统一委托 BallisticsModel 计算。
 func bullet_travel_time(ammo: AmmoData, distance_m: float,
 		weapon_data: WeaponData = null) -> float:
-	if ammo == null or distance_m <= 0.0:
-		return 0.0
-	var v := bullet_speed_px_s(ammo, weapon_data) / WORLD_PER_METER
-	var d := maxf(float(ammo.drag_per_m), 0.0)
-	if d <= 0.000001:
-		return distance_m / v
-	return (exp(d * distance_m) - 1.0) / (v * d)
+	return BALLISTICS_MODEL.bullet_travel_time(ammo, distance_m, weapon_data, WORLD_PER_METER)
 
 
 ## 单颗弹丸射线：墙（body layer 1）与敌人受击区（Area layer 2）一起查，取最近命中。
@@ -1091,11 +1061,9 @@ func _on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 	_play_muzzle_fx(muzzle, base_dir.angle())
 	var spread := get_aim_spread()
 	# 首发散布：停火超过窗口后的第一发按武器系数收紧；之后恢复全散布。
-	var first_shot := _shot_clock - _last_shot_time >= FIRST_SHOT_WINDOW
+	var first_shot := SPREAD_MODEL.is_first_shot(_shot_clock, _last_shot_time, FIRST_SHOT_WINDOW)
 	_last_shot_time = _shot_clock
-	var pellet_spread := spread
-	if first_shot:
-		pellet_spread *= data.first_shot_spread_mul
+	var pellet_spread := SPREAD_MODEL.apply_first_shot(spread, data, first_shot)
 	last_pellet_spread = pellet_spread
 	# 本次射击用累积前的散布；扣完扳机再把这一发的累积加进去。
 	_add_burst_spread(data)
@@ -1122,7 +1090,7 @@ func _on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 		"flush_scheduled": false,
 	}
 	var speed := bullet_speed_px_s(ammo, data)
-	var drag_px := float(ammo.drag_per_m) / WORLD_PER_METER
+	var drag_px := BALLISTICS_MODEL.drag_per_px(ammo, WORLD_PER_METER)
 	for i in pellet_count:
 		# 所有弹丸（含第一颗）都按实际散布锥均匀采样，不再强制中心线。
 		var direction := base_dir.rotated(_spread_offset(pellet_spread)).normalized()

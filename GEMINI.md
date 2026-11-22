@@ -46,8 +46,8 @@
    & "D:\Godot\Godot_v4.7.2-stable_win64_console.exe" --headless --path "D:\AI Game\HellWalker\HellWalker_DollProtocol" --import
    ```
    否则会触发全局类缓存缺失导致的连锁解析错误。（注：若编辑器正在运行且未修改脚本/资源，跑纯测试时可跳过 `--import` 避免竞争 `.godot` 缓存。）
-2. **核心测试门禁（35 个 2D 回归）**：
-   - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 35 个核心 2D 测试（基线 1265 条断言，0 失败，含 `stage1_2d_test`、`game_units_test` 与 `weapon_stats_model_test`）。
+2. **核心测试门禁（36 个 2D 回归）**：
+   - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 36 个核心 2D 测试（基线 1303 条断言，0 失败，含 `stage1_2d_test`、`game_units_test`、`weapon_stats_model_test` 与 `spread_ballistics_model_test`）。
    - 21 个 3D 遗留测试**不纳入 2D 回归门禁**。
 3. **版本控制与回滚规范**：
    - Git 仓库已建仓，日常开发严格以**本地原子 commit** 作为安全回滚点。
@@ -55,4 +55,4 @@
    - 历史 `backups/` 仅作只读参考，**严禁混用不同检查点文件回滚**（注意 `backups/20261122_bullet_velocity/ROLLBACK.txt` 已过期）。
 4. **密钥安全**：`.env` 共含 6 个键（`IMAGE_API_BASE`、`IMAGE_API_KEY`、`IMAGE_API_MODEL`、`SEEDREAM_API_BASE`、`SEEDREAM_API_KEY`、`SEEDREAM_API_MODEL`）。严禁打印、回显、提交或外传任何真实密钥值。
 5. **大文件重构护栏**：修改或拆分 `Main2D.gd`、`ArmoryMenu2D.gd`、`Level2D.gd`、`Enemy2D.gd`、`Progress.gd`、`WeaponRig2D.gd`、`Sfx.gd`、`SettingsMenu2D.gd` 前，必须先启用 `godot-refactor-guard` skill，锁定相关核心测试基线再动刀。
-6. **视觉与编辑器协同**：修改 UI、武器锚点、视野或特效后必须截屏并用 `read_file` 查看 PNG 确认；需要实时检查运行状态/日志/场景树时使用 `godot-ai` MCP，批量无头测试走命令行脚本。
+6. **视觉与编辑器协同（截图 + 录像双重检验）**：修改 UI、武器锚点、弹道/散布、视野或特效后，除无头回归门禁外，必须同步执行**窗口截图 + 短录像（MovieWriter / GIF 输出至交付目录 `videos/`）双重检验**，并用 `read_file` 实图核查截图与录像关键帧；需要实时检查运行状态/日志/场景树时使用 `godot-ai` MCP，批量无头测试走命令行脚本。
