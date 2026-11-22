@@ -173,8 +173,8 @@ func _run() -> void:
 	_check(menu.armory._armor_values["防御等级"].text.contains("Lv.1")
 		and menu.armory._armor_values["防御等级"].text.contains("30"),
 		"armor page shows Lv.1 and 30 RHA value")
-	_check(menu.armory._armor_values["基础减伤"].text.contains("12%"),
-		"armor page shows non-pen blunt floor")
+	_check(menu.armory._armor_values["基础减伤"].text.contains("5%"),
+		"armor page shows non-pen blunt range")
 	_check(menu.armory._armor_values["护甲吸收"].text.contains("+0%"),
 		"armor page shows blunt reduction bonus")
 	# 切换为 RHA 毫米显示：30 -> 3.0mm RHA

@@ -84,39 +84,73 @@ func _run() -> void:
 	_check(is_equal_approx(DAMAGE.player_base_rha(1, 15.0), 45.0), "armor_rha_bonus adds cleanly (45)")
 	_check(is_equal_approx(DAMAGE.effective_player_rha(0, 100, 30.0), 0.0), "0 durability -> 0 effective RHA")
 	_check(is_equal_approx(DAMAGE.effective_player_rha(100, 100, 30.0), 30.0), "100% durability -> 30.0 RHA")
-	_check(is_equal_approx(DAMAGE.effective_player_rha(50, 100, 30.0), 21.0), "50% durability -> 21.0 RHA (70%)")
+	_check(is_equal_approx(DAMAGE.effective_player_rha(50, 100, 30.0), 22.5), "50% durability -> 22.5 RHA (75%)")
 
-	# 未击穿（30 伤 / 0 穿 vs 满甲 Lv1 30 RHA）：主扣甲（20），少钝伤（4）
+	# 未击穿（30 伤 / 0 穿 vs 满甲 Lv1 30 RHA）：主扣甲（28），极轻钝伤（2）
 	var p_unpen: Dictionary = DAMAGE.resolve_player_damage(30.0, 0.0, 100, 100, 1, 0.0, 100)
 	_check(not bool(p_unpen["penetrated"]), "0 AP does not penetrate Lv1 30 RHA")
-	_check(int(p_unpen["armor_damage"]) > int(p_unpen["hp_damage"]) and int(p_unpen["hp_damage"]) == 4,
+	_check(int(p_unpen["armor_damage"]) == 28 and int(p_unpen["hp_damage"]) == 2,
 		"unpenetrated hit drains armor mainly (%d) + light blunt hp (%d)" % [
 			int(p_unpen["armor_damage"]), int(p_unpen["hp_damage"])])
 
 	# 缓冲层 +15% 削减未击穿钝伤
-	var p_unpen_gel: Dictionary = DAMAGE.resolve_player_damage(30.0, 15.0, 100, 100, 1, 0.15, 100)
-	var p_unpen_plain: Dictionary = DAMAGE.resolve_player_damage(30.0, 15.0, 100, 100, 1, 0.0, 100)
+	var p_unpen_gel: Dictionary = DAMAGE.resolve_player_damage(60.0, 25.0, 100, 100, 1, 0.15, 100)
+	var p_unpen_plain: Dictionary = DAMAGE.resolve_player_damage(60.0, 25.0, 100, 100, 1, 0.0, 100)
 	_check(int(p_unpen_gel["hp_damage"]) < int(p_unpen_plain["hp_damage"]),
 		"armor_absorb_bonus reduces unpenetrated blunt HP damage (%d < %d)" % [
 			int(p_unpen_gel["hp_damage"]), int(p_unpen_plain["hp_damage"])])
 
-	# 击穿（30 伤 / 50 穿 vs 满甲 Lv1 30 RHA）：直扣血 32 + 少量穿孔甲损 8
+	# 击穿（30 伤 / 50 穿 vs 满甲 Lv1 30 RHA）：25%~50% 穿血 (11) + 剧烈碎甲 (35)，护甲掉得仍比血快
 	var p_pen: Dictionary = DAMAGE.resolve_player_damage(30.0, 50.0, 100, 100, 1, 0.0, 100)
 	_check(bool(p_pen["penetrated"]), "50 AP penetrates Lv1 30 RHA")
-	_check(int(p_pen["hp_damage"]) == 32 and int(p_pen["armor_damage"]) == 8,
-		"penetrated hit deals overpen HP (32) + light hole wear (8), got hp=%d arm=%d" % [
+	_check(int(p_pen["hp_damage"]) == 11 and int(p_pen["armor_damage"]) == 35
+		and int(p_pen["armor_damage"]) > int(p_pen["hp_damage"])
+		and int(p_pen["hp_damage"]) > int(p_unpen["hp_damage"]),
+		"penetrated hit deals higher HP (11) + heavy armor shatter (35), got hp=%d arm=%d" % [
 			int(p_pen["hp_damage"]), int(p_pen["armor_damage"])])
 
-	# 同样的 50 穿遇到 Lv2 (50 RHA) 刚好击穿无余穿；遇到 Lv3 (70 RHA) 被挡下转未击穿！
+	# 同样的 50 穿遇到 Lv3 (70 RHA) 被挡下转未击穿，穿血与甲损同步显著降低
 	var p_lv3: Dictionary = DAMAGE.resolve_player_damage(30.0, 50.0, 100, 100, 3, 0.0, 100)
 	_check(not bool(p_lv3["penetrated"]) and int(p_lv3["hp_damage"]) < int(p_pen["hp_damage"]),
 		"Lv3 (70 RHA) stops 50 AP and greatly reduces HP loss (%d < %d)" % [
 			int(p_lv3["hp_damage"]), int(p_pen["hp_damage"])])
 
-	# 破甲溢出（剩余 10 甲挡 30 伤 0 穿 -> 吃光 10 甲 + 溢出 10 + 钝伤 4 = 14 HP）
+	# 破甲边界平滑插值（剩余 10 甲挡 30 伤 0 穿 -> 吃光 10 甲，血伤 20 介于满甲 2 与空甲 30 之间）
 	var p_break: Dictionary = DAMAGE.resolve_player_damage(30.0, 0.0, 10, 100, 1, 0.0, 100)
-	_check(int(p_break["new_armor"]) == 0 and int(p_break["hp_damage"]) == 14,
-		"armor break consumes last 10 armor and overflows into HP (hp_dmg=%d)" % int(p_break["hp_damage"]))
+	_check(int(p_break["new_armor"]) == 0 and int(p_break["hp_damage"]) == 20,
+		"armor break smoothly interpolates overflow HP (hp_dmg=%d)" % int(p_break["hp_damage"]))
+
+	# 击穿破甲单调性（歌利亚 100 伤 45 穿：空甲 > 10残甲 > 满甲）
+	var p_gol_0: Dictionary = DAMAGE.resolve_player_damage(100.0, 45.0, 0, 100, 1, 0.0, 100)
+	var p_gol_10: Dictionary = DAMAGE.resolve_player_damage(100.0, 45.0, 10, 100, 1, 0.0, 100)
+	var p_gol_100: Dictionary = DAMAGE.resolve_player_damage(100.0, 45.0, 100, 100, 1, 0.0, 100)
+	_check(int(p_gol_0["hp_damage"]) > int(p_gol_10["hp_damage"])
+		and int(p_gol_10["hp_damage"]) > int(p_gol_100["hp_damage"])
+		and int(p_gol_100["new_armor"]) == 0 and int(p_gol_100["new_hp"]) > 0,
+		"goliath blast scales monotonically by armor (0:%d > 10:%d > 100:%d) and breaks full Lv1 armor first" % [
+			int(p_gol_0["hp_damage"]), int(p_gol_10["hp_damage"]), int(p_gol_100["hp_damage"])])
+
+	# 游戏性硬约束：全敌种（含高穿炮塔/重装/高穿狙击）连续受击时，护甲一律先于血条归零（不会人死甲还在）
+	var all_break_first := true
+	for profile in [
+		[9.0, 12.0], [7.0, 22.0], [12.0, 25.0],
+		[10.0, 35.0], [25.0, 40.0], [14.0, 55.0], [45.0, 120.0]
+	]:
+		var sim_hp := 100
+		var sim_arm := 100
+		var steps := 0
+		while sim_hp > 0 and steps < 60:
+			var r: Dictionary = DAMAGE.resolve_player_damage(float(profile[0]), float(profile[1]),
+				sim_arm, 100, 1, 0.0, sim_hp)
+			sim_arm = int(r["new_armor"])
+			sim_hp = int(r["new_hp"])
+			steps += 1
+			if sim_hp <= 0 and sim_arm > 0:
+				all_break_first = false
+				break
+		if not all_break_first:
+			break
+	_check(all_break_first, "armor always breaks before player death across all enemy AP profiles")
 
 	# 耐久归零：无基础减伤（20 伤 0 穿 -> 20 HP）；提供 20% min_reduction 时 -> 16 HP
 	var p_naked: Dictionary = DAMAGE.resolve_player_damage(20.0, 0.0, 0, 100, 1, 0.0, 100)

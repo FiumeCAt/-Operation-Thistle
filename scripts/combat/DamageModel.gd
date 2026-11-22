@@ -15,20 +15,25 @@ class_name DamageModel
 ##        blunt_mul = lerp(0.12, 1.0, r * r)
 ##        dmg = max(1.0, amount * blunt_mul)
 ##
-## 玩家护甲耐久规则：
-##   - 满耐久发挥 100% 标称 RHA 防护，残甲按耐久线性衰减至 40%；耐久耗尽时有效 RHA = 0。
-##   - 未击穿（ap < eff_rha）：主要消耗护甲耐久 + 少量钝伤入血；若打空护甲，溢出部分入血。
-##   - 击穿（ap >= eff_rha）：余穿伤害直入生命 + 少量穿孔耐久损耗（25%）。
+## 玩家护甲耐久规则（护罩手感 × RHA 穿深折中方案）：
+##   - 满耐久发挥 100% 标称 RHA 防护，残甲按耐久线性缓降至 50%；耐久耗尽时有效 RHA = 0。
+##   - 未击穿（ap < eff_rha）：主要消耗护甲耐久 + 极轻钝伤入血（5%~20%）。
+##   - 击穿（ap >= eff_rha）：护甲仍强行阻滞并剧烈碎裂——25%~50% 穿透入血，同时承受 100%~130% 碎甲耐久损耗，
+##     保证常规战斗与穿透打击下护甲通常先于血条掉光。
+##   - 破甲边界：剩余护甲不足本次耐久消耗时，按实际吸收比例在“满甲受击”与“空甲受击”间平滑插值，避免突变。
 ##   - 耐久归零：不再享受护甲基础减伤，仅受 min_reduction（护甲组件/天赋最低减伤率）保护。
 
 const OVERPEN_BONUS_PER_POINT := 0.10
 const NON_PEN_BLUNT_FLOOR := 0.12
 const PLAYER_BASE_RHA := 30.0          # 默认 Lv1 护甲 = 30 (3.0mm RHA)
 const PLAYER_RHA_PER_LEVEL := 20.0     # 每提升 1 级防御 / 装甲组件 = +20 (+2.0mm RHA)
-const PLAYER_MIN_DURABILITY_SCALE := 0.40
-const PLAYER_UNPEN_MAX_HP_RATIO := 0.65
-const PLAYER_UNPEN_ARMOR_WEAR := 0.75  # 护甲挡下未击穿动能时的耐久折损系数
-const PLAYER_PEN_ARMOR_WEAR := 0.25    # 击穿时留下的穿孔耐久损耗比例
+const PLAYER_MIN_DURABILITY_SCALE := 0.50
+const PLAYER_UNPEN_MIN_HP_RATIO := 0.05
+const PLAYER_UNPEN_MAX_HP_RATIO := 0.20
+const PLAYER_PEN_MIN_HP_RATIO := 0.25
+const PLAYER_PEN_MAX_HP_RATIO := 0.50
+const PLAYER_PEN_ARMOR_WEAR_MIN := 1.00
+const PLAYER_PEN_ARMOR_WEAR_MAX := 1.30
 const PLAYER_MAX_ABSORB_BONUS := 0.50
 const PLAYER_MAX_MIN_REDUCTION := 0.65
 ## 兼容旧常量引用（Armory / 测试可读取）。
@@ -102,26 +107,32 @@ static func resolve_player_damage(amount: float, ap: float,
 
 	var armor_damage := 0
 	var hp_damage := 0
+	var bare_hp := maxi(1, int(round((amount + eff_ap * OVERPEN_BONUS_PER_POINT) * (1.0 - floor_red))))
 	if armor <= 0:
 		# 耐久耗尽：不再享受护甲基础减伤，仅受组件/天赋提供的最低减伤率保护。
-		var raw_hp := (amount + eff_ap * OVERPEN_BONUS_PER_POINT) * (1.0 - floor_red)
-		hp_damage = maxi(1, int(round(raw_hp)))
-	elif penetrated:
-		# 击穿：余穿伤害直入生命，同时在护甲上留下少量穿孔损耗。
-		var pen_dmg := (amount + (eff_ap - eff_rha) * OVERPEN_BONUS_PER_POINT) * (1.0 - floor_red)
-		hp_damage = maxi(1, int(round(pen_dmg)))
-		armor_damage = mini(armor, maxi(1, int(round(amount * PLAYER_PEN_ARMOR_WEAR))))
+		hp_damage = bare_hp
 	else:
-		# 未击穿：主要消耗护甲耐久 + 少量钝伤入血；若护甲被打空，未吸收部分溢出到生命。
-		var r := clampf(eff_ap / eff_rha, 0.0, 1.0)
-		var absorb_cut := 1.0 - clampf(armor_absorb_bonus, 0.0, PLAYER_MAX_ABSORB_BONUS)
-		var blunt_ratio := lerpf(NON_PEN_BLUNT_FLOOR, PLAYER_UNPEN_MAX_HP_RATIO, r * r) * absorb_cut
-		var blunt_hp := maxi(1, int(round(amount * blunt_ratio * (1.0 - floor_red))))
-		var stopped := maxf(amount - float(blunt_hp), 0.0)
-		var armor_need := maxi(1, int(round(stopped * PLAYER_UNPEN_ARMOR_WEAR)))
+		var armored_hp := 0
+		var armor_need := 1
+		if penetrated:
+			# 击穿（偏护罩碎甲模型）：25%~50% 穿透入血 + 100%~130% 碎甲损耗，保证护甲通常先碎。
+			var over_t := clampf((eff_ap - eff_rha) / maxf(eff_rha, 10.0), 0.0, 2.0) * 0.5
+			var eff_dmg := amount + (eff_ap - eff_rha) * OVERPEN_BONUS_PER_POINT
+			var hp_ratio := lerpf(PLAYER_PEN_MIN_HP_RATIO, PLAYER_PEN_MAX_HP_RATIO, over_t)
+			armored_hp = maxi(1, int(round(eff_dmg * hp_ratio * (1.0 - floor_red))))
+			var wear := lerpf(PLAYER_PEN_ARMOR_WEAR_MIN, PLAYER_PEN_ARMOR_WEAR_MAX, over_t)
+			armor_need = maxi(1, int(round(eff_dmg * wear)))
+		else:
+			# 未击穿：5%~20% 极轻钝伤入血，其余全部由护甲耐久吸收。
+			var r := clampf(eff_ap / eff_rha, 0.0, 1.0)
+			var absorb_cut := 1.0 - clampf(armor_absorb_bonus, 0.0, PLAYER_MAX_ABSORB_BONUS)
+			var blunt_ratio := lerpf(PLAYER_UNPEN_MIN_HP_RATIO, PLAYER_UNPEN_MAX_HP_RATIO, r * r) * absorb_cut
+			armored_hp = maxi(1, int(round(amount * blunt_ratio * (1.0 - floor_red))))
+			var stopped := maxf(amount - float(armored_hp), 0.0)
+			armor_need = maxi(1, int(round(stopped)))
 		armor_damage = mini(armor, armor_need)
-		var overflow := maxi(armor_need - armor_damage, 0)
-		hp_damage = blunt_hp + overflow
+		var absorbed_frac := float(armor_damage) / float(armor_need)
+		hp_damage = maxi(1, int(round(lerpf(float(bare_hp), float(armored_hp), absorbed_frac))))
 
 	return {
 		"total": total,

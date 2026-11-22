@@ -48,25 +48,25 @@ func _run() -> void:
 		"player starts with 100 armor at Lv1 (30 / 3.0mm RHA)")
 	_check(main.hud.armor_label.text.contains("100"), "HUD shows the armor value")
 
-	# 未击穿（30 伤 / 0 AP vs 30 RHA）：主扣护甲 20，少量钝伤 4
+	# 未击穿（30 伤 / 0 AP vs 30 RHA）：主扣护甲 28，极轻钝伤 2
 	doll.hp = 100
 	doll.invuln = 0.0
 	doll.take_damage(30.0, 0.0)
 	await process_frame
-	_check(doll.armor == 80, "unpenetrated hit drains armor mainly, armor=%d" % doll.armor)
-	_check(doll.hp == 96, "unpenetrated hit leaves only light blunt damage, hp=%d" % doll.hp)
-	_check(main.hud.armor_label.text.contains("80"), "HUD armor value follows damage")
+	_check(doll.armor == 72, "unpenetrated hit drains armor mainly, armor=%d" % doll.armor)
+	_check(doll.hp == 98, "unpenetrated hit leaves only light blunt damage, hp=%d" % doll.hp)
+	_check(main.hud.armor_label.text.contains("72"), "HUD armor value follows damage")
 	_check(_has_damage_number(main.fx_layer), "taking damage spawns a floating number")
 
-	# 击穿（30 伤 / 50 AP vs 30 RHA）：直扣血 32（余穿 +2），护甲仅少量穿孔损耗 8
+	# 击穿（30 伤 / 50 AP vs 30 RHA）：护甲碎裂 35 + 穿透入血 11（血伤明显高于未击穿，且甲先掉光）
 	doll.armor = 100
 	doll.hp = 100
 	doll.invuln = 0.0
 	doll.take_damage(30.0, 50.0)
-	_check(doll.armor == 92, "penetrated hit causes only light hole wear, armor=%d" % doll.armor)
-	_check(doll.hp == 68, "penetrated hit punches straight into hp with overpen, hp=%d" % doll.hp)
+	_check(doll.armor == 65, "penetrated hit shatters armor heavily, armor=%d" % doll.armor)
+	_check(doll.hp == 89, "penetrated hit punches noticeably into hp, hp=%d" % doll.hp)
 
-	# 低耐久破甲溢出（armor 10/100 挡 30 伤 0 AP -> 甲归零、溢出 + 钝伤共 14 HP）
+	# 低耐久破甲平滑溢出（armor 10/100 挡 30 伤 0 AP -> 甲归零、血伤 20）
 	doll.armor = 10
 	doll.armor_max = 100
 	doll.armor_level = 1
@@ -74,7 +74,7 @@ func _run() -> void:
 	doll.invuln = 0.0
 	doll.take_damage(30.0, 0.0)
 	_check(doll.armor == 0, "damaged armor is consumed to zero, armor=%d" % doll.armor)
-	_check(doll.hp == 86, "broken-armor overflow reaches hp, hp=%d" % doll.hp)
+	_check(doll.hp == 80, "broken-armor overflow reaches hp smoothly, hp=%d" % doll.hp)
 	doll.repair_armor(50)
 	_check(doll.armor == 50, "repair kit restores armor durability")
 
@@ -102,7 +102,7 @@ func _run() -> void:
 	_check(doll.armor < 90 and doll.hp > 85,
 		"Lv2 (50 RHA) blocks 35 AP and protects hp (arm=%d hp=%d)" % [doll.armor, doll.hp])
 
-	# 连续未击穿受击：护甲先破，生命仍有剩余
+	# 连续被高穿（55 AP 重装）受击：护甲仍先于血条归零，避免“人死甲还在”
 	doll.armor = 100
 	doll.armor_max = 100
 	doll.armor_level = 1
@@ -110,10 +110,10 @@ func _run() -> void:
 	var hits := 0
 	while doll.armor > 0 and hits < 20 and doll.hp > 0:
 		doll.invuln = 0.0
-		doll.take_damage(30.0, 0.0)
+		doll.take_damage(14.0, 55.0)
 		hits += 1
 	_check(doll.armor == 0 and doll.hp > 0 and doll.hp < 100,
-		"armor breaks before hp (%d hits, hp=%d)" % [hits, doll.hp])
+		"armor breaks before hp even under penetrating heavy hits (%d hits, hp=%d)" % [hits, doll.hp])
 
 	main.queue_free()
 	await process_frame

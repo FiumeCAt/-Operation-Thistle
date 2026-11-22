@@ -557,9 +557,9 @@ func _build_armor_page(parent: Node) -> void:
 	rule_rows.add_child(rule_divider)
 	var hint := PixelUI.label(rule_rows,
 		"RHA 均质装甲体系：10 点防御 = 1.0mm 均质装甲钢（可在设置切换显示格式）。\n"
-		+ "未击穿（穿深 < 有效防御）：主要消耗护甲耐久 + 平滑钝伤（最低 12%）。\n"
-		+ "击穿（穿深 >= 有效防御）：伤害直入生命并附余穿加伤（每超 1 点 +0.1），护甲仅受少量穿孔损耗。\n"
-		+ "耐久越低有效防御越弱（最低 40%）；耐久归零后失去护甲防护（除非有组件/天赋最低减伤）。",
+		+ "未击穿（穿深 < 有效防御）：护甲承担主要伤害，仅 5%~20% 极轻钝伤入血。\n"
+		+ "击穿（穿深 >= 有效防御）：25%~50% 穿透入血，同时护甲剧烈碎裂（100%~130% 耐久损耗），常规受击甲先于血碎。\n"
+		+ "耐久越低有效防御越弱（缓降至 50%）；耐久归零后失去护甲防护（除非有组件/天赋最低减伤）。",
 		PixelUI.FS_BODY, PixelUI.DIM)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -591,10 +591,10 @@ func _refresh_armor() -> void:
 	var absorb_bonus_pct := int(round(float(armor_mods["absorb_add"]) * 100.0))
 	_armor_values["耐久上限"].text = "%d / %d" % [maximum, maximum]
 	_armor_values["防御等级"].text = "Lv.%d · %s" % [level, DAMAGE_MODEL.format_rha(rha, mode)]
-	_armor_values["基础减伤"].text = "未击穿最低 12% 钝伤"
+	_armor_values["基础减伤"].text = "未击穿 5%~20% 钝伤"
 	_armor_values["护甲吸收"].text = "钝伤削减 +%d%%（主扣耐久）" % absorb_bonus_pct
-	_armor_values["穿甲规则"].text = "击穿直扣血 · 余穿 +0.1/点"
-	_armor_values["耐久衰减"].text = "满 100% → 残 40% · 0 失防"
+	_armor_values["穿甲规则"].text = "击穿 25%~50% 穿血 · 剧烈碎甲"
+	_armor_values["耐久衰减"].text = "满 100% → 残 50% · 0 失防"
 
 
 func _show_page(page: String) -> void:
