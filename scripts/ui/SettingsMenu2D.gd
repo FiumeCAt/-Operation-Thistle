@@ -13,6 +13,7 @@ var _sliders: Dictionary = {}
 var _values: Dictionary = {}
 var _interval_button: Button
 var _rpm_button: Button
+var _armor_display_buttons: Dictionary = {}
 var _ammo_buttons: Dictionary = {}
 var _shake_buttons: Dictionary = {}
 var _trail_buttons: Dictionary = {}
@@ -57,8 +58,8 @@ func _build() -> void:
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.offset_left = -500
 	panel.offset_right = 500
-	panel.offset_top = -320
-	panel.offset_bottom = 320
+	panel.offset_top = -380
+	panel.offset_bottom = 380
 	add_child(panel)
 
 	var rows := VBoxContainer.new()
@@ -253,6 +254,17 @@ func _build_gameplay() -> Control:
 	_rpm_button.pressed.connect(func() -> void: _set_fire_mode("rpm"))
 	fire_row.add_child(_rpm_button)
 
+	PixelUI.label(rows, "护甲 / 穿深显示", 20, PixelUI.DIM)
+	var armor_disp_row := HBoxContainer.new()
+	armor_disp_row.add_theme_constant_override("separation", 8)
+	rows.add_child(armor_disp_row)
+	for entry in [["value", "穿深值 // 46"], ["rha_mm", "RHA // 4.6mm"]]:
+		var mode := String(entry[0])
+		var button := _option_button(String(entry[1]))
+		button.pressed.connect(func() -> void: _set_armor_display(mode))
+		armor_disp_row.add_child(button)
+		_armor_display_buttons[mode] = button
+
 	PixelUI.label(rows, "弹药显示", 20, PixelUI.DIM)
 	var ammo_row := HBoxContainer.new()
 	ammo_row.add_theme_constant_override("separation", 8)
@@ -278,59 +290,31 @@ func _build_gameplay() -> Control:
 	_zoom_value.custom_minimum_size.x = 64
 	_zoom_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
-	PixelUI.label(rows, "屏幕震动", 20, PixelUI.DIM)
-	var shake_row := HBoxContainer.new()
-	shake_row.add_theme_constant_override("separation", 8)
-	rows.add_child(shake_row)
-	for entry in [[true, "开"], [false, "关"]]:
-		var enabled := bool(entry[0])
-		var button := _option_button(String(entry[1]))
-		button.custom_minimum_size.x = 120
-		button.pressed.connect(func() -> void: _set_screen_shake(enabled))
-		shake_row.add_child(button)
-		_shake_buttons[enabled] = button
-
-	PixelUI.label(rows, "弹道线条效果", 20, PixelUI.DIM)
-	var trail_row := HBoxContainer.new()
-	trail_row.add_theme_constant_override("separation", 8)
-	rows.add_child(trail_row)
-	for entry in [[true, "开"], [false, "关"]]:
-		var enabled := bool(entry[0])
-		var button := _option_button(String(entry[1]))
-		button.custom_minimum_size.x = 120
-		button.pressed.connect(func() -> void: _set_bullet_trail(enabled))
-		trail_row.add_child(button)
-		_trail_buttons[enabled] = button
-
-	PixelUI.label(rows, "镜内运动模糊", 20, PixelUI.DIM)
-	var scope_blur_row := HBoxContainer.new()
-	scope_blur_row.add_theme_constant_override("separation", 8)
-	rows.add_child(scope_blur_row)
-	for entry in [[true, "开"], [false, "关"]]:
-		var enabled := bool(entry[0])
-		var button := _option_button(String(entry[1]))
-		button.custom_minimum_size.x = 120
-		button.pressed.connect(func() -> void: _set_scope_blur(enabled))
-		scope_blur_row.add_child(button)
-		_scope_blur_buttons[enabled] = button
-
-	PixelUI.label(rows, "镜内畸变", 20, PixelUI.DIM)
-	var scope_lens_row := HBoxContainer.new()
-	scope_lens_row.add_theme_constant_override("separation", 8)
-	rows.add_child(scope_lens_row)
-	for entry in [[true, "开"], [false, "关"]]:
-		var enabled := bool(entry[0])
-		var button := _option_button(String(entry[1]))
-		button.custom_minimum_size.x = 120
-		button.pressed.connect(func() -> void: _set_scope_distortion(enabled))
-		scope_lens_row.add_child(button)
-		_scope_distortion_buttons[enabled] = button
+	_add_toggle_row(rows, "屏幕震动", _shake_buttons, _set_screen_shake)
+	_add_toggle_row(rows, "弹道线条效果", _trail_buttons, _set_bullet_trail)
+	_add_toggle_row(rows, "镜内运动模糊", _scope_blur_buttons, _set_scope_blur)
+	_add_toggle_row(rows, "镜内畸变", _scope_distortion_buttons, _set_scope_distortion)
 
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	rows.add_child(spacer)
 	PixelUI.label(rows, "全菜单共用同一份设置 · 修改立即保存", 20, PixelUI.DIM)
 	return panel
+
+
+func _add_toggle_row(parent: Node, title: String, store: Dictionary, callback: Callable) -> void:
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 8)
+	parent.add_child(line)
+	var label := PixelUI.label(line, title, 20, PixelUI.DIM)
+	label.custom_minimum_size.x = 136
+	for entry in [[true, "开"], [false, "关"]]:
+		var enabled := bool(entry[0])
+		var button := _option_button(String(entry[1]))
+		button.custom_minimum_size.x = 92
+		button.pressed.connect(func() -> void: callback.call(enabled))
+		line.add_child(button)
+		store[enabled] = button
 
 
 func _option_button(text: String) -> Button:
@@ -461,6 +445,7 @@ func _load_values() -> void:
 	var sfx := 0.8
 	var music := 0.8
 	var fire_mode := "interval"
+	var armor_mode := "value"
 	var ammo_mode := "both"
 	var zoom := 100.0
 	var shake := true
@@ -476,6 +461,7 @@ func _load_values() -> void:
 		sfx = float(p.data.get("sfx_volume", 0.8))
 		music = float(p.data.get("music_volume", 0.8))
 		fire_mode = String(p.data.get("fire_rate_display", "interval"))
+		armor_mode = String(p.armor_display()) if p.has_method("armor_display") else "value"
 		ammo_mode = String(p.data.get("ammo_display", "both"))
 		zoom = float(p.data.get("view_zoom", 100))
 		shake = bool(p.data.get("screen_shake", true))
@@ -494,6 +480,7 @@ func _load_values() -> void:
 	_shake_scale_slider.set_value_no_signal(shake_scale)
 	_shake_scale_edit.text = str(int(round(shake_scale)))
 	_refresh_fire_buttons(fire_mode)
+	_refresh_armor_display_buttons(armor_mode)
 	_refresh_ammo_buttons(ammo_mode)
 	_refresh_shake_buttons(shake)
 	_refresh_trail_buttons(bullet_trail)
@@ -531,6 +518,13 @@ func _set_fire_mode(mode: String) -> void:
 	if p != null:
 		p.set_fire_rate_display(mode)
 	_refresh_fire_buttons(mode)
+
+
+func _set_armor_display(mode: String) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_armor_display"):
+		p.set_armor_display(mode)
+	_refresh_armor_display_buttons(mode)
 
 
 func _set_ammo_display(mode: String) -> void:
@@ -576,6 +570,15 @@ func _refresh_fire_buttons(mode: String) -> void:
 		"font_color", PixelUI.AMBER_BRIGHT if mode == "interval" else PixelUI.TEXT)
 	_rpm_button.add_theme_color_override(
 		"font_color", PixelUI.AMBER_BRIGHT if mode == "rpm" else PixelUI.TEXT)
+
+
+func _refresh_armor_display_buttons(mode: String) -> void:
+	var names := {"value": "穿深值 // 46", "rha_mm": "RHA // 4.6mm"}
+	for key in _armor_display_buttons:
+		var button: Button = _armor_display_buttons[key]
+		button.text = ("▶ " if key == mode else "   ") + String(names.get(key, key))
+		button.add_theme_color_override(
+			"font_color", PixelUI.AMBER_BRIGHT if key == mode else PixelUI.TEXT)
 
 
 func _refresh_ammo_buttons(mode: String) -> void:

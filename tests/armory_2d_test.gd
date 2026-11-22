@@ -164,25 +164,32 @@ func _run() -> void:
 	p.set_fire_rate_display("interval")
 	menu.armory._select(&"m870")
 
-	# 护甲子页面：耐久 / 等级 / 减伤 / 吸收比例
+	# 护甲子页面：耐久 / RHA 防御 / 钝伤规则 / 穿深显示切换
 	menu.armory._show_page("armor")
 	_check(menu.armory._armor_page.visible and not menu.armory._weapon_page.visible,
 		"armor tab switches to the armor page")
 	_check(menu.armory._armor_values["耐久上限"].text.contains("100"),
 		"armor page shows durability")
-	_check(menu.armory._armor_values["防御等级"].text.contains("Lv.1"),
-		"armor page shows defense level")
-	_check(menu.armory._armor_values["基础减伤"].text.contains("30%"),
-		"armor page shows base mitigation")
-	_check(menu.armory._armor_values["护甲吸收"].text.contains("75%"),
-		"armor page shows the absorb ratio")
+	_check(menu.armory._armor_values["防御等级"].text.contains("Lv.1")
+		and menu.armory._armor_values["防御等级"].text.contains("30"),
+		"armor page shows Lv.1 and 30 RHA value")
+	_check(menu.armory._armor_values["基础减伤"].text.contains("12%"),
+		"armor page shows non-pen blunt floor")
+	_check(menu.armory._armor_values["护甲吸收"].text.contains("+0%"),
+		"armor page shows blunt reduction bonus")
+	# 切换为 RHA 毫米显示：30 -> 3.0mm RHA
+	p.set_armor_display("rha_mm")
+	menu.armory._show_page("armor")
+	_check(menu.armory._armor_values["防御等级"].text.contains("3.0mm RHA"),
+		"armor page switches to mm RHA display")
+	p.set_armor_display("value")
 	# 护甲数据也要算上组件加成
 	p.data["armor_mods_2d"] = {"plate": "ceramic", "liner": "gel"}
 	menu.armory._show_page("armor")
 	_check(menu.armory._armor_values["耐久上限"].text.contains("140"),
 		"armor page includes plate durability bonus")
-	_check(menu.armory._armor_values["护甲吸收"].text.contains("80%"),
-		"armor page includes liner absorb bonus")
+	_check(menu.armory._armor_values["护甲吸收"].text.contains("+5%"),
+		"armor page includes liner blunt reduction bonus")
 	p.data["armor_mods_2d"] = {}
 
 	# 配件子页面：武器 / 护甲各三个槽位

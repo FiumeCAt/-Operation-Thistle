@@ -35,7 +35,13 @@
    - `GameUnits.SPRITE_PX_PER_METER = 128 / 1.7 ≈ 75.294` **仅用于枪械贴图视觉缩放**（`WeaponRig2D`，按默认角色 128px 参考身高匹配握持），**严禁参与任何世界距离/射程/弹速/视野计算**。新增不同身高的角色时不要改世界米制。
    - 历史补偿：为保持旧 75.29 px/m 时代的像素手感，`data/weapons.json` 的 `range` 已按 ×1.1765 换算（取整到 0.5 m），`data/ammo.json` 的 `bullet_time_scale` 为 `0.294`（原 0.25）。后续调数值以现值为准。
    - 回滚点：标签 `backup/pre-unit-unify`（统一前，`015403d`）。
-2. **数据单一真相源**：
+2. **RHA 护甲与穿甲体系（2026-11-23 重做）**：
+   - 统一以 **0.1 mm 均质装甲钢（RHA）= 1 点护甲防御 / 穿甲** 为内部数值基准（例如 `46` = `4.6mm RHA`），所有结算收口在 [DamageModel.gd](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/scripts/combat/DamageModel.gd)。
+   - 设置页提供显示模式切换（`Progress.armor_display()`：`"value"` 穿深值 vs `"rha_mm"` RHA mm），同步作用于武备库武器/护甲/改枪页与图鉴敌人/弹药页。
+   - **敌人**：小怪使用固定 RHA 防御（无敌方护甲耐久，保留给未来 Boss）；击穿时 `伤害 + (穿甲 - 护甲) * 0.1`，未击穿时按 `(穿甲 / 护甲)²` 平滑过渡到最低 `12%` 钝伤。
+   - **玩家**：耐久 + 有效 RHA（Lv1=30 / Lv2=50 / Lv3=70 / Lv4=90，随耐久在 100%~40% 线性衰减，归零失防但预留 `min_damage_reduction` 最低减伤口）；未击穿主扣耐久 + 轻钝伤，击穿直扣血 + 少量穿孔耐久损耗。
+   - 回滚点：标签 `backup/pre-rha-rework`（重做前，`7605e82`）。
+3. **数据单一真相源**：
    - 武器、弹药、敌人、配件、资源、成长数值以 `data/*.json` 为准。
    - `GameData.table()` 使用 `static var _cache` 进程内缓存，修改 JSON 后必须开启新进程/重启游戏才生效。
    - **已知双真相源**：`data/weapons.json` 的 `bullet_speed_mps` 与 `data/ammo.json` 的 `muzzle_velocity_mps`（`Main2D.bullet_speed_px_s()` 优先读武器字段），改动初速时需注意同步。
@@ -47,7 +53,7 @@
    ```
    否则会触发全局类缓存缺失导致的连锁解析错误。（注：若编辑器正在运行且未修改脚本/资源，跑纯测试时可跳过 `--import` 避免竞争 `.godot` 缓存。）
 2. **核心测试门禁（37 个 2D 回归）**：
-   - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 37 个核心 2D 测试（基线 1326 条断言，0 失败，含 `stage1_2d_test`、`game_units_test`、`weapon_stats_model_test`、`spread_ballistics_model_test` 与 `damage_model_test`）。
+   - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 37 个核心 2D 测试（基线 1334 条断言，0 失败，含 `stage1_2d_test`、`game_units_test`、`weapon_stats_model_test`、`spread_ballistics_model_test` 与 `damage_model_test`）。
    - 21 个 3D 遗留测试**不纳入 2D 回归门禁**。
 3. **版本控制与回滚规范**：
    - Git 仓库已建仓，日常开发严格以**本地原子 commit** 作为安全回滚点。

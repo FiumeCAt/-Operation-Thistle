@@ -10,6 +10,7 @@ const PANEL_SIZE := Vector2(1240, 820)
 const ICON_ROOT := "res://assets/art/ui/icons/"
 const PAGE_ENEMY := "enemy"
 const PAGE_ITEM := "item"
+const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
 ## 数值网格最多显示 14 项（2 列 × 7 行）；歌利亚的爆炸参数也在此范围内。
 const MAX_STATS := 14
 
@@ -387,11 +388,18 @@ func _set_stats(fields: Array) -> void:
 			cell.visible = false
 
 
+func _armor_display_mode() -> String:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("armor_display"):
+		return String(p.armor_display())
+	return "value"
+
+
 func _enemy_fields(id: StringName) -> Array:
 	var st := EnemyDB.stats(id)
 	var fields: Array = []
 	fields.append(["生命值", "%d" % int(round(float(st.get("hp", 0.0))))])
-	fields.append(["护甲", "%d" % int(round(float(st.get("armor", 0.0))))])
+	fields.append(["护甲", DAMAGE_MODEL.format_rha(float(st.get("armor", 0.0)), _armor_display_mode())])
 	fields.append(["移动速度", "%.1f m/s" % float(st.get("speed", 0.0))])
 	var damage := float(st.get("damage", 0.0))
 	fields.append(["攻击伤害", "0（仅爆炸）" if damage <= 0.0 else "%d" % int(round(damage))])
@@ -451,7 +459,7 @@ func _ammo_fields(ammo: AmmoData) -> Array:
 	fields.append(["单发伤害", "%.1f" % ammo.damage])
 	fields.append(["单发总伤害", "%.1f" % (ammo.damage * float(ammo.pellets))])
 	fields.append(["散布", "%.1f°" % rad_to_deg(ammo.spread)])
-	fields.append(["穿甲", "%d" % int(round(ammo.ap))])
+	fields.append(["穿甲", DAMAGE_MODEL.format_rha(ammo.ap, _armor_display_mode())])
 	fields.append(["备弹上限", "%d 发" % ammo.reserve_max])
 	fields.append(["供给武器", _weapon_names_for_ammo(ammo.id)])
 	return fields
@@ -502,10 +510,10 @@ func _note_for_weapon(w: WeaponData) -> String:
 
 func _note_for_ammo(ammo: AmmoData) -> String:
 	var cat: Dictionary = WeaponDB.category_table().get(String(ammo.category), {})
-	return "%s，通用类别「%s」。\n%s\n每发 %d 颗弹丸，单发伤害 %.1f，穿甲 %d，通用备弹上限 %d 发。" % [
+	return "%s，通用类别「%s」。\n%s\n每发 %d 颗弹丸，单发伤害 %.1f，穿甲 %s，通用备弹上限 %d 发。" % [
 		ammo.display_name, String(cat.get("display_name", String(ammo.category))),
 		String(cat.get("note", "设施标准配发弹药。")),
-		ammo.pellets, ammo.damage, int(round(ammo.ap)), ammo.reserve_max]
+		ammo.pellets, ammo.damage, DAMAGE_MODEL.format_rha(ammo.ap, _armor_display_mode()), ammo.reserve_max]
 
 
 func _note_for_resource(id: StringName, rec: Dictionary) -> String:

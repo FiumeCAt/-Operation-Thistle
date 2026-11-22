@@ -1,5 +1,5 @@
 extends SceneTree
-## 护甲回归：基础 30% 减伤、护甲优先吸收、耐久衰减、AP 穿透与 HUD/飘字。
+## RHA 护甲系统回归：未击穿主扣甲+钝伤、击穿直入血+少量甲损、耐久衰减、破甲溢出、最低减伤与 HUD/飘字。
 ## godot --headless --path . --script res://tests/armor_2d_test.gd
 
 var _pass := 0
@@ -43,58 +43,66 @@ func _run() -> void:
 	await process_frame
 	await physics_frame
 	var doll = main.doll
-	_check(doll.armor == 100 and doll.armor_max == 100 and doll.armor_level == 1,
-		"player starts with 100 armor at defense level 1")
+	_check(doll.armor == 100 and doll.armor_max == 100 and doll.armor_level == 1
+		and is_equal_approx(doll.armor_rha(), 30.0),
+		"player starts with 100 armor at Lv1 (30 / 3.0mm RHA)")
 	_check(main.hud.armor_label.text.contains("100"), "HUD shows the armor value")
 
-	# 30 伤害：30% 减伤 → 实际 21；护甲吃 16，生命吃 5
+	# 未击穿（30 伤 / 0 AP vs 30 RHA）：主扣护甲 20，少量钝伤 4
 	doll.hp = 100
 	doll.invuln = 0.0
-	doll.take_damage(30.0)
+	doll.take_damage(30.0, 0.0)
 	await process_frame
-	_check(doll.armor == 84, "armor absorbs 75%% of the mitigated hit, armor=%d" % doll.armor)
-	_check(doll.hp == 95, "hp still takes chip damage, hp=%d" % doll.hp)
-	_check(main.hud.armor_label.text.contains("84"), "HUD armor value follows damage")
+	_check(doll.armor == 80, "unpenetrated hit drains armor mainly, armor=%d" % doll.armor)
+	_check(doll.hp == 96, "unpenetrated hit leaves only light blunt damage, hp=%d" % doll.hp)
+	_check(main.hud.armor_label.text.contains("80"), "HUD armor value follows damage")
 	_check(_has_damage_number(main.fx_layer), "taking damage spawns a floating number")
 
-	# AP 6（高级穿甲弹）抵消防御等级 → 减伤归零，护甲仍吃 75%
+	# 击穿（30 伤 / 50 AP vs 30 RHA）：直扣血 32（余穿 +2），护甲仅少量穿孔损耗 8
 	doll.armor = 100
 	doll.hp = 100
 	doll.invuln = 0.0
-	doll.take_damage(30.0, 6.0)
-	_check(doll.armor == 77, "AP removes mitigation but armor still absorbs, armor=%d" % doll.armor)
-	_check(doll.hp == 93, "AP hit chips hp for the remainder, hp=%d" % doll.hp)
+	doll.take_damage(30.0, 50.0)
+	_check(doll.armor == 92, "penetrated hit causes only light hole wear, armor=%d" % doll.armor)
+	_check(doll.hp == 68, "penetrated hit punches straight into hp with overpen, hp=%d" % doll.hp)
 
-	# 低耐久时减伤衰减：armor 10/100 → 26 点，护甲打穿并溢出 16
+	# 低耐久破甲溢出（armor 10/100 挡 30 伤 0 AP -> 甲归零、溢出 + 钝伤共 14 HP）
 	doll.armor = 10
 	doll.armor_max = 100
 	doll.armor_level = 1
 	doll.hp = 100
 	doll.invuln = 0.0
-	doll.take_damage(30.0)
+	doll.take_damage(30.0, 0.0)
 	_check(doll.armor == 0, "damaged armor is consumed to zero, armor=%d" % doll.armor)
-	_check(doll.hp == 84, "broken-armor overflow reaches hp, hp=%d" % doll.hp)
+	_check(doll.hp == 86, "broken-armor overflow reaches hp, hp=%d" % doll.hp)
 	doll.repair_armor(50)
 	_check(doll.armor == 50, "repair kit restores armor durability")
 
-	# 空甲：完全不打护甲
+	# 空甲：失去护甲基础减伤（20 伤 0 AP -> 掉 20 HP）；若提供最低减伤 20% 则掉 16 HP
 	doll.armor = 0
 	doll.hp = 100
+	doll.min_damage_reduction = 0.0
 	doll.invuln = 0.0
-	doll.take_damage(20.0)
+	doll.take_damage(20.0, 0.0)
 	_check(doll.armor == 0 and doll.hp == 80, "broken armor no longer mitigates")
+	doll.hp = 100
+	doll.min_damage_reduction = 0.20
+	doll.invuln = 0.0
+	doll.take_damage(20.0, 0.0)
+	_check(doll.armor == 0 and doll.hp == 84, "min_damage_reduction floor still applies when broken")
+	doll.min_damage_reduction = 0.0
 
-	# 高防御等级：40% 减伤，护甲吃 14、生命吃 4
+	# 高 RHA 等级（Lv2 = 50 RHA）可挡下 35 AP 火力，Lv1 (30 RHA) 会被击穿
 	doll.armor = 100
 	doll.armor_max = 100
 	doll.armor_level = 2
 	doll.hp = 100
 	doll.invuln = 0.0
-	doll.take_damage(30.0)
-	_check(doll.armor == 86 and doll.hp == 96,
-		"level 2 armor mitigates 40% and protects hp")
+	doll.take_damage(30.0, 35.0)
+	_check(doll.armor < 90 and doll.hp > 85,
+		"Lv2 (50 RHA) blocks 35 AP and protects hp (arm=%d hp=%d)" % [doll.armor, doll.hp])
 
-	# 连续受击：护甲先破，生命仍有剩余
+	# 连续未击穿受击：护甲先破，生命仍有剩余
 	doll.armor = 100
 	doll.armor_max = 100
 	doll.armor_level = 1
@@ -102,7 +110,7 @@ func _run() -> void:
 	var hits := 0
 	while doll.armor > 0 and hits < 20 and doll.hp > 0:
 		doll.invuln = 0.0
-		doll.take_damage(30.0)
+		doll.take_damage(30.0, 0.0)
 		hits += 1
 	_check(doll.armor == 0 and doll.hp > 0 and doll.hp < 100,
 		"armor breaks before hp (%d hits, hp=%d)" % [hits, doll.hp])

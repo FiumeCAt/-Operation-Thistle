@@ -341,17 +341,17 @@
   "armor_options": {
     "plate": [
       {"id": "ceramic", "name": "陶瓷复合板", "desc": "耐久上限 +40", "credits": 90, "cost": {"military_alloy": 3}, "effects": {"armor_max_add": 40}},
-      {"id": "reactive", "name": "反应装甲", "desc": "耐久 +10 · 防御等级 +1", "credits": 120, "cost": {"military_alloy": 2, "electronic_core": 2}, "effects": {"armor_max_add": 10, "armor_level_add": 1}},
+      {"id": "reactive", "name": "反应装甲", "desc": "耐久 +10 · 护甲防御 +20 (2.0mm RHA)", "credits": 120, "cost": {"military_alloy": 2, "electronic_core": 2}, "effects": {"armor_max_add": 10, "armor_level_add": 1}},
       {"id": "light", "name": "轻量化板", "desc": "耐久 +20 · 移速 +4%", "credits": 75, "cost": {"military_alloy": 2, "high_energy_cell": 2}, "effects": {"armor_max_add": 20, "move_mul": 1.04}}
     ],
     "liner": [
-      {"id": "gel", "name": "凝胶缓冲", "desc": "护甲吸收 +5%", "credits": 70, "cost": {"high_energy_cell": 2}, "effects": {"absorb_add": 0.05}},
+      {"id": "gel", "name": "凝胶缓冲", "desc": "未击穿钝伤 -5%", "credits": 70, "cost": {"high_energy_cell": 2}, "effects": {"absorb_add": 0.05}},
       {"id": "kevlar", "name": "凯夫拉内衬", "desc": "耐久上限 +20", "credits": 60, "cost": {"military_alloy": 2}, "effects": {"armor_max_add": 20}}
     ],
     "core": [
       {"id": "servo", "name": "助力核心", "desc": "移速 +6%", "credits": 85, "cost": {"high_energy_cell": 4}, "effects": {"move_mul": 1.06}},
-      {"id": "bulwark", "name": "堡垒核心", "desc": "防御等级 +1", "credits": 105, "cost": {"high_energy_cell": 2, "military_alloy": 2}, "effects": {"armor_level_add": 1}},
-      {"id": "efficiency", "name": "效能核心", "desc": "吸收 +3% · 耐久 +10", "credits": 90, "cost": {"electronic_core": 2, "high_energy_cell": 2}, "effects": {"absorb_add": 0.03, "armor_max_add": 10}}
+      {"id": "bulwark", "name": "堡垒核心", "desc": "护甲防御 +20 (2.0mm RHA)", "credits": 105, "cost": {"high_energy_cell": 2, "military_alloy": 2}, "effects": {"armor_level_add": 1}},
+      {"id": "efficiency", "name": "效能核心", "desc": "未击穿钝伤 -3% · 耐久 +10", "credits": 90, "cost": {"electronic_core": 2, "high_energy_cell": 2}, "effects": {"absorb_add": 0.03, "armor_max_add": 10}}
     ]
   }
 }

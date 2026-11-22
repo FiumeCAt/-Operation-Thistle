@@ -154,6 +154,8 @@ func _defaults() -> Dictionary:
 		"armor_level": 1,
 		"ammo_display": "both",
 		"fire_rate_display": "interval",
+		## 护甲/穿深显示：value = 0.1mm 整数值（如 46），rha_mm = 毫米 RHA（如 4.6mm RHA）。
+		"armor_display": "value",
 		"volume": 0.8,
 		"sfx_volume": 0.8,
 		"music_volume": 0.8,
@@ -288,6 +290,8 @@ func _normalize_data() -> bool:
 		data["ammo_display"] = "both"
 	if not ["interval", "rpm"].has(String(data.get("fire_rate_display", "interval"))):
 		data["fire_rate_display"] = "interval"
+	if not ["value", "rha_mm"].has(String(data.get("armor_display", "value"))):
+		data["armor_display"] = "value"
 	# 2D 携带武器：1-2 把，过滤未知 ID 与重复项。
 	var loadout_2d = data.get("loadout_2d", null)
 	var clean_loadout: Array = []
@@ -914,6 +918,19 @@ func set_fire_rate_display(mode: String) -> bool:
 	if not ["interval", "rpm"].has(mode):
 		return false
 	data["fire_rate_display"] = mode
+	return save_data()
+
+
+## 护甲/穿深显示：value = 0.1mm 穿深值（如 46），rha_mm = 毫米 RHA（如 4.6mm RHA）。
+func armor_display() -> String:
+	var mode := String(data.get("armor_display", "value"))
+	return mode if ["value", "rha_mm"].has(mode) else "value"
+
+
+func set_armor_display(mode: String) -> bool:
+	if not ["value", "rha_mm"].has(mode):
+		return false
+	data["armor_display"] = mode
 	return save_data()
 
 ## 设置项：音量 0–1、动态模糊开关、摄像机模式 0–2。

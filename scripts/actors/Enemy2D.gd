@@ -501,7 +501,7 @@ func _do_charger(to_target: Vector2, dist: float, can_see: bool, delta: float) -
 			_sfx("ram", -4.0, randf_range(0.95, 1.05))
 			_shake(5.0)
 			if player != null and is_instance_valid(player):
-				player.take_damage(float(stats["damage"]) * damage_mul, 1.0)
+				player.take_damage(float(stats["damage"]) * damage_mul, _attack_ap())
 				Shot2D.hit_burst(get_parent(), player.global_position + Vector2(0, -60),
 					(player.global_position - global_position).normalized(), "flesh", 0.7)
 		return
@@ -681,15 +681,15 @@ func _explode_damage() -> void:
 	_shake(8.0)
 	if player != null and is_instance_valid(player) \
 			and player.global_position.distance_to(global_position) <= radius_px:
-		player.take_damage(dmg, 2.0)
+		player.take_damage(dmg, 45.0)
 	var friendly_mul := friendly_explosion_mul()
-	# 竞技场内友军爆炸不做 AP 放大，确保 50% 就是实打实的半伤，
+	# 竞技场内友军爆炸按目标护甲等穿结算，不做余穿放大也不减伤，确保 50% 就是实打实的半伤，
 	# 满血歌利亚不会因为一次连锁立刻被带走。
-	var friendly_ap := 0.0 if friendly_mul <= 0.5 else 6.0
 	for other in get_tree().get_nodes_in_group("enemies"):
 		if other == self or not (other is Enemy2D) or other.hp <= 0.0:
 			continue
 		if other.global_position.distance_to(global_position) <= radius_px:
+			var friendly_ap := float(other.stats["armor"]) if friendly_mul <= 0.5 else 60.0
 			other.take_damage(dmg * friendly_mul, friendly_ap)
 	_spawn_explosion_fx(radius_px)
 
@@ -869,9 +869,21 @@ func _melee_slash(target: Vector2) -> void:
 	tw.tween_callback(arc.queue_free)
 
 
-## 重装单位使用高穿透弹药，会抵消一级护甲；普通单位是低级弹。
+## 敌人攻击穿甲值（0.1 mm RHA 体系）：区分普通近战/9mm 与装甲单位高穿火力。
 func _attack_ap() -> float:
-	return 2.0 if kind == &"heavy" else 0.0
+	match kind:
+		&"rifleman":
+			return 22.0
+		&"sentry_type1":
+			return 25.0
+		&"mobile_turret":
+			return 35.0
+		&"hunter_type1":
+			return 40.0
+		&"heavy":
+			return 55.0
+		_:
+			return 12.0
 
 
 func _attack_flash(color: Color) -> void:

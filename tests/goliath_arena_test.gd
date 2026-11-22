@@ -79,8 +79,8 @@ func _run() -> void:
 	var raw_friendly := float(attacker.stats["explode_damage"]) \
 		* attacker.damage_mul * attacker.friendly_explosion_mul()
 	var ally_armor := float(ally.stats["armor"])
-	# 竞技场友伤 AP 为 0，因此只扣护甲，不做 AP 放大。
-	var expected_friendly := maxf(1.0, raw_friendly - ally_armor)
+	# 竞技场友伤按目标护甲等穿结算（不余穿放大也不减伤），50% 就是实打实的半伤。
+	var expected_friendly: float = DamageModel.resolve_enemy_damage(raw_friendly, ally_armor, ally_armor)
 	_check(is_equal_approx(ally_hp_before - ally.hp, expected_friendly),
 		"friendly blast deals exactly 50% of the explosion damage")
 	_check(ally.hp > 0.0, "a full-health goliath survives one friendly blast")

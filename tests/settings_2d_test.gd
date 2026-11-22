@@ -88,6 +88,7 @@ func _run() -> void:
 	# 在暂停菜单里改完整套选项，开始菜单的同一面板必须读到相同值。
 	sm._sliders["music"].value = 45.0
 	sm._set_fire_mode("rpm")
+	sm._set_armor_display("rha_mm")
 	sm._set_ammo_display("numeric")
 	sm._set_screen_shake(false)
 	sm._set_bullet_trail(false)
@@ -95,6 +96,7 @@ func _run() -> void:
 	await create_timer(0.6).timeout
 	_check(_near(float(p.data["music_volume"]), 0.45), "music volume saved from pause settings")
 	_check(String(p.data["fire_rate_display"]) == "rpm"
+		and String(p.data["armor_display"]) == "rha_mm"
 		and String(p.data["ammo_display"]) == "numeric"
 		and not bool(p.data["screen_shake"])
 		and not bool(p.data["bullet_trail_enabled"])
@@ -132,6 +134,7 @@ func _run() -> void:
 		"start menu reads the volumes changed in pause")
 	_check(_near(start_sm._zoom_slider.value, 150.0)
 		and start_sm._rpm_button.text.contains("▶")
+		and start_sm._armor_display_buttons["rha_mm"].text.contains("▶")
 		and start_sm._ammo_buttons["numeric"].text.contains("▶")
 		and start_sm._shake_buttons[false].text.contains("▶")
 		and start_sm._trail_buttons[false].text.contains("▶"),

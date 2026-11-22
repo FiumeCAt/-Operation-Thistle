@@ -97,13 +97,24 @@ var invuln := 0.0
 ## 护甲：优先吸收按减伤比例计算出的伤害；耐久耗尽后不再减伤。
 @export var armor := 100
 @export var armor_max := 100
-## 防御等级：Lv1 = 30% 基础减伤，每级 +10%，最高 65%。
+## 护甲防御等级（RHA 体系：Lv1 = 30 / 3.0mm RHA，每级 +20 / +2.0mm RHA）。
 @export var armor_level := 1
+## 额外 RHA 护甲防御加值（0.1 mm 单位，供后续配件/天赋叠加）。
+@export var armor_rha_bonus := 0.0
+## 最低减伤率（护甲耐久耗尽后仍生效的保底减伤，由特定护甲组件或天赋提供，默认 0）。
+@export var min_damage_reduction := 0.0
 const ARMOR_BASE_REDUCTION := DAMAGE_MODEL.PLAYER_ARMOR_BASE_REDUCTION
-## 减伤后的伤害里，护甲承担大头、生命吃小头：护甲会先耗尽，但血量也会持续下降。
+## 减伤/吸收比例兼容常量与钝伤削减加成（开局由 Main2D 按护甲组件写入）。
 const ARMOR_ABSORB_RATIO := DAMAGE_MODEL.PLAYER_ARMOR_ABSORB_RATIO
-## 护甲组件提供的吸收比例加成；开局由 Main2D 按装配表写入。
 var armor_absorb_bonus := 0.0
+
+
+func armor_rha() -> float:
+	return DAMAGE_MODEL.player_base_rha(armor_level, armor_rha_bonus)
+
+
+func effective_armor_rha() -> float:
+	return DAMAGE_MODEL.effective_player_rha(armor, armor_max, armor_rha())
 
 ## 启用手/腿/头分件的骨架（normal 或 chibi），并隐藏旧的整图精灵。
 func enable_rig(rig_style: String = "normal") -> void:
@@ -332,12 +343,13 @@ func _build_frames(tex: Texture2D) -> SpriteFrames:
 	frames.remove_animation("default")
 	return frames
 
-## 受伤：统一委托 DamageModel 结算防御等级减伤、耐久缩放与护甲吸收/溢出。
+## 受伤：统一委托 DamageModel 按 RHA 护甲与耐久规则结算（未击穿主扣甲+钝伤，击穿直入血+少量甲损）。
 func take_damage(amount: float, ap: float = 0.0) -> void:
 	if invuln > 0.0 or hp <= 0 or amount <= 0.0:
 		return
 	var res: Dictionary = DAMAGE_MODEL.resolve_player_damage(
-		amount, ap, armor, armor_max, armor_level, armor_absorb_bonus, hp
+		amount, ap, armor, armor_max, armor_level, armor_absorb_bonus, hp,
+		armor_rha_bonus, min_damage_reduction
 	)
 	var total: int = int(res["total"])
 	var armor_damage: int = int(res["armor_damage"])

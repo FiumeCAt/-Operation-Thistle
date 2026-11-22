@@ -26,7 +26,7 @@ $PROJ  = "D:\AI Game\HellWalker\HellWalker_DollProtocol"
 使用汇总脚本 [run_core_tests.ps1](./scripts/run_core_tests.ps1)（日志输出至 `out/test_logs/`，自动校验输出摘要而非仅看进程退出码）：
 
 ```powershell
-# 全量 37 个核心 2D 回归（任务收口前必跑；基线 1326 条断言，0 失败）
+# 全量 37 个核心 2D 回归（任务收口前必跑；基线 1334 条断言，0 失败）
 powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1
 
 # 跳过 --import（编辑器正运行或仅验证已有脚本时）

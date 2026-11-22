@@ -6,6 +6,7 @@ class_name ArmoryMenu2D
 signal closed
 
 const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
+const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
 const PANEL_SIZE := Vector2(1240, 820)
 ## 武器数据行；顺序即显示顺序。
 const STAT_KEYS: Array[String] = [
@@ -545,21 +546,30 @@ func _build_armor_page(parent: Node) -> void:
 	var rule_rows := VBoxContainer.new()
 	rule_rows.add_theme_constant_override("separation", 6)
 	rules.add_child(rule_rows)
-	PixelUI.label(rule_rows, "防御等级 // TIERS", PixelUI.FS_BODY, PixelUI.AMBER)
+	PixelUI.label(rule_rows, "护甲等级 // RHA TIERS", PixelUI.FS_BODY, PixelUI.AMBER)
 	for i in 4:
-		var pct := mini(int(round((Doll2D.ARMOR_BASE_REDUCTION + 0.10 * i) * 100.0)), 65)
-		PixelUI.label(rule_rows, "Lv.%d    基础减伤 %d%%" % [i + 1, pct],
+		var tier_rha := DAMAGE_MODEL.player_base_rha(i + 1)
+		PixelUI.label(rule_rows, "Lv.%d    护甲防御 %d（%.1fmm RHA）" % [
+			i + 1, int(round(tier_rha)), tier_rha * 0.1],
 			PixelUI.FS_BODY, PixelUI.TEXT)
 	var rule_divider := HSeparator.new()
 	rule_divider.add_theme_color_override("color", Color(PixelUI.AMBER, 0.35))
 	rule_rows.add_child(rule_divider)
 	var hint := PixelUI.label(rule_rows,
-		"受击先计算防御减伤，再由护甲承担 75% 的剩余伤害，生命承担 25%。\n"
-		+ "护甲通常先于生命耗尽；打穿护甲的那一下，溢出伤害全部进入生命。\n"
-		+ "穿甲每 2 点抵消 1 级防御；耐久越低，减伤越弱。",
+		"RHA 均质装甲体系：10 点防御 = 1.0mm 均质装甲钢（可在设置切换显示格式）。\n"
+		+ "未击穿（穿深 < 有效防御）：主要消耗护甲耐久 + 平滑钝伤（最低 12%）。\n"
+		+ "击穿（穿深 >= 有效防御）：伤害直入生命并附余穿加伤（每超 1 点 +0.1），护甲仅受少量穿孔损耗。\n"
+		+ "耐久越低有效防御越弱（最低 40%）；耐久归零后失去护甲防护（除非有组件/天赋最低减伤）。",
 		PixelUI.FS_BODY, PixelUI.DIM)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+
+func _armor_display_mode() -> String:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("armor_display"):
+		return String(p.armor_display())
+	return "value"
 
 
 func _refresh_armor() -> void:
@@ -569,22 +579,22 @@ func _refresh_armor() -> void:
 	var maximum := 100
 	var level := 1
 	var armor_mods := ModDB.default_modifiers()
+	var mode := _armor_display_mode()
 	if p != null:
 		maximum = int(p.data.get("armor_max", 100))
 		level = int(p.data.get("armor_level", 1))
 		armor_mods = ModDB.modifiers(p.armor_mods_2d(), true)
-	# 与局内 Doll2D 一致：护甲组件直接加在上限 / 等级 / 吸收比例上。
+	# 与局内 Doll2D 一致：护甲组件直接加在上限 / RHA 防御等级 / 钝伤削减上。
 	maximum += int(armor_mods["armor_max_add"])
 	level += int(armor_mods["armor_level_add"])
-	var reduction := minf(Doll2D.ARMOR_BASE_REDUCTION + 0.10 * float(level - 1), 0.65)
-	var absorb_pct := int(round(
-		(Doll2D.ARMOR_ABSORB_RATIO + float(armor_mods["absorb_add"])) * 100.0))
+	var rha := DAMAGE_MODEL.player_base_rha(level)
+	var absorb_bonus_pct := int(round(float(armor_mods["absorb_add"]) * 100.0))
 	_armor_values["耐久上限"].text = "%d / %d" % [maximum, maximum]
-	_armor_values["防御等级"].text = "Lv.%d" % level
-	_armor_values["基础减伤"].text = "%d%%" % int(round(reduction * 100.0))
-	_armor_values["护甲吸收"].text = "%d%%（生命 %d%%）" % [absorb_pct, 100 - absorb_pct]
-	_armor_values["穿甲规则"].text = "每 2 AP 抵消 1 级"
-	_armor_values["耐久衰减"].text = "耐久 50% 时减伤约 70%"
+	_armor_values["防御等级"].text = "Lv.%d · %s" % [level, DAMAGE_MODEL.format_rha(rha, mode)]
+	_armor_values["基础减伤"].text = "未击穿最低 12% 钝伤"
+	_armor_values["护甲吸收"].text = "钝伤削减 +%d%%（主扣耐久）" % absorb_bonus_pct
+	_armor_values["穿甲规则"].text = "击穿直扣血 · 余穿 +0.1/点"
+	_armor_values["耐久衰减"].text = "满 100% → 残 40% · 0 失防"
 
 
 func _show_page(page: String) -> void:
@@ -1233,7 +1243,7 @@ func _refresh_mod_stats(current_installed: Dictionary, preview_installed: Dictio
 		float(pre["speed"]) - float(cur["speed"]), true, 0)
 	_set_mod_stat("spread", "%.1f°" % rad_to_deg(float(pre["spread"])),
 		rad_to_deg(float(pre["spread"]) - float(cur["spread"])), false, 1)
-	_set_mod_stat("ap", "%d" % int(pre["ap"]),
+	_set_mod_stat("ap", DAMAGE_MODEL.format_rha(float(pre["ap"]), _armor_display_mode()),
 		float(pre["ap"]) - float(cur["ap"]), true, 0)
 	_set_mod_stat("sound", "%.0fm" % float(pre["sound"]),
 		float(pre["sound"]) - float(cur["sound"]), false, 0)
@@ -1519,7 +1529,7 @@ func _refresh() -> void:
 		_detail_values["弹丸数"].text = "%d" % ammo.pellets
 		_detail_base["弹丸数"] = ""
 		_detail_deltas["弹丸数"].text = ""
-		_detail_values["穿甲"].text = "%d" % int(round(ammo.ap))
+		_detail_values["穿甲"].text = DAMAGE_MODEL.format_rha(ammo.ap, _armor_display_mode())
 		_detail_base["穿甲"] = ""
 		_detail_deltas["穿甲"].text = ""
 		var pellets := float(ammo.pellets)
