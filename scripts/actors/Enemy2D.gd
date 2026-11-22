@@ -8,6 +8,7 @@ class_name Enemy2D
 signal died(enemy)
 
 const UNITS := preload("res://scripts/core/GameUnits.gd")
+const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
 const TILE := UNITS.TILE
 const LOST_SIGHT := 7.0
 const SEARCH_TIME := 12.0
@@ -1044,11 +1045,7 @@ func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO
 	if _dead:
 		return 0.0
 	var armor := float(stats["armor"])
-	var dmg := amount
-	if ap > armor:
-		dmg = amount * (1.0 + (ap - armor) * 0.1)
-	else:
-		dmg = maxf(1.0, amount - armor)
+	var dmg: float = DAMAGE_MODEL.resolve_enemy_damage(amount, ap, armor)
 	hp -= dmg
 	_hit_flash = 0.14
 	# 停止力：击退 + 沿受击方向的压扁形变，重武器推得更远，大体型抗推。

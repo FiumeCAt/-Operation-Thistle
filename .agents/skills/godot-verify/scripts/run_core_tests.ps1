@@ -16,6 +16,7 @@ $DefaultCoreTests = @(
     "backpack_2d_test",
     "bullet_speed_test",
     "codex_menu_test",
+    "damage_model_test",
     "data_tables_test",
     "deco_containers_test",
     "deployment_2d_test",

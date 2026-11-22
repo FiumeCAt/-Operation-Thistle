@@ -9,6 +9,7 @@ class_name Doll2D
 ## 默认使用 256 px 身高版本（与 1024 母版同比例导出），可通过 configure() 切换。
 ## 整身图集拆成「无头身体」与「独立头部」两张图，头部才能独立绕脖子摆动。
 const UNITS := preload("res://scripts/core/GameUnits.gd")
+const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
 const BODY_SHEET := preload("res://assets/art/characters/doll_b/lod/doll_lod_256_body.png")
 const HEAD_SHEET := preload("res://assets/art/characters/doll_b/lod/doll_lod_256_head.png")
 const LOD_BODY := "res://assets/art/characters/doll_b/lod/doll_lod_%d_body.png"
@@ -98,9 +99,9 @@ var invuln := 0.0
 @export var armor_max := 100
 ## 防御等级：Lv1 = 30% 基础减伤，每级 +10%，最高 65%。
 @export var armor_level := 1
-const ARMOR_BASE_REDUCTION := 0.30
+const ARMOR_BASE_REDUCTION := DAMAGE_MODEL.PLAYER_ARMOR_BASE_REDUCTION
 ## 减伤后的伤害里，护甲承担大头、生命吃小头：护甲会先耗尽，但血量也会持续下降。
-const ARMOR_ABSORB_RATIO := 0.75
+const ARMOR_ABSORB_RATIO := DAMAGE_MODEL.PLAYER_ARMOR_ABSORB_RATIO
 ## 护甲组件提供的吸收比例加成；开局由 Main2D 按装配表写入。
 var armor_absorb_bonus := 0.0
 
@@ -331,33 +332,18 @@ func _build_frames(tex: Texture2D) -> SpriteFrames:
 	frames.remove_animation("default")
 	return frames
 
-## 受伤：先按防御等级算减伤，再由护甲吸收约 75% 的剩余伤害，生命吃剩下的 25%。
-## 护甲通常比血条先耗尽；打穿护甲的那一下，未吸收部分全部溢出到生命。
-## AP 只抵消防御等级，不会让伤害跳过护甲。
+## 受伤：统一委托 DamageModel 结算防御等级减伤、耐久缩放与护甲吸收/溢出。
 func take_damage(amount: float, ap: float = 0.0) -> void:
 	if invuln > 0.0 or hp <= 0 or amount <= 0.0:
 		return
-	var reduction := 0.0
-	if armor > 0:
-		var ap_levels := int(round(ap / 2.0))
-		var effective_level := maxi(armor_level - ap_levels, 0)
-		var base := 0.0
-		if effective_level > 0:
-			base = ARMOR_BASE_REDUCTION + 0.10 * float(effective_level - 1)
-		base = clampf(base, 0.0, 0.65)
-		var durability_scale := lerpf(
-			0.4, 1.0, float(armor) / maxf(1.0, float(armor_max)))
-		reduction = base * durability_scale
-	var total := int(round(amount))
-	var mitigated := maxi(1, int(round(float(total) * (1.0 - reduction))))
-	var armor_part := 0
-	if armor > 0:
-		var absorb_ratio := clampf(ARMOR_ABSORB_RATIO + armor_absorb_bonus, 0.0, 0.95)
-		armor_part = clampi(int(round(float(mitigated) * absorb_ratio)), 0, mitigated)
-	var armor_damage := mini(armor, armor_part)
-	var hp_damage := maxi(mitigated - armor_damage, 0)
-	armor = maxi(armor - armor_damage, 0)
-	hp = maxi(hp - hp_damage, 0)
+	var res: Dictionary = DAMAGE_MODEL.resolve_player_damage(
+		amount, ap, armor, armor_max, armor_level, armor_absorb_bonus, hp
+	)
+	var total: int = int(res["total"])
+	var armor_damage: int = int(res["armor_damage"])
+	var hp_damage: int = int(res["hp_damage"])
+	armor = int(res["new_armor"])
+	hp = int(res["new_hp"])
 	invuln = 0.12
 	_hurt_flash = 0.16
 	damaged.emit(total, armor_damage, hp_damage, global_position)
