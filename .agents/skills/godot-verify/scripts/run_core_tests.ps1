@@ -42,7 +42,8 @@ $DefaultCoreTests = @(
     "waves_2d_test",
     "weapon_m2_m4_test",
     "weapon_m3_test",
-    "weapon_rig_test"
+    "weapon_rig_test",
+    "weapon_stats_model_test"
 )
 
 if (-not (Test-Path $Godot)) {

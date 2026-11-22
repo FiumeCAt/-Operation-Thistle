@@ -5,6 +5,7 @@ class_name ArmoryMenu2D
 
 signal closed
 
+const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
 const PANEL_SIZE := Vector2(1240, 820)
 ## 武器数据行；顺序即显示顺序。
 const STAT_KEYS: Array[String] = [
@@ -1202,61 +1203,10 @@ func _sight_stats_line(entry: Dictionary) -> String:
 		mag, int(round(vision)), int(round(range_pct)), int(round(ads_pct))]
 
 
-## 按给定装配表计算武器实际数据（与 WeaponRig2D 的算法一致）。
+## 按给定装配表计算武器实际数据（统一委托 WeaponStatsModel，与 WeaponRig2D 完全同源）。
 func _mod_weapon_stats(weapon_id: StringName, installed: Dictionary) -> Dictionary:
-	var base := WeaponDB.get_weapon(weapon_id)
-	var mods := ModDB.modifiers(installed, false, String(weapon_id))
 	var p := get_node_or_null("/root/Progress")
-	var talent_mag := 1.0
-	var reload_talent := 1.0
-	if p != null:
-		talent_mag = 1.0 + float(p.talent_2d_level(&"magazine")) * 0.08
-		reload_talent = pow(0.94, float(p.talent_2d_level(&"reload")))
-	var magazine := ModDB.option(
-		"magazine", String(installed.get("magazine", "")), false, String(weapon_id))
-	var capacity: int = base.mag_capacity
-	if not magazine.is_empty():
-		capacity = int(magazine.get("effects", {}).get("capacity", capacity))
-	var interval := maxf(0.03, base.fire_interval * float(mods["fire_mul"]))
-	var auto := base.default_auto_fire
-	var core := ModDB.option("core", String(installed.get("core", "")), false, String(weapon_id))
-	if not core.is_empty():
-		var fx: Dictionary = core.get("effects", {})
-		if fx.has("fire_interval_set"):
-			interval = maxf(0.03, float(fx["fire_interval_set"]))
-		auto = bool(fx.get("full_auto", false))
-	var ammo_id := base.ammo_id
-	var ammo = WeaponDB.ammo_table().get(ammo_id)
-	var damage := 0.0
-	var spread := 0.0
-	var ap := 0.0
-	var pellets := 0
-	if ammo != null:
-		damage = float(ammo.damage) * float(ammo.pellets) * float(mods["damage_mul"])
-		pellets = ammo.pellets
-		ap = float(ammo.ap)
-		var gun_level := int(p.talent_2d_level(&"gun")) if p != null else 0
-		# 配件散布收益按弹种缩放：霰弹/大口径吃不满，步枪/狙击完整生效。
-		var attach_scale := clampf(float(ammo.attachment_spread_scale), 0.0, 1.0)
-		spread = (float(ammo.spread) + float(base.base_spread)) \
-			* lerpf(1.0, float(mods["spread_mul"]), attach_scale) \
-			* pow(0.94, float(gun_level))
-	return {
-		"mag": maxi(1, int(round(float(capacity) * talent_mag))),
-		"interval": interval,
-		"load": maxf(0.05, base.load_time * float(mods["reload_mul"]) * reload_talent),
-		"range": base.range_m * float(mods["range_mul"]),
-		"speed": float(base.bullet_speed_mps),
-		"spread": spread,
-		"sound": base.sound_radius * float(mods["sound_mul"]),
-		"damage": damage,
-		"pellets": pellets,
-		"ap": ap,
-		"auto": auto,
-		"recoil": 1.0 - float(mods["recoil_mul"]),
-		"vision": float(mods["vision_mul"]) - 1.0,
-		"ads": float(mods["ads_speed_mul"]) - 1.0,
-	}
+	return STATS_MODEL.compute_for_progress(weapon_id, p, installed)
 
 
 func _refresh_mod_stats(current_installed: Dictionary, preview_installed: Dictionary) -> void:
@@ -1465,49 +1415,11 @@ func _read_loadout() -> void:
 		_secondary = StringName(loadout[1])
 
 
-func _weapon_mods(id: StringName) -> Dictionary:
-	var p := get_node_or_null("/root/Progress")
-	if p == null:
-		return ModDB.default_modifiers()
-	return ModDB.modifiers(p.weapon_mods_2d(id), false, String(id))
-
-
-## 实际弹匣容量：弹匣配件给出绝对值，再叠「弹匣扩容」天赋。
-func _mag_capacity_for(id: StringName, base_capacity: int) -> int:
-	var p := get_node_or_null("/root/Progress")
-	var installed: Dictionary = {}
-	var talent := 1.0
-	if p != null:
-		installed = p.weapon_mods_2d(id)
-		talent = 1.0 + float(p.talent_2d_level(&"magazine")) * 0.08
-	var entry := ModDB.option(
-		"magazine", String(installed.get("magazine", "")), false, String(id))
-	var capacity := base_capacity
-	if not entry.is_empty():
-		capacity = int(entry.get("effects", {}).get("capacity", capacity))
-	return maxi(1, int(round(float(capacity) * talent)))
-
-
-## 实际射击间隔：先乘配件倍率，再应用全自动改件的固定射速。
-func _weapon_interval(id: StringName, base_interval: float, mods: Dictionary) -> float:
-	var interval := maxf(0.03, base_interval * float(mods["fire_mul"]))
-	var p := get_node_or_null("/root/Progress")
-	var installed: Dictionary = p.weapon_mods_2d(id) if p != null else {}
-	var core := ModDB.option("core", String(installed.get("core", "")), false, String(id))
-	if not core.is_empty():
-		var fx: Dictionary = core.get("effects", {})
-		if fx.has("fire_interval_set"):
-			interval = maxf(0.03, float(fx["fire_interval_set"]))
-	return interval
-
-
-## 数据页读取「基础值 × 配件加成」的实际值，并标出增减与来源。
+## 数据页读取「基础值 × 配件加成」的实际值，统一由 WeaponStatsModel 计算。
 func _refresh() -> void:
 	_read_loadout()
 	_apply_pinned_order(_weapon_list, _weapon_buttons, false)
 	_hide_tip()
-	var base := WeaponDB.get_weapon(_selected)
-	var mods := _weapon_mods(_selected)
 	var installed: Dictionary = {}
 	var fire_mode := "interval"
 	var reload_talent := 1.0
@@ -1515,29 +1427,25 @@ func _refresh() -> void:
 	if p != null:
 		installed = p.weapon_mods_2d(_selected)
 		fire_mode = String(p.data.get("fire_rate_display", "interval"))
-		reload_talent = pow(0.94, float(p.talent_2d_level(&"reload")))
+		reload_talent = STATS_MODEL.reload_talent_mul(int(p.talent_2d_level(&"reload")))
+
+	var stats: Dictionary = STATS_MODEL.compute_for_progress(_selected, p, installed)
+	var base: WeaponData = stats["base"]
+	var ammo = stats["ammo"]
 
 	_detail_title.text = base.display_name
 	var icon_path := "res://assets/art/weapons/%s/icon.png" % _selected
 	_detail_icon.texture = load(icon_path) if ResourceLoader.exists(icon_path) else null
 
-	var mag := _mag_capacity_for(_selected, base.mag_capacity)
-	# 与 WeaponRig2D.reload() 同一套算法：配件倍率 × 快速换弹天赋。
-	var load_time := maxf(0.05, base.load_time * float(mods["reload_mul"]) * reload_talent)
-	var interval := _weapon_interval(_selected, base.fire_interval, mods)
-	var range_m := base.range_m * float(mods["range_mul"])
-	var sound := base.sound_radius * float(mods["sound_mul"])
-	var ammo_id := base.ammo_id
-	var ammo = WeaponDB.ammo_table().get(ammo_id)
-	var base_damage: float = ammo.damage if ammo != null else 0.0
-	var damage := base_damage * float(mods["damage_mul"])
-	var gun_level := int(p.talent_2d_level(&"gun")) if p != null else 0
-	var accuracy := pow(0.94, float(gun_level))
-	var spread_base := (float(ammo.spread) + float(base.base_spread)) if ammo != null else 0.0
-	var attach_scale := clampf(float(ammo.attachment_spread_scale), 0.0, 1.0) \
-		if ammo != null else 1.0
-	var spread_actual := spread_base \
-		* lerpf(1.0, float(mods["spread_mul"]), attach_scale) * accuracy
+	var mag: int = int(stats["mag"])
+	var load_time: float = float(stats["load"])
+	var interval: float = float(stats["interval"])
+	var range_m: float = float(stats["range"])
+	var sound: float = float(stats["sound"])
+	var base_damage: float = float(stats["base_pellet_damage"])
+	var damage: float = float(stats["pellet_damage"])
+	var spread_base: float = float(stats["base_spread"])
+	var spread_actual: float = float(stats["spread"])
 
 	_detail_values["口径"].text = base.caliber_label
 	_detail_base["口径"] = ""
@@ -1562,14 +1470,13 @@ func _refresh() -> void:
 			interval - base.fire_interval, false, 2)
 	_set_stat("射程", "%.0fm" % range_m, "%.0fm" % base.range_m,
 		range_m - base.range_m, true, 0)
-	var bullet_speed := int(round(float(base.bullet_speed_mps)))
+	var bullet_speed := int(round(float(stats["speed"])))
 	_set_stat("子弹速度", "%d m/s" % bullet_speed, "%d m/s" % bullet_speed,
 		0.0, true, 0)
 	_set_stat("散布", "%.1f°" % rad_to_deg(spread_actual),
 		"%.1f°" % rad_to_deg(spread_base),
 		rad_to_deg(spread_actual - spread_base), false, 1)
-	_detail_values["后坐抑制"].text = "%d%%" % int(round(
-		(1.0 - float(mods["recoil_mul"])) * 100.0))
+	_detail_values["后坐抑制"].text = "%d%%" % int(round(float(stats["recoil"]) * 100.0))
 	_detail_base["后坐抑制"] = ""
 	_detail_deltas["后坐抑制"].text = ""
 	_detail_values["垂直后坐"].text = "基 %.0f / 限 %.0f" % [
@@ -1580,12 +1487,10 @@ func _refresh() -> void:
 		base.recoil_horizontal, base.recoil_max_horizontal]
 	_detail_base["水平后坐"] = ""
 	_detail_deltas["水平后坐"].text = ""
-	_detail_values["视野倍率"].text = "+%d%%" % int(round(
-		(float(mods["vision_mul"]) - 1.0) * 100.0))
+	_detail_values["视野倍率"].text = "+%d%%" % int(round(float(stats["vision"]) * 100.0))
 	_detail_base["视野倍率"] = ""
 	_detail_deltas["视野倍率"].text = ""
-	_detail_values["瞄准速度"].text = "+%d%%" % int(round(
-		(float(mods["ads_speed_mul"]) - 1.0) * 100.0))
+	_detail_values["瞄准速度"].text = "+%d%%" % int(round(float(stats["ads"]) * 100.0))
 	_detail_base["瞄准速度"] = ""
 	_detail_deltas["瞄准速度"].text = ""
 	_set_stat("枪声范围", "%.0fm" % sound, "%.0fm" % base.sound_radius,
@@ -1619,20 +1524,20 @@ func _refresh() -> void:
 		_detail_deltas["穿甲"].text = ""
 		var pellets := float(ammo.pellets)
 		_set_stat("伤害",
-			"%d × %.1f = %.1f" % [ammo.pellets, damage, damage * pellets],
+			"%d × %.1f = %.1f" % [ammo.pellets, damage, float(stats["damage"])],
 			"%d × %.1f = %.1f" % [ammo.pellets, base_damage, base_damage * pellets],
 			(damage - base_damage) * pellets, true, 1)
 
 	for id in WeaponDB.WEAPON_ORDER:
 		var button: Button = _weapon_buttons[id]
-		var weapon := WeaponDB.get_weapon(id)
-		var wmods := _weapon_mods(id)
-		var w_mag := _mag_capacity_for(id, weapon.mag_capacity)
-		var w_range := weapon.range_m * float(wmods["range_mul"])
-		var w_interval := _weapon_interval(id, weapon.fire_interval, wmods)
+		var wstats: Dictionary = STATS_MODEL.compute_for_progress(id, p)
+		var weapon: WeaponData = wstats["base"]
+		var w_mag: int = int(wstats["mag"])
+		var w_range: float = float(wstats["range"])
+		var w_interval: float = float(wstats["interval"])
 		var w_fire := ("%d RPM" % int(round(60.0 / w_interval))) \
 			if fire_mode == "rpm" else ("%.2fs/发" % w_interval)
-		var w_speed := int(round(float(weapon.bullet_speed_mps)))
+		var w_speed := int(round(float(wstats["speed"])))
 		var marker := "▶ " if id == _selected else "   "
 		var slot := ""
 		if id == _primary:

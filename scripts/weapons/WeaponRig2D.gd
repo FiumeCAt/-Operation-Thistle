@@ -21,6 +21,7 @@ const MAG_TEX := preload("res://assets/art/weapons/fx/mag_pistol.png")
 const SHELL_TEX := preload("res://assets/art/weapons/fx/mag_shell.png")
 
 const UNITS := preload("res://scripts/core/GameUnits.gd")
+const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
 ## 枪械贴图视觉缩放标尺（按参考角色 128px ≈ 1.7m 匹配握持长度，与世界 64 px/m 距离解耦）。
 const SPRITE_PX_PER_METER := UNITS.SPRITE_PX_PER_METER
 ## 像素风里手枪需要适度夸张，否则只有 15px 看不清；长枪按真实比例即可。
@@ -191,7 +192,7 @@ func _ready() -> void:
 	setup(weapon_id)
 
 
-## 把当前武器的配件效果汇总到 WeaponData；每次 setup/换枪都会重新计算。
+## 把当前武器的配件效果汇总到 WeaponData；统一委托给 WeaponStatsModel 计算。
 func _apply_mods() -> void:
 	damage_mul = 1.0
 	spread_mul = 1.0
@@ -209,58 +210,19 @@ func _apply_mods() -> void:
 	var progress := get_node_or_null("/root/Progress")
 	if progress == null or not progress.has_method("weapon_mods_2d"):
 		return
-	var installed: Dictionary = progress.weapon_mods_2d(weapon_id)
-	var mods := ModDB.modifiers(installed, false, String(weapon_id))
-	# 天赋「弹匣扩容」按比例增加弹匣容量。
-	var talent_mag := 1.0
-	if progress.has_method("talent_2d_level"):
-		talent_mag = 1.0 + float(progress.talent_2d_level(&"magazine")) * 0.08
-	damage_mul = float(mods["damage_mul"])
-	spread_mul = float(mods["spread_mul"])
-	recoil_mul = clampf(float(mods["recoil_mul"]), 0.2, 1.5)
-	vision_mul = clampf(float(mods["vision_mul"]), 1.0, 2.2)
-	ads_speed_mul = clampf(float(mods["ads_speed_mul"]), 1.0, 2.0)
-	sight_ads_time_mul = clampf(float(mods.get("ads_time_mul", 1.0)), 1.0, 2.0)
-	has_laser = bool(mods.get("laser", false))
-	# 瞄具的标定倍率/准心是字符串型元数据，不参与 ModDB 的倍率叠乘。
-	var sight := ModDB.option(
-		"sight", String(installed.get("sight", "")), false, String(weapon_id))
-	if not sight.is_empty():
-		sight_magnification = clampf(float(sight.get("magnification", 1.0)), 1.0, 8.0)
-		sight_reticle = String(sight.get("reticle", "iron"))
-		has_scope_sight = bool(sight.get("scope", false))
-		# 准星切换：玩家在改枪界面为这个瞄具选择的样式优先。
-		if progress.has_method("reticle_style"):
-			sight_reticle = String(progress.reticle_style(
-				String(installed.get("sight", "")), sight_reticle))
-	# 非高倍镜的 ADS 主镜头放大跟瞄具标定倍率一致（红点 1.1×、全息 1.5×）。
-	aim_zoom_mul = sight_magnification
-	data.load_time = maxf(0.05, data.load_time * float(mods["reload_mul"]))
-	data.fire_interval = maxf(0.03, data.fire_interval * float(mods["fire_mul"]))
-	data.range_m *= float(mods["range_mul"])
-	data.sound_radius *= float(mods["sound_mul"])
-	# 后坐力：连发散布增长/上限与开火镜震一起压低。
-	data.spread_growth *= recoil_mul
-	data.spread_max *= recoil_mul
-	data.shake_amount *= recoil_mul
-
-	# 弹匣是独立基础配件：容量取绝对值，最后再叠天赋倍率。
-	var magazine := ModDB.option("magazine", String(installed.get("magazine", "")), false, String(weapon_id))
-	if not magazine.is_empty():
-		var mag_fx: Dictionary = magazine.get("effects", {})
-		if mag_fx.has("capacity"):
-			data.mag_capacity = int(mag_fx["capacity"])
-	data.mag_capacity = maxi(1, int(round(float(data.mag_capacity) * talent_mag)))
-
-	# 枪机专属改件：全自动 / 固定射速。武器自带全自动（G18/AKM 等）保留。
-	data.auto_fire = data.default_auto_fire
-	var core := ModDB.option("core", String(installed.get("core", "")), false, String(weapon_id))
-	if not core.is_empty():
-		var core_fx: Dictionary = core.get("effects", {})
-		if core_fx.has("fire_interval_set"):
-			data.fire_interval = maxf(0.03, float(core_fx["fire_interval_set"]))
-		if bool(core_fx.get("full_auto", false)):
-			data.auto_fire = true
+	var stats: Dictionary = STATS_MODEL.compute_for_progress(weapon_id, progress)
+	damage_mul = float(stats["damage_mul"])
+	spread_mul = float(stats["spread_mul"])
+	recoil_mul = float(stats["recoil_mul"])
+	vision_mul = float(stats["vision_mul"])
+	ads_speed_mul = float(stats["ads_speed_mul"])
+	sight_ads_time_mul = float(stats["sight_ads_time_mul"])
+	has_laser = bool(stats["has_laser"])
+	sight_magnification = float(stats["sight_magnification"])
+	sight_reticle = String(stats["sight_reticle"])
+	has_scope_sight = bool(stats["has_scope_sight"])
+	aim_zoom_mul = float(stats["aim_zoom_mul"])
+	STATS_MODEL.apply_to_weapon_data(data, stats)
 
 
 ## 换装一把枪：读取 meta.json 的握把/枪口像素锚点，重建节点。
