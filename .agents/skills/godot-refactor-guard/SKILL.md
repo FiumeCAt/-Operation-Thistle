@@ -18,7 +18,7 @@ description: >-
    - 若项目已初始化 Git：确认工作树干净或先做安全 commit（如 `chore: checkpoint before refactoring <module>`）。
    - 若尚未初始化 Git：按 `backups/<YYYYMMDD_topic>/` 复制待改文件并写 `ROLLBACK.txt`（严禁混用不同检查点文件）。
 3. **锁定测试基线**：
-   - 运行 `powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1` 确认全量 39 个核心 2D 测试 `PASS`（约 1369 条断言，0 失败）。**基线不绿，禁止开始重构。**
+   - 运行 `powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1` 确认全量 44 个核心 2D 测试 `PASS`（约 1433 条断言，0 失败）。**基线不绿，禁止开始重构。**
 4. **盘点外部契约与已知陷阱**：
    - **纯计算模型已收口（Stage 2 完成）**：武器属性（`WeaponStatsModel`）、散布（`SpreadModel`）、弹道（`BallisticsModel`）、RHA 护甲/伤害（`DamageModel`）已抽离至单一纯模型，后续调整公式必须只在模型内修改。
    - **`WeaponData` 原地可变前提**：`WeaponDB.get_weapon()` 目前每次新建实例，而 `WeaponRig2D._apply_mods()` 会原地修改它；切勿在未做只读隔离前将 `WeaponDB.get_weapon()` 改为返回缓存共享实例。
@@ -36,6 +36,6 @@ description: >-
 
 ## 重构后（验收闭环）
 1. 新增或重命名 `.gd` 后必须先运行 `D:\Godot\Godot_v4.7.2-stable_win64_console.exe --headless --path . --import`。
-2. 再次执行 `run_core_tests.ps1` 跑通全部 37 个核心 2D 测试：确认全部 `PASS` 且总断言数不下降、无新增 `SCRIPT ERROR`。
+2. 再次执行 `run_core_tests.ps1` 跑通全部 44 个核心 2D 测试：确认全部 `PASS` 且总断言数不下降、无新增 `SCRIPT ERROR`。
 3. 如涉及 UI 或战斗表现，窗口模式截图并用 `read_file` 核对画面一致。
 4. 在 Git 中提交原子 commit（或记录对应检查点），写明拆出职责与测试通过数。

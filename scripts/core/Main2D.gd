@@ -29,7 +29,6 @@ const ZOOM := 0.95
 const CAMERA_LIFT := 44.0
 const ADS_ZOOM_SPEED := 6.0
 const SPREAD_MODEL := preload("res://scripts/combat/SpreadModel.gd")
-const BALLISTICS_MODEL := preload("res://scripts/combat/BallisticsModel.gd")
 ## 开镜散布收紧系数改为按弹种配置（AmmoData.ads_spread_mul），此处不再全局固定。
 ## 连发累积：开镜（ADS）时每发增长更慢；换弹/切枪期间回落更快（单一来源：SpreadModel）。
 const BURST_ADS_GROWTH_MUL := SPREAD_MODEL.BURST_ADS_GROWTH_MUL
@@ -53,15 +52,9 @@ const VIEW_ZOOM_MIN := 20.0
 const VIEW_ZOOM_MAX := 200.0
 const VIEW_ZOOM_STEP := 10.0
 const VIEW_ZOOM_LERP := 260.0
-## pixelfx 枪口特效的原点是枪口下方的地面参考点；插件的 height 默认 26px，
-## 所以节点要沿枪管下移 26px，闪光才会正好落在枪口上。
-const MUZZLE_FX_GROUND := 26.0
 const UNITS := preload("res://scripts/core/GameUnits.gd")
 const TILE := UNITS.TILE
 ## 新脚本用 preload 引用，避免依赖编辑器生成的全局类缓存。
-const HIT_FX := preload("res://scripts/fx/HitFX2D.gd")
-const PLAYER_BULLET := preload("res://scripts/fx/PlayerBullet2D.gd")
-const COMBAT_FX_WARMUP := preload("res://scripts/fx/CombatFxWarmup.gd")
 const VISION_FOG := preload("res://scripts/fx/VisionFog2D.gd")
 const LASER_SIGHT := preload("res://scripts/fx/LaserSight2D.gd")
 const SCOPE_SIGHT := preload("res://scripts/fx/ScopeSight2D.gd")
@@ -70,6 +63,10 @@ const LOOT_SYSTEM := preload("res://scripts/systems/LootSystem2D.gd")
 const WAVE_SYSTEM := preload("res://scripts/systems/WaveSystem2D.gd")
 const INTERACTION_SYSTEM := preload("res://scripts/systems/InteractionSystem2D.gd")
 const COMBAT_SYSTEM := preload("res://scripts/systems/CombatSystem2D.gd")
+const FEEDBACK_SYSTEM := preload("res://scripts/systems/FeedbackSystem2D.gd")
+## 枪口偏移/震动缩放常量统一收口至 FeedbackSystem2D，保留兼容别名。
+const MUZZLE_FX_GROUND := FEEDBACK_SYSTEM.MUZZLE_FX_GROUND
+const SHAKE_SCALE_BASE := FEEDBACK_SYSTEM.SHAKE_SCALE_BASE
 ## 战利品/掉落常量统一收口至 LootSystem2D，此处保留只读别名供旧测试兼容引用。
 const BASIC_DROP_TABLE := LOOT_SYSTEM.BASIC_DROP_TABLE
 const CONTAINER_LOOT_MIN := LOOT_SYSTEM.CONTAINER_LOOT_MIN
@@ -112,17 +109,24 @@ var enemies: Array[Enemy2D] = []
 ## 2D 天赋：枪械精度倍率与撤离资源倍率，在行动开始时从 Progress 读取。
 var talent_accuracy := 1.0
 var talent_scavenge := 1.0
-## 设置项：关闭后所有命中/开火抖动都不再累积。
-var screen_shake := true
-## 设置项：命中顿帧默认关闭；shake_scale 为开火震动幅度（1.0 = 100%，上限 10 倍）。
-var hitstop_enabled := false
-var shake_scale := 1.0
+## 打击反馈子系统（震屏/顿帧/红屏/枪口特效/预热/音效）及设置项兼容转发。
+var feedback_system: FeedbackSystem2D = FEEDBACK_SYSTEM.new()
+var screen_shake: bool:
+	get: return feedback_system.screen_shake
+	set(v): feedback_system.screen_shake = v
+var hitstop_enabled: bool:
+	get: return feedback_system.hitstop_enabled
+	set(v): feedback_system.hitstop_enabled = v
+var shake_scale: float:
+	get: return feedback_system.shake_scale
+	set(v): feedback_system.shake_scale = v
+var _shake: float:
+	get: return feedback_system.shake
+	set(v): feedback_system.shake = v
 ## 设置项：命中特写层级 2 完整 / 1 减弱 / 0 关闭。
 var hit_fx_level := 1
 ## 设置项：弹道线条（枪口到弹丸的长曳光线）默认开启；关闭后仅隐藏长线，弹丸实体与飞行/结算不变。
 var bullet_trail_enabled := true
-## 滑杆 100% 对应旧版 500% 的实际震动强度，统一在这里换算。
-const SHAKE_SCALE_BASE := 5.0
 
 ## 浪潮模式常量统一收口至 WaveSystem2D，保留别名供测试兼容引用。
 const WAVES_BASE_COUNT := WAVE_SYSTEM.BASE_COUNT
@@ -137,16 +141,6 @@ const WAVES_LOOT_STEP := WAVE_SYSTEM.LOOT_STEP
 
 var _label_timer := 0.0
 var interaction_system: InteractionSystem2D = INTERACTION_SYSTEM.new()
-var _shake := 0.0
-## 镜头旋转抖动与衰减速度：不同武器（霰弹/狙击/冲锋枪）套不同档位。
-var _shake_peak := 0.0
-var _shake_roll_deg := 0.2
-var _shake_decay := 32.0
-var _shake_roll := 0.0
-## 命中顿帧：命中/击杀瞬间把 time_scale 压到很低，让打击“咬住”。
-var _hitstop_timer: Timer
-## 受击红屏闪一下，强度随掉血量变化。
-var _hurt_flash_rect: ColorRect
 var _ads_t := 0.0
 ## 开镜期间是否由本脚本临时关闭了镜头位置平滑；松开瞄准后只恢复自己关掉的那一次。
 var _ads_smoothing_off := false
@@ -203,9 +197,6 @@ var laser_sight: LaserSight2D
 var hearing: HearingIndicator2D
 ## 高倍率瞄具：ADS 时在准心位置显示圆形镜内放大视野与对应准心。
 var scope_sight: ScopeSight2D
-## 枪口纯函数特效复用一个节点：无粒子实例，重播没有创建 spike。
-var _muzzle_fx: PixelFx2D
-var _muzzle_stop_ms := 0
 ## 浪潮模式子系统与对外兼容属性转发（单一状态源在 wave_system 内）。
 var wave_system: WaveSystem2D = WAVE_SYSTEM.new()
 var waves_mode: bool:
@@ -245,18 +236,19 @@ func _ready() -> void:
 	hud.setup(self)
 	hud.return_requested.connect(_return_to_base)
 	hud.restart_requested.connect(func() -> void: get_tree().reload_current_scene())
+	feedback_system.setup(self, fx_layer, doll, hud)
 	loot_system = LOOT_SYSTEM.new()
-	loot_system.setup(fx_layer, level, doll, hud, wave_loot_scale, _play_sfx, _add_loot)
+	loot_system.setup(fx_layer, level, doll, hud, wave_loot_scale, feedback_system.play_sfx, _add_loot)
 	wave_system.setup(self, sort_layer, level, doll, hud, enemies,
 		func() -> bool: return run_state == RunState.ACTIVE,
-		_on_enemy_died, _play_sfx)
+		_on_enemy_died, feedback_system.play_sfx)
 	wave_system.wave_changed.connect(func(w: int, state: String) -> void: wave_changed.emit(w, state))
 	wave_system.finish_requested.connect(_finish_run)
 	interaction_system.setup(level, doll, hud,
 		func() -> bool: return run_state == RunState.ACTIVE,
 		func() -> bool: return waves_mode,
 		func() -> int: return resources,
-		_default_hint, _play_sfx)
+		_default_hint, feedback_system.play_sfx)
 	interaction_system.container_search_requested.connect(_search_container)
 	interaction_system.extract_requested.connect(func(via_switch: bool) -> void: _finish_run(true, via_switch))
 	combat_system.setup(self, doll, fx_layer, reticle, enemies,
@@ -265,7 +257,8 @@ func _ready() -> void:
 		func() -> float: return talent_accuracy,
 		func() -> bool: return bullet_trail_enabled,
 		func() -> int: return hit_fx_level,
-		_play_muzzle_fx, _add_shake, _hitstop, _play_sfx)
+		feedback_system.play_muzzle_fx, feedback_system.add_shake,
+		feedback_system.hitstop, feedback_system.play_sfx)
 	combat_system.shot_fired.connect(func(wid: StringName, aid: StringName, pellets: int) -> void:
 		shot_fired.emit(wid, aid, pellets))
 	combat_system.hit_resolved.connect(func(target: Node, dmg: float, killed: bool, mat: String) -> void:
@@ -281,7 +274,7 @@ func _ready() -> void:
 	# 暂停菜单里的设置与开始菜单共用同一份存档；关闭设置页后立即套用到本局。
 	pause_menu.settings_applied.connect(_on_settings_applied)
 	pause_menu.retreat_requested.connect(_on_waves_retreat)
-	_build_hit_feedback()
+	feedback_system.build_hit_feedback()
 
 	map_overlay = MapOverlay2D.new()
 	map_overlay.name = "MapOverlay2D"
@@ -343,8 +336,8 @@ func _ready() -> void:
 		_spawn_enemies()
 		hud.set_hint(HINT_DEFAULT)
 	debug_overlay.visible = debug_visual_mode
-	_warm_muzzle_fx()
-	_warm_combat_fx()
+	feedback_system.warm_muzzle_fx()
+	feedback_system.warm_combat_fx()
 
 
 ## Alt 作为「整体视角缩放」修饰键；运行时注册，避免依赖 project.godot 的输入表。
@@ -408,11 +401,8 @@ func _apply_talents() -> void:
 	doll.sprint_speed *= move_mul
 	talent_accuracy = pow(0.94, float(progress.talent_2d_level(&"gun")))
 	talent_scavenge = 1.0 + float(progress.talent_2d_level(&"scavenge")) * 0.1
-	# 屏幕震动：设置里关闭后不再累积抖屏。
-	screen_shake = bool(progress.data.get("screen_shake", true))
-	hitstop_enabled = bool(progress.data.get("hitstop_enabled", false))
-	shake_scale = clampf(float(progress.data.get("shake_scale", 100.0)) / 100.0, 0.0, 10.0) \
-		* SHAKE_SCALE_BASE
+	# 屏幕震动 / 顿帧 / 震动倍率同步至 FeedbackSystem2D。
+	feedback_system.apply_settings(progress)
 	hit_fx_level = clampi(int(progress.data.get("hit_fx_level", 1)), 0, 2)
 	bullet_trail_enabled = bool(progress.data.get("bullet_trail_enabled", true))
 	_apply_bullet_trail_setting()
@@ -446,10 +436,7 @@ func _on_settings_applied() -> void:
 	var progress := get_node_or_null("/root/Progress")
 	if progress == null:
 		return
-	screen_shake = bool(progress.data.get("screen_shake", true))
-	hitstop_enabled = bool(progress.data.get("hitstop_enabled", false))
-	shake_scale = clampf(float(progress.data.get("shake_scale", 100.0)) / 100.0, 0.0, 10.0) \
-		* SHAKE_SCALE_BASE
+	feedback_system.apply_settings(progress)
 	hit_fx_level = clampi(int(progress.data.get("hit_fx_level", 1)), 0, 2)
 	bullet_trail_enabled = bool(progress.data.get("bullet_trail_enabled", true))
 	_apply_bullet_trail_setting()
@@ -460,17 +447,7 @@ func _on_settings_applied() -> void:
 
 ## 立即套用弹道线条开关：只隐藏枪口到弹丸的长线，弹丸实体与命中不受影响。
 func _apply_bullet_trail_setting() -> void:
-	if fx_layer == null:
-		return
-	var bullets: Array = []
-	for child in fx_layer.get_children():
-		if child is PlayerBullet2D:
-			bullets.append(child)
-		elif child.has_meta("bullet_trail"):
-			child.visible = bullet_trail_enabled
-	# 单独处理子弹：重新开启时可能需要在子弹当前位置补建线条。
-	for bullet in bullets:
-		bullet.set_trail_visible(bullet_trail_enabled)
+	feedback_system.apply_bullet_trail_setting(bullet_trail_enabled)
 
 
 func _spawn_enemies() -> void:
@@ -664,13 +641,8 @@ func _process(delta: float) -> void:
 		roundf((doll.global_position.x + look.x + _recoil_cam.x) / snap) * snap,
 		roundf((doll.global_position.y - CAMERA_LIFT + look.y + _recoil_cam.y) / snap) * snap,
 	)
-	if _shake > 0.0:
-		_shake = maxf(_shake - delta * _shake_decay, 0.0)
-		target += Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake
-		var ratio := clampf(_shake / maxf(_shake_peak, 0.001), 0.0, 1.0)
-		_shake_roll = randf_range(-1.0, 1.0) * deg_to_rad(_shake_roll_deg) * ratio
-		if _shake <= 0.0:
-			_shake_roll = 0.0
+	var shake_step := feedback_system.step_shake(delta)
+	target += shake_step["offset"]
 	# 瞄准期间关闭镜头位置平滑：平滑会让准心下的世界点持续“滑行”，
 	# 在 4× 镜里被放大成明显的瞄准偏移。腰射时恢复原有平滑，走位手感不变。
 	if _ads_t > 0.01 and camera.position_smoothing_enabled:
@@ -682,17 +654,8 @@ func _process(delta: float) -> void:
 		camera.reset_smoothing()
 		_ads_smoothing_off = false
 	camera.global_position = target
-	camera.rotation = _shake_roll + _recoil_roll
-	if _muzzle_fx != null and is_instance_valid(_muzzle_fx) and _muzzle_fx.is_playing():
-		# 枪口特效每帧贴回当前枪口；节点原点是枪口下方 26px 的地面参考点。
-		var barrel_angle := 0.0
-		if doll.weapon_rig != null:
-			barrel_angle = doll.weapon_rig.get_barrel_direction().angle()
-		_muzzle_fx.global_position = doll.get_muzzle_position() \
-			+ Vector2(0.0, MUZZLE_FX_GROUND).rotated(barrel_angle)
-		_muzzle_fx.global_rotation = barrel_angle
-		if Time.get_ticks_msec() >= _muzzle_stop_ms:
-			_muzzle_fx.stop()
+	camera.rotation = float(shake_step["roll"]) + _recoil_roll
+	feedback_system.update_muzzle_fx()
 	if mouse_aim_enabled:
 		doll.aim_target = get_global_mouse_position()
 	_update_hud(delta)
@@ -801,71 +764,6 @@ func _trace_pellet(origin: Vector2, direction: Vector2, length: float) -> Dictio
 	return combat_system.trace_pellet(origin, direction, length)
 
 
-## 枪口用 BAKED 模式。烘焙已交给主菜单/局内的 CombatFxWarmup 分摊，
-## 这里只创建节点，避免进局瞬间同步烘焙 50 多帧造成半秒级卡顿。
-func _warm_muzzle_fx() -> void:
-	_muzzle_fx = Shot2D.pixel_fx(fx_layer, "projectiles/muzzle-pistol",
-		Vector2.ZERO, 0.0, 60, 1.0, PixelFx2D.Mode.BAKED)
-	if _muzzle_fx == null:
-		return
-	_muzzle_fx.free_when_done = false
-	_muzzle_fx.modulate.a = 0.0
-	_muzzle_fx.stop()
-
-
-func _play_muzzle_fx(pos: Vector2, angle: float) -> void:
-	if _muzzle_fx == null or not is_instance_valid(_muzzle_fx):
-		_warm_muzzle_fx()
-		if _muzzle_fx == null:
-			return
-	_muzzle_fx.global_position = pos + Vector2(0.0, MUZZLE_FX_GROUND).rotated(angle)
-	_muzzle_fx.rotation = angle
-	_muzzle_fx.play()
-	_muzzle_fx.modulate.a = 1.0
-	# 保留前 0.45 秒的闪光/烟，之后的烟不再占资源。
-	_muzzle_stop_ms = Time.get_ticks_msec() + 450
-
-
-## 开局预热命中/击杀特效与命中采样：把首次战斗的一次性加载成本提前分摊掉。
-func _warm_combat_fx() -> void:
-	if DisplayServer.get_name() == "headless":
-		return
-	var sfx := get_node_or_null("/root/Sfx")
-	if sfx != null and sfx.has_method("warm_impact_samples"):
-		sfx.warm_impact_samples()
-	var warmup := COMBAT_FX_WARMUP.new()
-	warmup.name = "CombatFxWarmup"
-	add_child(warmup)
-	var variants := HIT_FX.impact_variants()
-	variants.push_front({"id": "projectiles/muzzle-pistol", "opts": {}})
-	warmup.setup(variants)
-	_warm_damage_fonts()
-
-
-## 伤害跳字使用 15/17/19/21 号字与 4px 描边，首次出现才光栅化会卡一下；
-## 先在不可见状态下画一帧，把字形与描边预热进字体缓存。
-func _warm_damage_fonts() -> void:
-	if DisplayServer.get_name() == "headless":
-		return
-	var layer := CanvasLayer.new()
-	layer.layer = -8
-	add_child(layer)
-	var row := HBoxContainer.new()
-	row.modulate.a = 0.0
-	layer.add_child(row)
-	for size in [15, 17, 19, 21, 23]:
-		var label := Label.new()
-		label.text = "-0123456789"
-		label.add_theme_font_override("font", PixelUI.FONT)
-		label.add_theme_font_size_override("font_size", size)
-		label.add_theme_color_override("font_outline_color", Color(0.01, 0.01, 0.02, 0.95))
-		label.add_theme_constant_override("outline_size", 4)
-		row.add_child(label)
-	await get_tree().process_frame
-	if is_instance_valid(layer):
-		layer.queue_free()
-
-
 func _on_weapon_fired(muzzle: Vector2, dir: Vector2) -> void:
 	combat_system.on_weapon_fired(muzzle, dir)
 
@@ -898,77 +796,18 @@ func _apply_hit_batch(ctx: Dictionary, target, amount: float,
 	combat_system.apply_hit_batch(ctx, target, amount, point, dir)
 
 
+## --- 打击反馈 / 特效 / 音效（委托至 FeedbackSystem2D）-------------------------
+
 func _play_sfx(kind: String, volume_db := 0.0) -> void:
-	var sfx := get_node_or_null("/root/Sfx")
-	if sfx != null:
-		sfx.play_2d(kind, volume_db, randf_range(0.96, 1.04))
+	feedback_system.play_sfx(kind, volume_db)
 
 
 func add_shake(amount: float) -> void:
-	_add_shake(amount)
-
-
-## 顿帧计时器与受击红屏只建一次，避免每次命中都新建节点。
-func _build_hit_feedback() -> void:
-	_hitstop_timer = Timer.new()
-	_hitstop_timer.one_shot = true
-	_hitstop_timer.ignore_time_scale = true
-	_hitstop_timer.process_mode = Node.PROCESS_MODE_ALWAYS
-	_hitstop_timer.timeout.connect(_end_hitstop)
-	add_child(_hitstop_timer)
-
-	var layer := CanvasLayer.new()
-	layer.layer = 90
-	add_child(layer)
-	_hurt_flash_rect = ColorRect.new()
-	_hurt_flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hurt_flash_rect.color = Color(0.72, 0.04, 0.04, 0.0)
-	layer.add_child(_hurt_flash_rect)
-	_hurt_flash_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-
-
-## 命中/击杀的短暂顿帧：把全局时间压到 12%，用真实时间计时恢复。
-func _hitstop(seconds: float) -> void:
-	if seconds <= 0.0 or _hitstop_timer == null or not hitstop_enabled:
-		return
-	# 无头测试不需要画面顿帧，避免拖慢物理步进与测试时长。
-	if DisplayServer.get_name() == "headless":
-		return
-	Engine.time_scale = 0.12
-	_hitstop_timer.start(maxf(_hitstop_timer.time_left, seconds))
-
-
-func _end_hitstop() -> void:
-	Engine.time_scale = 1.0
+	feedback_system.add_shake(amount)
 
 
 func _exit_tree() -> void:
-	Engine.time_scale = 1.0
-
-
-## 玩家受击：血量越掉越多，红屏越明显；同时带一点抖动。
-func _flash_hurt(hp_damage: int) -> void:
-	if _hurt_flash_rect == null:
-		return
-	var alpha := clampf(0.10 + float(hp_damage) / 160.0, 0.10, 0.34)
-	_hurt_flash_rect.color = Color(0.72, 0.04, 0.04, alpha)
-	var tw := _hurt_flash_rect.create_tween()
-	tw.tween_property(_hurt_flash_rect, "color:a", 0.0, 0.34)
-
-
-func _add_shake(amount: float, roll_deg := 0.18, decay := 32.0) -> void:
-	if not screen_shake:
-		return
-	amount *= shake_scale
-	roll_deg *= shake_scale
-	if amount <= 0.001:
-		return
-	var stronger := amount >= _shake
-	_shake = maxf(_shake, amount)
-	if stronger:
-		_shake_peak = maxf(_shake, 0.001)
-		_shake_roll_deg = roll_deg
-		_shake_decay = decay
+	feedback_system.reset_time_scale()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1093,9 +932,7 @@ func _finish_run(success: bool, via_switch := false,
 	if run_state != RunState.ACTIVE:
 		return
 	# 结算时务必把顿帧的时间缩放收回，避免结算界面继续慢放。
-	if _hitstop_timer != null:
-		_hitstop_timer.stop()
-	Engine.time_scale = 1.0
+	feedback_system.reset_time_scale()
 	if _wave_popup != null and _wave_popup.visible:
 		_wave_popup.visible = false
 		get_tree().paused = false
@@ -1156,17 +993,7 @@ func _finish_run(success: bool, via_switch := false,
 
 
 func _on_player_damaged(_amount: int, armor_damage: int, hp_damage: int, pos: Vector2) -> void:
-	# 护甲与生命同时承伤时分开飘字，玩家能直接看出哪一部分被打掉了。
-	if armor_damage > 0:
-		DamageNumber2D.spawn(fx_layer, pos + Vector2(-16, -6), armor_damage,
-			Color(0.45, 0.72, 1.0), "armor")
-	if hp_damage > 0:
-		DamageNumber2D.spawn(fx_layer, pos + Vector2(12, 4), hp_damage,
-			Color(1.0, 0.42, 0.38), "flesh", true)
-		# 真正掉血才红屏 + 抖屏，纯破甲只飘蓝字，避免一直闪。
-		_flash_hurt(hp_damage)
-		_add_shake(2.2, 0.3, 24.0)
-	hud.set_armor(doll.armor, doll.armor_max)
+	feedback_system.on_player_damaged(armor_damage, hp_damage, pos)
 
 
 func _on_player_died() -> void:
