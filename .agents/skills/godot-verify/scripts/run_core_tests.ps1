@@ -34,6 +34,7 @@ $DefaultCoreTests = @(
     "menu_2d_test",
     "mod_install_service_test",
     "mods_2d_test",
+    "nav_grid_2d_test",
     "navigation_2d_test",
     "new_enemies_2d_test",
     "player_bullet_test",

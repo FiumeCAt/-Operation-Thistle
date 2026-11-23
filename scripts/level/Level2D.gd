@@ -9,6 +9,7 @@ class_name Level2D
 
 const UNITS := preload("res://scripts/core/GameUnits.gd")
 const LAYOUT := preload("res://scripts/level/LevelLayoutData.gd")
+const NAV_GRID := preload("res://scripts/level/NavGrid2D.gd")
 const TILE := LAYOUT.TILE
 const MAP_W := LAYOUT.MAP_W
 const MAP_H := LAYOUT.MAP_H
@@ -251,12 +252,9 @@ var bonus_mul := 1.0
 var _rng := RandomNumberGenerator.new()
 var _switch_label: Label
 var _power_lamp: Polygon2D
-## 敌人寻路：按地板格生成可行走网格，门洞视为可通行。
-var _astar := AStarGrid2D.new()
-var _nav_ready := false
+## 敌人寻路网格子系统（委托至 NavGrid2D）。
+var nav_grid: NavGrid2D = NAV_GRID.new()
 var _nav_passable := {}
-## 家具、容器等静态障碍占用的格子；寻路时会绕开。
-var _nav_blocked := {}
 ## 歌利亚狂潮竞技场模式：不生成设施房间与墙体。
 var arena_mode := false
 var _nav_w := MAP_W
@@ -481,7 +479,7 @@ func _build_goliath_arena() -> void:
 	enemy_spawns.clear()
 	enemy_kinds.clear()
 	_nav_passable.clear()
-	_nav_blocked.clear()
+	nav_grid.clear()
 	safe_rooms = []
 	spawn_id = &"insertion"
 	extract_id = &"east"
@@ -600,104 +598,22 @@ func _build_walls() -> void:
 	_merge_walls(wall_cells)
 
 
-## 用 AStarGrid2D 建立整图寻路网格：地板与门洞可走，其余全部为实心。
+## --- 寻路网格（委托至 NavGrid2D）----------------------------------------------
+
 func _build_nav_grid(passable: Dictionary) -> void:
-	_astar.region = Rect2i(0, 0, _nav_w, _nav_h)
-	_astar.cell_size = Vector2(TILE, TILE)
-	# 让路径点落在格子中心，而不是格子左上角。
-	_astar.offset = Vector2(TILE, TILE) * 0.5
-	_astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
-	_astar.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
-	_astar.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
-	_astar.update()
-	_astar.fill_solid_region(Rect2i(0, 0, _nav_w, _nav_h), true)
-	for cell in passable:
-		if cell.x >= 0 and cell.y >= 0 and cell.x < _nav_w and cell.y < _nav_h:
-			_astar.set_point_solid(cell, false)
-	# 家具、容器与大厅压铸机都会挡住走位。
-	for cell in _nav_blocked:
-		if cell.x >= 0 and cell.y >= 0 and cell.x < _nav_w and cell.y < _nav_h:
-			_astar.set_point_solid(cell, true)
-	_nav_ready = true
+	nav_grid.build(_nav_w, _nav_h, passable)
 
 
-## 把带碰撞的家具/箱子所占格标记为寻路障碍。
 func _mark_nav_obstacle(pos: Vector2, size: Vector2) -> void:
-	var min_x := int(floor((pos.x - size.x * 0.5) / TILE))
-	var min_y := int(floor((pos.y - size.y * 0.5) / TILE))
-	var max_x := int(floor((pos.x + size.x * 0.5 - 0.01) / TILE))
-	var max_y := int(floor((pos.y + size.y * 0.5 - 0.01) / TILE))
-	for y in range(min_y, max_y + 1):
-		for x in range(min_x, max_x + 1):
-			_nav_blocked[Vector2i(x, y)] = true
+	nav_grid.mark_obstacle(pos, size)
 
 
-## 世界坐标是否落在可行走格内。
 func is_nav_walkable(world_pos: Vector2) -> bool:
-	if not _nav_ready:
-		return false
-	var cell := _world_to_nav_cell(world_pos)
-	return not _astar.is_point_solid(cell)
+	return nav_grid.is_walkable(world_pos)
 
 
-## 返回世界坐标路径（含起点与终点）；无路可走时为空。
 func find_nav_path(from_world: Vector2, to_world: Vector2) -> PackedVector2Array:
-	if not _nav_ready:
-		return PackedVector2Array()
-	var from_cell := _nearest_walkable_cell(_world_to_nav_cell(from_world), 3)
-	var to_cell := _nearest_walkable_cell(_world_to_nav_cell(to_world), 3)
-	if from_cell.x < 0 or to_cell.x < 0:
-		return PackedVector2Array()
-	var points: PackedVector2Array = _astar.get_point_path(from_cell, to_cell)
-	if points.size() < 2:
-		return points
-	return _smooth_nav_path(points)
-
-
-func _world_to_nav_cell(world_pos: Vector2) -> Vector2i:
-	return Vector2i(
-		clampi(int(floor(world_pos.x / TILE)), 0, _nav_w - 1),
-		clampi(int(floor(world_pos.y / TILE)), 0, _nav_h - 1),
-	)
-
-
-## 起点/终点贴墙时，向外找最近的可行走格。
-func _nearest_walkable_cell(cell: Vector2i, radius: int) -> Vector2i:
-	if not _astar.is_point_solid(cell):
-		return cell
-	for r in range(1, radius + 1):
-		for dy in range(-r, r + 1):
-			for dx in range(-r, r + 1):
-				if maxi(absi(dx), absi(dy)) != r:
-					continue
-				var probe := cell + Vector2i(dx, dy)
-				if probe.x < 0 or probe.y < 0 or probe.x >= _nav_w or probe.y >= _nav_h:
-					continue
-				if not _astar.is_point_solid(probe):
-					return probe
-	return Vector2i(-1, -1)
-
-
-## 拉直路径：只保留能直线走到的拐点，减少格子中心的锯齿感。
-func _smooth_nav_path(points: PackedVector2Array) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	out.append(points[0])
-	var anchor := 0
-	while anchor < points.size() - 1:
-		var next := points.size() - 1
-		while next > anchor + 1 and not _nav_line_clear(points[anchor], points[next]):
-			next -= 1
-		out.append(points[next])
-		anchor = next
-	return out
-
-
-func _nav_line_clear(a: Vector2, b: Vector2) -> bool:
-	var steps := maxi(1, int(ceil(a.distance_to(b) / 20.0)))
-	for i in steps + 1:
-		if not is_nav_walkable(a.lerp(b, float(i) / float(steps))):
-			return false
-	return true
+	return nav_grid.find_path(from_world, to_world)
 
 
 ## 贪心合并成较大的矩形，避免每个墙格一个 StaticBody2D。
