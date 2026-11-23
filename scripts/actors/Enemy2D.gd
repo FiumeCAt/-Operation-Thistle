@@ -11,6 +11,7 @@ const UNITS := preload("res://scripts/core/GameUnits.gd")
 const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
 const ENEMY_DEF := preload("res://scripts/actors/enemy/EnemyDef.gd")
 const ENEMY_VISUAL := preload("res://scripts/actors/enemy/EnemyVisual2D.gd")
+const ENEMY_PERCEPTION := preload("res://scripts/actors/enemy/EnemyPerception2D.gd")
 const TILE := UNITS.TILE
 const LOST_SIGHT := 7.0
 const SEARCH_TIME := 12.0
@@ -34,6 +35,7 @@ var home := Vector2.ZERO
 var player = null
 
 var visual: EnemyVisual2D = ENEMY_VISUAL.new()
+var perception: EnemyPerception2D = ENEMY_PERCEPTION.new()
 
 var _sprite: Sprite2D:
 	get: return visual.sprite
@@ -80,29 +82,23 @@ var _turret_lock_t := 0.0
 var _turret_locked := false
 var _laser_on := false
 var _laser_phase := 0.0
-## 扇形视野：朝向会随移动/警戒目标转动，站岗时缓慢扫视。
-var view_dir := Vector2.RIGHT
-var view_half := deg_to_rad(55.0)
+## 扇形视野：朝向会随移动/警戒目标转动，站岗时缓慢扫视（委托至 EnemyPerception2D）。
+var view_dir: Vector2:
+	get: return perception.view_dir
+	set(v): perception.view_dir = v
+var view_half: float:
+	get: return perception.view_half
+	set(v): perception.view_half = v
 ## 浪潮模式：无视侦测结果永久锁定玩家位置，主动向玩家移动。
 var always_hunt := false
 ## 关卡寻路网格：由 Main2D 在生成时注入；没有时退回直线移动。
 var nav_level = null
-## 贴脸察觉半径：4 格内不依赖扇形角度，避免走到脸上还被无视。
-const CLOSE_AWARE_RADIUS := 256.0
-const VIEW_TURN_SPEED := 5.0
-const VIEW_SWEEP_SPEED := 0.9
-## 寻路重算间隔与路径点到达半径（像素）。
-const NAV_REPATH := 0.55
-const NAV_WAYPOINT_RADIUS := 26.0
-const NAV_GOAL_TOLERANCE := 160.0
-
-var _nav_path := PackedVector2Array()
-var _nav_index := 0
-var _nav_goal := Vector2.INF
-var _nav_t := 0.0
-
-## “上一帧是否看见玩家”的边沿检测。
-var _saw_player := false
+const CLOSE_AWARE_RADIUS := ENEMY_PERCEPTION.CLOSE_AWARE_RADIUS
+const VIEW_TURN_SPEED := ENEMY_PERCEPTION.VIEW_TURN_SPEED
+const VIEW_SWEEP_SPEED := ENEMY_PERCEPTION.VIEW_SWEEP_SPEED
+const NAV_REPATH := ENEMY_PERCEPTION.NAV_REPATH
+const NAV_WAYPOINT_RADIUS := ENEMY_PERCEPTION.NAV_WAYPOINT_RADIUS
+const NAV_GOAL_TOLERANCE := ENEMY_PERCEPTION.NAV_GOAL_TOLERANCE
 
 
 func setup(kind_id: StringName, spawn: Vector2, depth: int,
@@ -174,7 +170,7 @@ func _physics_process(delta: float) -> void:
 	_hit_flash = maxf(_hit_flash - delta, 0.0)
 	_charge_cd = maxf(_charge_cd - delta, 0.0)
 	_hit_sfx_cd = maxf(_hit_sfx_cd - delta, 0.0)
-	_nav_t = maxf(_nav_t - delta, 0.0)
+	perception.tick(delta)
 	_state_t += delta
 	_process_burst(delta)
 	if _laser_on:
@@ -198,9 +194,9 @@ func _physics_process(delta: float) -> void:
 	var dist: float = to_player.length()
 	var can_see := can_see_player()
 	# 只在“看见”的上升沿播放头顶警觉图标；持续看见不会重复刷屏。
-	if can_see and not _saw_player:
+	if can_see and not perception.saw_player:
 		_show_alert_icon()
-	_saw_player = can_see
+	perception.saw_player = can_see
 	if not def.blind and can_see and state != "combat":
 		_enter("combat")
 	match state:
@@ -236,49 +232,12 @@ func _physics_process(delta: float) -> void:
 
 ## 扇形视野判定：距离 + 视野角 + 遮挡；贴脸时改为近身察觉。
 func can_see_player() -> bool:
-	if _dead or player == null or not is_instance_valid(player):
-		return false
-	# 声呐猎手等盲眼单位只看听觉，不参与扇形视野。
-	if def.blind:
-		return false
-	var dist := global_position.distance_to(player.global_position)
-	if dist > def.view_range * TILE and dist > CLOSE_AWARE_RADIUS:
-		return false
-	if dist <= CLOSE_AWARE_RADIUS:
-		return _line_of_sight()
-	var to: Vector2 = (player.global_position - global_position).normalized()
-	if absf(angle_difference(view_dir.angle(), to.angle())) > view_half:
-		return false
-	return _line_of_sight()
+	return perception.can_see_player(self, def, player, _sprite_h, _dead)
 
 
 ## 视野朝向：巡逻跟随移动方向，站岗缓慢扫视，警戒/战斗转向目标。
 func _update_view_direction(delta: float) -> void:
-	if _dead:
-		return
-	var aim_point := Vector2.ZERO
-	var has_aim := false
-	if state == "combat" and player != null and is_instance_valid(player):
-		aim_point = player.global_position
-		has_aim = true
-	elif state == "search" or state == "suspicious":
-		aim_point = _last_known
-		has_aim = true
-	if has_aim:
-		var to := aim_point - global_position
-		if to.length_squared() > 1.0:
-			view_dir = _turn_view_toward(to.normalized(), delta * VIEW_TURN_SPEED)
-			return
-	if velocity.length_squared() > 16.0:
-		view_dir = _turn_view_toward(velocity.normalized(), delta * VIEW_TURN_SPEED * 0.8)
-	else:
-		# 原地站岗时扇形缓慢旋转扫视，避免视野永远朝一个方向。
-		view_dir = view_dir.rotated(delta * VIEW_SWEEP_SPEED)
-
-
-func _turn_view_toward(target: Vector2, weight: float) -> Vector2:
-	var angle := lerp_angle(view_dir.angle(), target.angle(), clampf(weight, 0.0, 1.0))
-	return Vector2.from_angle(angle)
+	perception.update_view_direction(self, state, player, _last_known, _dead, delta)
 
 
 ## 受击后的形变回弹与击退位移。
@@ -557,79 +516,22 @@ func _play_anim_override(anim_name: String, time: float) -> void:
 	visual.play_anim_override(anim_name, time)
 
 
-## 追击方向：优先沿 A* 路径绕过墙体，路径不可用时退回直线。
+## 追击方向与移动（委托至 EnemyPerception2D）。
 func _chase_dir(target: Vector2) -> Vector2:
-	var pathed := _path_dir(target)
-	if pathed.length_squared() > 0.0001:
-		return pathed
-	var direct := target - global_position
-	if direct.length_squared() < 1.0:
-		return Vector2.ZERO
-	return direct.normalized()
+	return perception.chase_dir(self, nav_level, target)
 
 
-func _path_dir(target: Vector2) -> Vector2:
-	if nav_level == null or not nav_level.has_method("find_nav_path"):
-		return Vector2.ZERO
-	var needs_repath := _nav_t <= 0.0 or _nav_goal == Vector2.INF \
-		or target.distance_to(_nav_goal) > NAV_GOAL_TOLERANCE
-	if needs_repath:
-		_nav_path = nav_level.find_nav_path(global_position, target)
-		_nav_index = 1 if _nav_path.size() > 1 else 0
-		_nav_goal = target
-		_nav_t = NAV_REPATH
-	while _nav_index < _nav_path.size() \
-			and global_position.distance_to(_nav_path[_nav_index]) <= NAV_WAYPOINT_RADIUS:
-		_nav_index += 1
-	if _nav_index >= _nav_path.size():
-		return Vector2.ZERO
-	var to := _nav_path[_nav_index] - global_position
-	if to.length_squared() < 1.0:
-		return Vector2.ZERO
-	return to.normalized()
+func _move(dir: Vector2, speed_px: float, _delta: float) -> void:
+	perception.move_dir(self, def, dir, speed_px)
 
 
-## 近距避障：正前方撞墙时向两侧试探，避免贴住墙角原地抖动。
-func _avoid_walls(dir: Vector2) -> Vector2:
-	var probe := def.collision_radius + 26.0
-	if _probe_clear(dir, probe):
-		return dir
-	for angle in [30.0, -30.0, 60.0, -60.0, 90.0, -90.0]:
-		var probe_dir := dir.rotated(deg_to_rad(angle))
-		if _probe_clear(probe_dir, probe):
-			return probe_dir
-	return dir
-
-
-func _probe_clear(dir: Vector2, dist: float) -> bool:
-	var origin := global_position + Vector2(0, -8)
-	var query := PhysicsRayQueryParameters2D.create(origin, origin + dir * dist, 1)
-	return get_world_2d().direct_space_state.intersect_ray(query).is_empty()
-
-
-func _move(dir: Vector2, speed_px: float, delta: float) -> void:
-	if dir.length_squared() < 0.0001:
-		velocity = Vector2.ZERO
-		return
-	velocity = _avoid_walls(dir.normalized()) * speed_px
-	move_and_slide()
-
-
-func _move_toward(point: Vector2, speed_ratio: float, delta: float,
+func _move_toward(point: Vector2, speed_ratio: float, _delta: float,
 		use_nav := false) -> void:
-	var delta_vec := point - global_position
-	if delta_vec.length() < 8.0:
-		velocity = Vector2.ZERO
-		return
-	var dir := _chase_dir(point) if use_nav else delta_vec.normalized()
-	_move(dir, def.speed * TILE * speed_ratio, delta)
+	perception.move_toward(self, def, nav_level, point, speed_ratio, use_nav)
 
 
-func _move_away(from: Vector2, speed_px: float, delta: float) -> void:
-	var away := global_position - from
-	if away.length() < 1.0:
-		return
-	_move(away.normalized(), speed_px * TILE * 0.9, delta)
+func _move_away(from: Vector2, speed_px: float, _delta: float) -> void:
+	perception.move_away(self, def, from, speed_px)
 
 
 func _try_attack(dist: float) -> void:
@@ -689,31 +591,12 @@ func _attack_flash(color: Color) -> void:
 
 
 func _line_of_sight() -> bool:
-	if player == null:
-		return false
-	var space := get_world_2d().direct_space_state
-	# 胸/膝两条射线同时检查：膝部射线抬高到掩体顶部以上，避免敌人贴着物料箱时被自己的掩体挡住视线。
-	return _ray_clear(space, global_position + Vector2(0, -_sprite_h * 0.55),
-			player.global_position + Vector2(0, -60)) \
-		and _ray_clear(space, global_position + Vector2(0, -26),
-			player.global_position + Vector2(0, -26))
-
-
-func _ray_clear(space: PhysicsDirectSpaceState2D, from: Vector2, to: Vector2) -> bool:
-	var query := PhysicsRayQueryParameters2D.create(from, to, 1)
-	query.hit_from_inside = true
-	return space.intersect_ray(query).is_empty()
+	return perception.line_of_sight(self, player, _sprite_h)
 
 
 ## 能否看见指定位置（用于观察队友倒下）；只做距离外的射线遮挡判断。
 func can_see_point(point: Vector2) -> bool:
-	if _dead:
-		return false
-	var space := get_world_2d().direct_space_state
-	return _ray_clear(space, global_position + Vector2(0, -_sprite_h * 0.55),
-			point + Vector2(0, -20.0)) \
-		and _ray_clear(space, global_position + Vector2(0, -26),
-			point + Vector2(0, -26))
+	return perception.can_see_point(self, point, _sprite_h, _dead)
 
 
 ## 视野内队友被击杀：记住玩家的最新位置并重新进入搜索/战斗。
