@@ -5,6 +5,7 @@ extends SceneTree
 
 const TOOLTIP_VIEW := preload("res://scripts/ui/armory/ArmoryTooltipView.gd")
 const ARMOR_VIEW := preload("res://scripts/ui/armory/ArmoryArmorView.gd")
+const DETAIL_VIEW := preload("res://scripts/ui/armory/ArmoryDetailView.gd")
 
 var _pass := 0
 var _fail := 0
@@ -73,6 +74,22 @@ func _run() -> void:
 			and armor_view.values["防御等级"].text.contains("3.0mm RHA")
 			and armor_view.values["护甲吸收"].text.contains("+5%"),
 			"ArmorView reflects ceramic plate, gel liner, and rha_mm format")
+
+		# 3. DetailView 独立构建与刷新（定置排序 + 配件绿/红增减 + 悬浮来源同步）
+		p.reset_for_test()
+		p.data["weapon_mods_2d"]["m870"] = {"magazine": "tube_long"}
+		var detail_view: ArmoryDetailView = DETAIL_VIEW.new()
+		detail_view.build(host)
+		detail_view.refresh(&"m870", &"akm", &"g17", p, tip_view)
+		_check(detail_view.weapon_buttons.size() == WeaponDB.WEAPON_ORDER.size()
+			and detail_view.weapon_list.get_child(0) == detail_view.weapon_buttons[&"akm"]
+			and detail_view.weapon_list.get_child(1) == detail_view.weapon_buttons[&"g17"],
+			"ArmoryDetailView pins primary and secondary weapons to top")
+		_check(detail_view.detail_title.text.contains("M870")
+			and detail_view.detail_values["弹匣容量"].text.contains("7")
+			and detail_view.detail_deltas["弹匣容量"].text.contains("(+2)")
+			and tip_view.tips["弹匣容量"].contains("加长管仓"),
+			"ArmoryDetailView computes modded stats, deltas, and refreshes tooltips")
 		p.reset_for_test()
 
 	host.queue_free()

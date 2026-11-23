@@ -10,6 +10,7 @@ const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
 const MOD_SERVICE := preload("res://scripts/ui/armory/ModInstallService.gd")
 const TOOLTIP_VIEW := preload("res://scripts/ui/armory/ArmoryTooltipView.gd")
 const ARMOR_VIEW := preload("res://scripts/ui/armory/ArmoryArmorView.gd")
+const DETAIL_VIEW := preload("res://scripts/ui/armory/ArmoryDetailView.gd")
 const PANEL_SIZE := Vector2(1240, 820)
 ## 武器数据行 / 效果映射 / 悬浮窗宽度统一收口至 ArmoryTooltipView，保留兼容别名。
 const STAT_KEYS: Array[String] = TOOLTIP_VIEW.STAT_KEYS
@@ -25,15 +26,23 @@ const COLOR_PRESETS: Array[Color] = [
 var _selected: StringName = &"m870"
 var _primary: StringName = &"m870"
 var _secondary: StringName = &"g17"
-var _weapon_buttons: Dictionary = {}
-var _weapon_list: VBoxContainer
+var _detail_view: ArmoryDetailView = DETAIL_VIEW.new()
+var _weapon_buttons: Dictionary:
+	get: return _detail_view.weapon_buttons
+var _weapon_list: VBoxContainer:
+	get: return _detail_view.weapon_list
 var _mod_items: VBoxContainer
 ## 武器列表滚动容器：18 把枪时用于程序化定位与截图。
-var _list_scroll: ScrollContainer
-var _detail_values: Dictionary = {}
-var _detail_deltas: Dictionary = {}
-var _detail_base: Dictionary = {}
-var _detail_rows: Dictionary = {}
+var _list_scroll: ScrollContainer:
+	get: return _detail_view.list_scroll
+var _detail_values: Dictionary:
+	get: return _detail_view.detail_values
+var _detail_deltas: Dictionary:
+	get: return _detail_view.detail_deltas
+var _detail_base: Dictionary:
+	get: return _detail_view.detail_base
+var _detail_rows: Dictionary:
+	get: return _detail_view.detail_rows
 var _tooltip_view: ArmoryTooltipView = TOOLTIP_VIEW.new()
 var _detail_tips: Dictionary:
 	get: return _tooltip_view.tips
@@ -44,16 +53,21 @@ var _tip_panel: PanelContainer:
 var _tip_label: Label:
 	get: return _tooltip_view.tip_label
 	set(v): _tooltip_view.tip_label = v
-var _detail_title: Label
-var _detail_icon: TextureRect
+var _detail_title: Label:
+	get: return _detail_view.detail_title
+var _detail_icon: TextureRect:
+	get: return _detail_view.detail_icon
 var _loadout_label: Label
 var _feedback: Label
-var _primary_button: Button
-var _secondary_button: Button
+var _primary_button: Button:
+	get: return _detail_view.primary_button
+var _secondary_button: Button:
+	get: return _detail_view.secondary_button
 var _page := "weapon"
 var _weapon_sub := "data"
 var _weapon_page: Control
-var _weapon_data_page: Control
+var _weapon_data_page: Control:
+	get: return _detail_view.page
 var _armor_view: ArmoryArmorView = ARMOR_VIEW.new()
 var _armor_page: Control:
 	get: return _armor_view.page
@@ -162,73 +176,11 @@ func _build() -> void:
 	_sub_tab_mods.pressed.connect(func() -> void: _show_weapon_sub("mods"))
 	sub_tabs.add_child(_sub_tab_mods)
 
-	var content := HBoxContainer.new()
-	content.add_theme_constant_override("separation", 20)
-	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	weapon_page.add_child(content)
-	_weapon_data_page = content
-
-	var list_scroll := ScrollContainer.new()
-	list_scroll.custom_minimum_size.x = 580
-	list_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	content.add_child(list_scroll)
-	_list_scroll = list_scroll
-	var list := VBoxContainer.new()
-	list.add_theme_constant_override("separation", 8)
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list_scroll.add_child(list)
-	_weapon_list = list
-	for id in WeaponDB.WEAPON_ORDER:
-		var button := PixelUI.button("", 72)
-		button.custom_minimum_size.x = 540
-		button.add_theme_font_size_override("font_size", 20)
-		button.pressed.connect(func() -> void: _select(id))
-		list.add_child(button)
-		_weapon_buttons[id] = button
-
-	var detail := PixelUI.panel()
-	detail.custom_minimum_size.x = 480
-	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content.add_child(detail)
-	var detail_rows := VBoxContainer.new()
-	detail_rows.add_theme_constant_override("separation", 2)
-	detail.add_child(detail_rows)
-
-	var detail_header := HBoxContainer.new()
-	detail_header.add_theme_constant_override("separation", 10)
-	detail_rows.add_child(detail_header)
-	_detail_icon = TextureRect.new()
-	_detail_icon.name = "WeaponIcon"
-	_detail_icon.custom_minimum_size = Vector2(84, 84)
-	_detail_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_detail_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_detail_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	detail_header.add_child(_detail_icon)
-	var title_box := VBoxContainer.new()
-	title_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title_box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	detail_header.add_child(title_box)
-	_detail_title = PixelUI.label(title_box, "", PixelUI.FS_TITLE, PixelUI.AMBER)
-	PixelUI.label(title_box, "悬浮数据行查看加成来源", PixelUI.FS_BODY, PixelUI.DIM)
-	var detail_divider := HSeparator.new()
-	detail_divider.add_theme_color_override("color", Color(PixelUI.AMBER, 0.6))
-	detail_rows.add_child(detail_divider)
-	for key in STAT_KEYS:
-		_stat_row(detail_rows, key)
-
-	var equip_row := HBoxContainer.new()
-	equip_row.add_theme_constant_override("separation", 8)
-	detail_rows.add_child(equip_row)
-	_primary_button = PixelUI.button("设为主武器", 38)
-	_primary_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_primary_button.pressed.connect(func() -> void: _equip(true))
-	equip_row.add_child(_primary_button)
-
-	_secondary_button = PixelUI.button("设为副武器", 38)
-	_secondary_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_secondary_button.pressed.connect(func() -> void: _equip(false))
-	equip_row.add_child(_secondary_button)
+	_detail_view.build(weapon_page)
+	_detail_view.weapon_selected.connect(_select)
+	_detail_view.equip_requested.connect(_equip)
+	_detail_view.tip_show_requested.connect(_show_tip)
+	_detail_view.tip_hide_requested.connect(_hide_tip)
 
 	_build_armor_page(rows)
 	_build_mods_page(weapon_page)
@@ -253,26 +205,6 @@ func _build_tooltip() -> void:
 	_tooltip_view.build(self)
 
 
-func _stat_row(parent: Node, key: String) -> void:
-	var line := HBoxContainer.new()
-	line.mouse_filter = Control.MOUSE_FILTER_STOP
-	parent.add_child(line)
-	var name_label := PixelUI.label(line, key, 20, PixelUI.DIM)
-	name_label.custom_minimum_size.x = 130
-	var value := PixelUI.label(line, "-", 20, PixelUI.TEXT)
-	value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_detail_values[key] = value
-	# 增减标注单独一列右对齐，避免绿/红数字把基础数值挤得跳动。
-	var delta := PixelUI.label(line, "", 20, PixelUI.OK)
-	delta.custom_minimum_size.x = 110
-	delta.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_detail_deltas[key] = delta
-	_detail_rows[key] = line
-	line.mouse_entered.connect(_show_tip.bind(key))
-	line.mouse_exited.connect(_hide_tip)
-
-
 func _show_tip(key: String) -> void:
 	_tooltip_view.show_tip(key)
 
@@ -286,26 +218,9 @@ func _process(_delta: float) -> void:
 		_tooltip_view.place_tip()
 
 
-## 写入实际数值与增减标注。delta 为相对基础值的差值；
-## higher_is_better 为 true 时增加标绿、减少标红，false 时相反。
 func _set_stat(key: String, text: String, base_text: String,
 		delta: float, higher_is_better: bool, digits: int) -> void:
-	_detail_values[key].text = text
-	_detail_base[key] = base_text
-	var delta_label: Label = _detail_deltas[key]
-	if absf(delta) < 0.0001:
-		delta_label.text = ""
-		return
-	var number := ""
-	if digits <= 0:
-		number = "%+d" % int(round(delta))
-	elif digits == 1:
-		number = "%+.1f" % delta
-	else:
-		number = "%+.2f" % delta
-	delta_label.text = "(%s)" % number
-	var gain := (delta > 0.0) == higher_is_better
-	delta_label.add_theme_color_override("font_color", PixelUI.OK if gain else PixelUI.DANGER)
+	_detail_view.set_stat(key, text, base_text, delta, higher_is_better, digits)
 
 
 func _refresh_tooltips(installed: Dictionary, reload_talent: float, ammo) -> void:
@@ -1112,140 +1027,12 @@ func _read_loadout() -> void:
 	_secondary = slots["secondary"]
 
 
-## 数据页读取「基础值 × 配件加成」的实际值，统一由 WeaponStatsModel 计算。
+## 数据页读取「基础值 × 配件加成」的实际值，统一委托 ArmoryDetailView。
 func _refresh() -> void:
 	_read_loadout()
-	_apply_pinned_order(_weapon_list, _weapon_buttons, false)
 	_hide_tip()
-	var installed: Dictionary = {}
-	var fire_mode := "interval"
-	var reload_talent := 1.0
-	var p := get_node_or_null("/root/Progress")
-	if p != null:
-		installed = p.weapon_mods_2d(_selected)
-		fire_mode = String(p.data.get("fire_rate_display", "interval"))
-		reload_talent = STATS_MODEL.reload_talent_mul(int(p.talent_2d_level(&"reload")))
-
-	var stats: Dictionary = STATS_MODEL.compute_for_progress(_selected, p, installed)
-	var base: WeaponData = stats["base"]
-	var ammo = stats["ammo"]
-
-	_detail_title.text = base.display_name
-	var icon_path := "res://assets/art/weapons/%s/icon.png" % _selected
-	_detail_icon.texture = load(icon_path) if ResourceLoader.exists(icon_path) else null
-
-	var mag: int = int(stats["mag"])
-	var load_time: float = float(stats["load"])
-	var interval: float = float(stats["interval"])
-	var range_m: float = float(stats["range"])
-	var sound: float = float(stats["sound"])
-	var base_damage: float = float(stats["base_pellet_damage"])
-	var damage: float = float(stats["pellet_damage"])
-	var spread_base: float = float(stats["base_spread"])
-	var spread_actual: float = float(stats["spread"])
-
-	_detail_values["口径"].text = base.caliber_label
-	_detail_base["口径"] = ""
-	var feed := "弹匣" if base.feed_mode == &"mag" else "管式"
-	var cycle := "自动" if base.feed_mode == &"mag" else "泵动 %.2fs" % base.pump_time
-	_detail_values["供弹方式"].text = "%s · %s" % [feed, cycle]
-	_detail_base["供弹方式"] = ""
-
-	_set_stat("弹匣容量", "%d 发" % mag, "%d 发" % base.mag_capacity,
-		float(mag - base.mag_capacity), true, 0)
-	var load_suffix := " / 发" if base.feed_mode == &"shell" else ""
-	_set_stat("换弹时间", "%.2fs%s" % [load_time, load_suffix],
-		"%.2fs%s" % [base.load_time, load_suffix],
-		load_time - base.load_time, false, 2)
-	if fire_mode == "rpm":
-		var rpm := 60.0 / interval
-		var base_rpm := 60.0 / maxf(base.fire_interval, 0.001)
-		_set_stat("射速", "%d RPM" % int(round(rpm)), "%d RPM" % int(round(base_rpm)),
-			rpm - base_rpm, true, 0)
-	else:
-		_set_stat("射速", "%.2fs / 发" % interval, "%.2fs / 发" % base.fire_interval,
-			interval - base.fire_interval, false, 2)
-	_set_stat("射程", "%.0fm" % range_m, "%.0fm" % base.range_m,
-		range_m - base.range_m, true, 0)
-	var bullet_speed := int(round(float(stats["speed"])))
-	_set_stat("子弹速度", "%d m/s" % bullet_speed, "%d m/s" % bullet_speed,
-		0.0, true, 0)
-	_set_stat("散布", "%.1f°" % rad_to_deg(spread_actual),
-		"%.1f°" % rad_to_deg(spread_base),
-		rad_to_deg(spread_actual - spread_base), false, 1)
-	_detail_values["后坐抑制"].text = "%d%%" % int(round(float(stats["recoil"]) * 100.0))
-	_detail_base["后坐抑制"] = ""
-	_detail_deltas["后坐抑制"].text = ""
-	_detail_values["垂直后坐"].text = "基 %.0f / 限 %.0f" % [
-		base.recoil_vertical, base.recoil_max_vertical]
-	_detail_base["垂直后坐"] = ""
-	_detail_deltas["垂直后坐"].text = ""
-	_detail_values["水平后坐"].text = "基 %.0f / 限 %.0f" % [
-		base.recoil_horizontal, base.recoil_max_horizontal]
-	_detail_base["水平后坐"] = ""
-	_detail_deltas["水平后坐"].text = ""
-	_detail_values["视野倍率"].text = "+%d%%" % int(round(float(stats["vision"]) * 100.0))
-	_detail_base["视野倍率"] = ""
-	_detail_deltas["视野倍率"].text = ""
-	_detail_values["瞄准速度"].text = "+%d%%" % int(round(float(stats["ads"]) * 100.0))
-	_detail_base["瞄准速度"] = ""
-	_detail_deltas["瞄准速度"].text = ""
-	_set_stat("枪声范围", "%.0fm" % sound, "%.0fm" % base.sound_radius,
-		sound - base.sound_radius, false, 0)
-	if ammo == null:
-		_detail_values["弹药"].text = "-"
-		_detail_base["弹药"] = ""
-		_detail_deltas["弹药"].text = ""
-		_detail_values["弹丸数"].text = "-"
-		_detail_base["弹丸数"] = ""
-		_detail_deltas["弹丸数"].text = ""
-		_detail_values["穿甲"].text = "-"
-		_detail_base["穿甲"] = ""
-		_detail_deltas["穿甲"].text = ""
-		_detail_values["伤害"].text = "-"
-		_detail_base["伤害"] = ""
-		_detail_deltas["伤害"].text = ""
-	else:
-		# 弹药行只写弹种自身信息；伤害行给出完整计算：弹丸 × 单发 × 加成。
-		var ammo_text: String = ammo.display_name
-		if ammo.pellets > 1:
-			ammo_text += " ×%d" % ammo.pellets
-		_detail_values["弹药"].text = ammo_text
-		_detail_base["弹药"] = ""
-		_detail_deltas["弹药"].text = ""
-		_detail_values["弹丸数"].text = "%d" % ammo.pellets
-		_detail_base["弹丸数"] = ""
-		_detail_deltas["弹丸数"].text = ""
-		_detail_values["穿甲"].text = DAMAGE_MODEL.format_rha(ammo.ap, _armor_display_mode())
-		_detail_base["穿甲"] = ""
-		_detail_deltas["穿甲"].text = ""
-		var pellets := float(ammo.pellets)
-		_set_stat("伤害",
-			"%d × %.1f = %.1f" % [ammo.pellets, damage, float(stats["damage"])],
-			"%d × %.1f = %.1f" % [ammo.pellets, base_damage, base_damage * pellets],
-			(damage - base_damage) * pellets, true, 1)
-
-	for id in WeaponDB.WEAPON_ORDER:
-		var button: Button = _weapon_buttons[id]
-		var wstats: Dictionary = STATS_MODEL.compute_for_progress(id, p)
-		var weapon: WeaponData = wstats["base"]
-		var w_mag: int = int(wstats["mag"])
-		var w_range: float = float(wstats["range"])
-		var w_interval: float = float(wstats["interval"])
-		var w_fire := ("%d RPM" % int(round(60.0 / w_interval))) \
-			if fire_mode == "rpm" else ("%.2fs/发" % w_interval)
-		var w_speed := int(round(float(wstats["speed"])))
-		var marker := "▶ " if id == _selected else "   "
-		var slot := ""
-		if id == _primary:
-			slot = " [主]"
-		elif id == _secondary:
-			slot = " [副]"
-		button.text = "%s%s%s\n弹匣容量 %d · 射程 %.0fm · 弹速 %d m/s · %s" % [
-			marker, weapon.display_name, slot, w_mag, w_range, w_speed, w_fire,
-		]
-
-	_refresh_tooltips(installed, reload_talent, ammo)
+	_detail_view.refresh(_selected, _primary, _secondary,
+		get_node_or_null("/root/Progress"), _tooltip_view)
 	_loadout_label.text = "当前携带：主武器 %s · 副武器 %s" % [
 		WeaponDB.get_weapon(_primary).display_name,
 		WeaponDB.get_weapon(_secondary).display_name,
