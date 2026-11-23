@@ -24,6 +24,7 @@ $DefaultCoreTests = @(
     "deco_containers_test",
     "deployment_2d_test",
     "enemy_attack_test",
+    "enemy_def_test",
     "feedback_system_test",
     "flow_2d_test",
     "fx_warmup_test",

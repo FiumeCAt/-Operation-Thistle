@@ -9,6 +9,7 @@ signal died(enemy)
 
 const UNITS := preload("res://scripts/core/GameUnits.gd")
 const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
+const ENEMY_DEF := preload("res://scripts/actors/enemy/EnemyDef.gd")
 const TILE := UNITS.TILE
 const LOST_SIGHT := 7.0
 const SEARCH_TIME := 12.0
@@ -22,6 +23,7 @@ const ALERT_ICON_LIFT := 38.0
 
 var kind: StringName = &"rifleman"
 var stats: Dictionary = {}
+var def: EnemyDef = ENEMY_DEF.new()
 var hp := 70.0
 var hp_max := 70.0
 ## 伤害倍率：浪潮模式随波次提升，常规关卡保持 1.0。
@@ -96,10 +98,10 @@ func setup(kind_id: StringName, spawn: Vector2, depth: int,
 		hp_mul := 1.0, damage_mul_value := 1.0) -> void:
 	kind = kind_id
 	stats = EnemyDB.stats(kind)
+	def = ENEMY_DEF.from_dict(kind, stats)
 	home = spawn
 	position = spawn
-	hp_max = float(stats["hp"]) * pow(1.1, float(maxi(depth - 1, 0))) \
-		* maxf(hp_mul, 0.01)
+	hp_max = def.scaled_hp(depth, hp_mul)
 	hp = hp_max
 	## 浪潮模式按波次放大输出；不改共享 stats，避免影响所有同类单位。
 	damage_mul = maxf(damage_mul_value, 0.01)
@@ -115,12 +117,7 @@ func _rng_angle() -> float:
 
 ## 扇形视野总角度：炮塔更宽，近战单位略窄，普通枪兵 110°。
 func _default_view_angle() -> float:
-	var behavior := String(stats.get("behavior", ""))
-	if behavior == "turret":
-		return 150.0
-	if bool(stats.get("melee", false)):
-		return 100.0
-	return 110.0
+	return def.default_view_angle()
 
 
 func _ready() -> void:
@@ -135,13 +132,12 @@ func _ready() -> void:
 
 
 func _body_scale() -> float:
-	return float(stats.get("body_scale", 0.30))
+	return def.body_scale
 
 
 func _build_visual() -> void:
-	var frames_path := String(stats.get("frames", ""))
-	if frames_path != "" and ResourceLoader.exists(frames_path):
-		_build_animated_visual(load(frames_path))
+	if def.frames_path != "" and ResourceLoader.exists(def.frames_path):
+		_build_animated_visual(load(def.frames_path))
 	else:
 		_build_still_visual()
 	_build_body_nodes()
@@ -149,7 +145,7 @@ func _build_visual() -> void:
 
 
 func _build_still_visual() -> void:
-	var tex: Texture2D = load(String(stats["texture"]))
+	var tex: Texture2D = load(def.texture_path)
 	var s := _body_scale()
 	_sprite_h = tex.get_height() * s
 	_make_shadow()
@@ -188,7 +184,7 @@ func _make_shadow() -> void:
 
 func _build_body_nodes() -> void:
 	var shape := CircleShape2D.new()
-	shape.radius = float(stats.get("collision_radius", 17.0))
+	shape.radius = def.collision_radius
 	var collision := CollisionShape2D.new()
 	collision.shape = shape
 	collision.position = Vector2(0, -8)
@@ -309,7 +305,7 @@ func _physics_process(delta: float) -> void:
 	if can_see and not _saw_player:
 		_show_alert_icon()
 	_saw_player = can_see
-	if not bool(stats.get("blind", false)) and can_see and state != "combat":
+	if not def.blind and can_see and state != "combat":
 		_enter("combat")
 	match state:
 		"patrol":
@@ -333,7 +329,7 @@ func _physics_process(delta: float) -> void:
 		"combat":
 			_do_combat(to_player, dist, can_see, delta)
 		"flee":
-			_move_away(player.global_position, float(stats["speed"]) * 0.85, delta)
+			_move_away(player.global_position, def.speed * 0.85, delta)
 			if _state_t > 2.5:
 				_enter("combat")
 	_tick_impact(delta)
@@ -347,10 +343,10 @@ func can_see_player() -> bool:
 	if _dead or player == null or not is_instance_valid(player):
 		return false
 	# 声呐猎手等盲眼单位只看听觉，不参与扇形视野。
-	if bool(stats.get("blind", false)):
+	if def.blind:
 		return false
 	var dist := global_position.distance_to(player.global_position)
-	if dist > float(stats["view_range"]) * TILE and dist > CLOSE_AWARE_RADIUS:
+	if dist > def.view_range * TILE and dist > CLOSE_AWARE_RADIUS:
 		return false
 	if dist <= CLOSE_AWARE_RADIUS:
 		return _line_of_sight()
@@ -414,14 +410,14 @@ func _wander_step(delta: float, speed_ratio: float) -> void:
 		return
 	if global_position.distance_to(_wander) < 36.0:
 		var angle := randf() * TAU
-		_wander = home + Vector2.from_angle(angle) * randf_range(0.0, float(stats["patrol_radius"]) * TILE)
+		_wander = home + Vector2.from_angle(angle) * randf_range(0.0, def.patrol_radius * TILE)
 		_wander_wait = randf_range(0.6, 1.6)
 		return
 	_move_toward(_wander, speed_ratio, delta)
 
 
 func _do_combat(to_target: Vector2, dist: float, can_see: bool, delta: float) -> void:
-	var behavior := String(stats.get("behavior", ""))
+	var behavior := def.behavior
 	if behavior == "charger":
 		_do_charger(to_target, dist, can_see, delta)
 		return
@@ -431,10 +427,10 @@ func _do_combat(to_target: Vector2, dist: float, can_see: bool, delta: float) ->
 	if behavior == "turret":
 		_do_turret(to_target, dist, can_see, delta)
 		return
-	var speed_px := float(stats["speed"]) * TILE
-	var range_px := float(stats["range"]) * TILE
+	var speed_px := def.speed * TILE
+	var range_px := def.attack_range * TILE
 	var dir := to_target.normalized()
-	if bool(stats["melee"]):
+	if def.melee:
 		if dist > range_px * 0.9:
 			_move(_chase_dir(player.global_position), speed_px, delta)
 		else:
@@ -449,7 +445,7 @@ func _do_combat(to_target: Vector2, dist: float, can_see: bool, delta: float) ->
 			_move(_chase_dir(player.global_position), speed_px, delta)
 		elif dist < desired * 0.65:
 			_move(-dir, speed_px, delta)
-		elif bool(stats.get("strafe", false)):
+		elif def.strafe:
 			_move(dir.orthogonal() * (1.0 if fmod(_state_t, 2.0) > 1.0 else -1.0), speed_px * 0.55, delta)
 		else:
 			velocity = Vector2.ZERO
@@ -464,7 +460,7 @@ func _do_combat(to_target: Vector2, dist: float, can_see: bool, delta: float) ->
 		if _lost_t > LOST_SIGHT and not always_hunt:
 			_enter("search")
 
-	if hp <= hp_max * 0.25 and bool(stats.get("flees", false)):
+	if hp <= hp_max * 0.25 and def.flees:
 		_enter("flee")
 
 
@@ -480,28 +476,28 @@ func _process_burst(delta: float) -> void:
 		return
 	_fire_round()
 	_burst_left -= 1
-	_burst_t = float(stats.get("burst_interval", 0.12))
+	_burst_t = def.burst_interval
 
 
 ## 哨兵一型：发现后先蓄力，再直线冲撞；撞到玩家造成伤害并进入冷却。
 func _do_charger(to_target: Vector2, dist: float, can_see: bool, delta: float) -> void:
-	var speed_px := float(stats["speed"]) * TILE
-	var range_px := float(stats["range"]) * TILE
+	var speed_px := def.speed * TILE
+	var range_px := def.attack_range * TILE
 	var dir := to_target.normalized()
 	if _charge_t > 0.0:
 		_charge_t = maxf(_charge_t - delta, 0.0)
-		velocity = _charge_dir * float(stats.get("charge_speed", 6.0)) * TILE
+		velocity = _charge_dir * def.charge_speed * TILE
 		move_and_slide()
 		_play_anim_override("attack", 0.2)
 		if dist < range_px * 1.5:
 			_charge_t = 0.0
-			_charge_cd = float(stats.get("charge_cooldown", 3.0))
-			_attack_cd = float(stats["cooldown"])
+			_charge_cd = def.charge_cooldown
+			_attack_cd = def.cooldown
 			_attack_flash(Color(0.45, 1.0, 0.55))
 			_sfx("ram", -4.0, randf_range(0.95, 1.05))
 			_shake(5.0)
 			if player != null and is_instance_valid(player):
-				player.take_damage(float(stats["damage"]) * damage_mul, _attack_ap())
+				player.take_damage(def.damage * damage_mul, _attack_ap())
 				Shot2D.hit_burst(get_parent(), player.global_position + Vector2(0, -60),
 					(player.global_position - global_position).normalized(), "flesh", 0.7)
 		return
@@ -527,12 +523,12 @@ func _do_charger(to_target: Vector2, dist: float, can_see: bool, delta: float) -
 
 ## 哥利亚：贴近玩家后坐地，引信结束后自爆并同时死亡。
 func _do_suicide(to_target: Vector2, dist: float, can_see: bool, delta: float) -> void:
-	var range_px := float(stats["range"]) * TILE
+	var range_px := def.attack_range * TILE
 	if _explode_t >= 0.0:
 		_tick_self_destruct(delta)
 		return
 	if dist > range_px:
-		_move(_chase_dir(player.global_position), float(stats["speed"]) * TILE, delta)
+		_move(_chase_dir(player.global_position), def.speed * TILE, delta)
 	else:
 		_begin_self_destruct()
 		_play_anim_override("attack", 0.6)
@@ -547,15 +543,14 @@ func _do_suicide(to_target: Vector2, dist: float, can_see: bool, delta: float) -
 
 ## 自爆单位：哥利亚这类单位血量不会归零，而是锁在 1 点并点燃引信。
 func _is_self_destruct_unit() -> bool:
-	return bool(stats.get("death_explode", false)) \
-		or String(stats.get("behavior", "")) == "suicide"
+	return def.is_self_destruct_unit()
 
 
 ## 进入自爆状态：停止移动、坐地并启动引信；重复调用只保留第一次的引信。
 func _begin_self_destruct() -> void:
 	if _dead or _explode_t >= 0.0:
 		return
-	_explode_t = maxf(float(stats.get("explode_delay", 2.0)), 0.01)
+	_explode_t = maxf(def.explode_delay, 0.01)
 	velocity = Vector2.ZERO
 	_play_anim_override("attack", 0.2)
 	_sfx("fuse_long", -8.0)
@@ -634,8 +629,8 @@ func _draw() -> void:
 
 ## 哥利亚 2 秒倒计时：半透明红圈 + 从边缘向内填充的进度。
 func _draw_blast_ring() -> void:
-	var total := maxf(float(stats.get("explode_delay", 2.0)), 0.01)
-	var radius := float(stats.get("explode_radius", 3.2)) * TILE
+	var total := maxf(def.explode_delay, 0.01)
+	var radius := def.explode_radius * TILE
 	var progress := clampf(1.0 - _explode_t / total, 0.0, 1.0)
 	var center := Vector2(0.0, -6.0)
 	draw_circle(center, radius, Color(1.0, 0.08, 0.06, 0.10))
@@ -665,18 +660,13 @@ func _shake(amount: float) -> void:
 ## 爆炸友伤比例：歌利亚狂潮内降到 50%，减少歌利亚互相引爆；
 ## 其他模式保持原来的 80%。
 func friendly_explosion_mul() -> float:
-	var progress := get_node_or_null("/root/Progress")
-	if progress != null and progress.has_method("map_id") \
-			and String(progress.run_mode()) == "waves" \
-			and String(progress.map_id()) == "goliath_arena":
-		return 0.5
-	return 0.8
+	return ENEMY_DEF.friendly_explosion_mul(get_node_or_null("/root/Progress"))
 
 
 ## 爆炸伤害对玩家和附近敌人同时生效（哥利亚的死亡爆炸也走这里）。
 func _explode_damage() -> void:
-	var radius_px := float(stats.get("explode_radius", 3.0)) * TILE
-	var dmg := float(stats.get("explode_damage", 60.0)) * damage_mul
+	var radius_px := def.explode_radius * TILE
+	var dmg := def.explode_damage * damage_mul
 	_sfx("boom", -3.0, randf_range(0.94, 1.02))
 	_shake(8.0)
 	if player != null and is_instance_valid(player) \
@@ -689,7 +679,7 @@ func _explode_damage() -> void:
 		if other == self or not (other is Enemy2D) or other.hp <= 0.0:
 			continue
 		if other.global_position.distance_to(global_position) <= radius_px:
-			var friendly_ap := float(other.stats["armor"]) if friendly_mul <= 0.5 else 60.0
+			var friendly_ap: float = (other as Enemy2D).def.armor if friendly_mul <= 0.5 else 60.0
 			other.take_damage(dmg * friendly_mul, friendly_ap)
 	_spawn_explosion_fx(radius_px)
 
@@ -766,7 +756,7 @@ func _path_dir(target: Vector2) -> Vector2:
 
 ## 近距避障：正前方撞墙时向两侧试探，避免贴住墙角原地抖动。
 func _avoid_walls(dir: Vector2) -> Vector2:
-	var probe := float(stats.get("collision_radius", 17.0)) + 26.0
+	var probe := def.collision_radius + 26.0
 	if _probe_clear(dir, probe):
 		return dir
 	for angle in [30.0, -30.0, 60.0, -60.0, 90.0, -90.0]:
@@ -797,7 +787,7 @@ func _move_toward(point: Vector2, speed_ratio: float, delta: float,
 		velocity = Vector2.ZERO
 		return
 	var dir := _chase_dir(point) if use_nav else delta_vec.normalized()
-	_move(dir, float(stats["speed"]) * TILE * speed_ratio, delta)
+	_move(dir, def.speed * TILE * speed_ratio, delta)
 
 
 func _move_away(from: Vector2, speed_px: float, delta: float) -> void:
@@ -810,24 +800,24 @@ func _move_away(from: Vector2, speed_px: float, delta: float) -> void:
 func _try_attack(dist: float) -> void:
 	if _attack_cd > 0.0 or not _line_of_sight():
 		return
-	var range_px := float(stats["range"]) * TILE
-	if bool(stats["melee"]):
+	var range_px := def.attack_range * TILE
+	if def.melee:
 		if dist <= range_px * 1.1:
-			_attack_cd = float(stats["cooldown"])
+			_attack_cd = def.cooldown
 			_attack_flash(Color(0.92, 0.32, 0.24))
 			_play_anim_override("attack", 0.35)
-			if String(stats.get("behavior", "")) == "melee":
+			if def.behavior == "melee":
 				_sfx("stab", -7.0, randf_range(0.95, 1.05))
 			_melee_slash(player.global_position)
-			player.take_damage(float(stats["damage"]) * damage_mul, _attack_ap())
+			player.take_damage(def.damage * damage_mul, _attack_ap())
 			Shot2D.hit_burst(get_parent(), player.global_position + Vector2(0, -60),
 				(player.global_position - global_position).normalized(), "flesh", 0.7)
 	else:
 		if dist <= range_px * 1.25:
-			_attack_cd = float(stats["cooldown"])
+			_attack_cd = def.cooldown
 			_attack_flash(Color(1.0, 0.78, 0.36))
 			_play_anim_override("attack", 0.4)
-			var burst := int(stats.get("burst", 1))
+			var burst := def.burst
 			if burst > 1:
 				_burst_left = burst
 				_burst_t = 0.0
@@ -847,7 +837,7 @@ func _fire_round() -> void:
 	var parent := get_parent()
 	if parent != null:
 		EnemyBullet2D.spawn(parent, muzzle + dir * 12.0, target,
-			float(stats["damage"]) * damage_mul, _attack_ap())
+			def.damage * damage_mul, _attack_ap())
 
 
 ## 近战挥击：朝玩家的弧形刀光，短暂淡出。
@@ -871,19 +861,7 @@ func _melee_slash(target: Vector2) -> void:
 
 ## 敌人攻击穿甲值（0.1 mm RHA 体系）：区分普通近战/9mm 与装甲单位高穿火力。
 func _attack_ap() -> float:
-	match kind:
-		&"rifleman":
-			return 22.0
-		&"sentry_type1":
-			return 25.0
-		&"mobile_turret":
-			return 35.0
-		&"hunter_type1":
-			return 40.0
-		&"heavy":
-			return 55.0
-		_:
-			return 12.0
+	return def.attack_ap()
 
 
 func _attack_flash(color: Color) -> void:
@@ -943,7 +921,7 @@ func alert_by_ally_death(clue_pos: Vector2) -> void:
 	_lost_t = 0.0
 	if player != null and is_instance_valid(player) \
 			and global_position.distance_to(player.global_position) \
-				< float(stats["view_range"]) * TILE \
+				< def.view_range * TILE \
 			and _line_of_sight():
 		_enter("combat")
 		return
@@ -960,7 +938,7 @@ func _enter(new_state: String) -> void:
 	if new_state == "combat" and state != "combat":
 		if _anim != null:
 			_sfx("enemy_alert", -10.0, randf_range(0.96, 1.05))
-		if String(stats.get("behavior", "")) == "turret":
+		if def.behavior == "turret":
 			_turret_locked = false
 			_turret_lock_t = 0.75
 			_laser_on = true
@@ -1056,8 +1034,7 @@ func _flash_color() -> Color:
 func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO) -> float:
 	if _dead:
 		return 0.0
-	var armor := float(stats["armor"])
-	var dmg: float = DAMAGE_MODEL.resolve_enemy_damage(amount, ap, armor)
+	var dmg: float = DAMAGE_MODEL.resolve_enemy_damage(amount, ap, def.armor)
 	hp -= dmg
 	_hit_flash = 0.14
 	# 停止力：击退 + 沿受击方向的压扁形变，重武器推得更远，大体型抗推。
@@ -1097,12 +1074,12 @@ func ground_center() -> Vector2:
 
 ## 命中材质：决定火花还是血，来自 enemies.json 的 hit_material。
 func hit_material() -> String:
-	return String(stats.get("hit_material", "metal"))
+	return def.hit_material
 
 
 ## 体型权重：大血量单位吃枪时反馈更重（火花更多、低频更沉）。
 func hit_weight() -> float:
-	return clampf(float(stats.get("hp", 70.0)) / 100.0, 0.7, 1.8)
+	return def.hit_weight()
 
 
 ## 枪声：听到后去声源处查看（巡逻 / 搜索状态才会被吸引）。
@@ -1133,9 +1110,9 @@ func _die() -> void:
 	_laser_on = false
 	queue_redraw()
 	# 哥利亚：被击杀也要先走完引信，而不是瞬间爆炸。
-	if bool(stats.get("death_explode", false)) and not _exploded:
+	if def.death_explode and not _exploded:
 		if _explode_t < 0.0:
-			_explode_t = float(stats.get("explode_delay", 2.0))
+			_explode_t = def.explode_delay
 			_sfx("fuse_long", -8.0)
 		_play_anim_override("attack", 0.2)
 		return
@@ -1160,7 +1137,7 @@ func _tick_death_fuse(delta: float) -> void:
 ## 死亡动画与节点回收；自爆单位在爆炸后播死亡帧。
 func _finish_death_visual() -> void:
 	if _anim != null:
-		if not _exploded or not bool(stats.get("death_explode", false)):
+		if not _exploded or not def.death_explode:
 			_sfx("enemy_death", -9.0, randf_range(0.95, 1.05))
 		_anim.play("death")
 		var anim_tween := create_tween()
