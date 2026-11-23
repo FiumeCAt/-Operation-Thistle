@@ -106,6 +106,16 @@ func _run() -> void:
 	_check(int(g17_auto["mag"]) == 50, "G17 drum mag == 50")
 	_check(String(g17_auto["sight_reticle"]) == "mildot", "reticle_resolver overrides default sight reticle")
 
+	# 不可变隔离：build_weapon_data 克隆新实例，绝不原地修改基础模板
+	var base_g17: WeaponData = WeaponDB.get_weapon(&"g17")
+	var built_g17: WeaponData = STATS_MODEL.build_weapon_data(base_g17, g17_auto)
+	_check(built_g17 != null and built_g17 != base_g17,
+		"build_weapon_data returns a cloned WeaponData instance")
+	_check(base_g17.mag_capacity == 17 and not base_g17.auto_fire,
+		"build_weapon_data never mutates the base WeaponData template")
+	_check(built_g17.mag_capacity == 50 and built_g17.auto_fire,
+		"cloned WeaponData carries modded capacity and auto_fire")
+
 	# Saiga-12K 全自动改件 + 20 发弹鼓 + 收束器（鹿弹 attachment_spread_scale=0.55）
 	var saiga_mod: Dictionary = STATS_MODEL.compute(
 		&"saiga12k",

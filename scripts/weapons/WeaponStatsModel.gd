@@ -173,7 +173,16 @@ static func compute_for_progress(weapon_id: StringName, progress: Node,
 	return compute(weapon_id, installed, talents, resolver)
 
 
-## 将 compute() 产出的改装字段写入运行期 WeaponData 实例（供 WeaponRig2D._apply_mods 使用）。
+## 基于基础模板克隆出全新运行期 WeaponData 并写入改装字段，绝不原地污染基础模板。
+static func build_weapon_data(base: WeaponData, stats: Dictionary) -> WeaponData:
+	if base == null:
+		return null
+	var out := base.clone()
+	apply_to_weapon_data(out, stats)
+	return out
+
+
+## 将 compute() 产出的改装字段写入目标 WeaponData 实例（仅对独立副本调用）。
 static func apply_to_weapon_data(data: WeaponData, stats: Dictionary) -> void:
 	if data == null:
 		return

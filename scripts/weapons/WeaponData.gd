@@ -59,3 +59,8 @@ class_name WeaponData
 @export var visual_path: String = ""
 @export var grip_px := Vector2.ZERO
 @export var muzzle_px := Vector2.ZERO
+
+
+## 返回当前武器数据的独立副本，供运行期叠加配件属性时避免原地污染基础模板。
+func clone() -> WeaponData:
+	return duplicate() as WeaponData

@@ -222,7 +222,7 @@ func _apply_mods() -> void:
 	sight_reticle = String(stats["sight_reticle"])
 	has_scope_sight = bool(stats["has_scope_sight"])
 	aim_zoom_mul = float(stats["aim_zoom_mul"])
-	STATS_MODEL.apply_to_weapon_data(data, stats)
+	data = STATS_MODEL.build_weapon_data(data, stats)
 
 
 ## 换装一把枪：读取 meta.json 的握把/枪口像素锚点，重建节点。
