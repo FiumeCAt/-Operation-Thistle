@@ -37,25 +37,17 @@ const BURST_RECOVERY_BUSY_MUL := SPREAD_MODEL.BURST_RECOVERY_BUSY_MUL
 ## 瞄准时镜头向准心方向前探，真正看清瞄准方向（仅非高倍镜使用）。
 const ADS_LOOK_AHEAD := 210.0
 const ADS_LOOK_SMOOTH := 8.0
-## 后坐力：每发把弹道中心向上/水平推开的累积偏移（世界像素），连续射击时上跳。
-const RECOIL_LIMIT := Vector2(52.0, 78.0)
-## 松开扳机后偏移回落的像素/秒。
-const RECOIL_RECOVER := 95.0
-## 开镜时后坐力与镜头抖动的衰减倍率，保证红点/高倍镜比腰射更稳。
-const RECOIL_ADS_MUL := 0.55
-## 镜头后坐踢的视觉倍率与上限（屏幕像素）。
-const RECOIL_CAM_SCALE := 0.95
-const RECOIL_CAM_LIMIT := 26.0
-## 连射时后坐力随累计量逐渐变强（1.0 → 1.0 + GAIN）。
-const RECOIL_BUILD_GAIN := 0.55
-## 首发散布窗口：停火超过该时长后的第一发按武器 first_shot_spread_mul 收紧（单一来源：SpreadModel）。
-const FIRST_SHOT_WINDOW := SPREAD_MODEL.FIRST_SHOT_WINDOW
-## 多弹丸命中聚合窗口：同一发霰弹的弹丸在窗口内到达时合并为一次结算，
-## 保持“护甲只减一次、伤害数字只跳一次”的旧手感。
-const BULLET_HIT_BATCH_WINDOW := 0.05
-## 水平后坐带来的轻微镜头翻滚（弧度）。
-const RECOIL_ROLL_SCALE := 0.0016
-const RECOIL_ROLL_LIMIT := 0.028
+## 后坐力/散布/聚合窗口常量统一收口至 CombatSystem2D，保留兼容别名。
+const RECOIL_LIMIT := COMBAT_SYSTEM.RECOIL_LIMIT
+const RECOIL_RECOVER := COMBAT_SYSTEM.RECOIL_RECOVER
+const RECOIL_ADS_MUL := COMBAT_SYSTEM.RECOIL_ADS_MUL
+const RECOIL_CAM_SCALE := COMBAT_SYSTEM.RECOIL_CAM_SCALE
+const RECOIL_CAM_LIMIT := COMBAT_SYSTEM.RECOIL_CAM_LIMIT
+const RECOIL_BUILD_GAIN := COMBAT_SYSTEM.RECOIL_BUILD_GAIN
+const FIRST_SHOT_WINDOW := COMBAT_SYSTEM.FIRST_SHOT_WINDOW
+const BULLET_HIT_BATCH_WINDOW := COMBAT_SYSTEM.BULLET_HIT_BATCH_WINDOW
+const RECOIL_ROLL_SCALE := COMBAT_SYSTEM.RECOIL_ROLL_SCALE
+const RECOIL_ROLL_LIMIT := COMBAT_SYSTEM.RECOIL_ROLL_LIMIT
 ## 整体视角缩放：20%–200%，每格 10%；100% 为默认视野。
 const VIEW_ZOOM_MIN := 20.0
 const VIEW_ZOOM_MAX := 200.0
@@ -77,6 +69,7 @@ const HEARING_INDICATOR := preload("res://scripts/fx/HearingIndicator2D.gd")
 const LOOT_SYSTEM := preload("res://scripts/systems/LootSystem2D.gd")
 const WAVE_SYSTEM := preload("res://scripts/systems/WaveSystem2D.gd")
 const INTERACTION_SYSTEM := preload("res://scripts/systems/InteractionSystem2D.gd")
+const COMBAT_SYSTEM := preload("res://scripts/systems/CombatSystem2D.gd")
 ## 战利品/掉落常量统一收口至 LootSystem2D，此处保留只读别名供旧测试兼容引用。
 const BASIC_DROP_TABLE := LOOT_SYSTEM.BASIC_DROP_TABLE
 const CONTAINER_LOOT_MIN := LOOT_SYSTEM.CONTAINER_LOOT_MIN
@@ -102,11 +95,18 @@ var loot := {"electronics": 0, "energy": 0, "parts": 0}
 var advanced_loot := {}
 ## 战利品总件数：撤离门槛与 XP/信用点结算沿用这个数。
 var resources := 0
-## 本局战斗统计：结算界面展示击杀、伤害、命中与用时。
+## 本局战斗统计：击杀由 Main2D 维护，射击/命中/伤害由 CombatSystem2D 维护并转发。
 var kills := 0
-var shots_fired := 0
-var shots_hit := 0
-var damage_dealt := 0.0
+var combat_system: CombatSystem2D = COMBAT_SYSTEM.new()
+var shots_fired: int:
+	get: return combat_system.shots_fired
+	set(v): combat_system.shots_fired = v
+var shots_hit: int:
+	get: return combat_system.shots_hit
+	set(v): combat_system.shots_hit = v
+var damage_dealt: float:
+	get: return combat_system.damage_dealt
+	set(v): combat_system.damage_dealt = v
 var run_elapsed := 0.0
 var enemies: Array[Enemy2D] = []
 ## 2D 天赋：枪械精度倍率与撤离资源倍率，在行动开始时从 Progress 读取。
@@ -150,26 +150,40 @@ var _hurt_flash_rect: ColorRect
 var _ads_t := 0.0
 ## 开镜期间是否由本脚本临时关闭了镜头位置平滑；松开瞄准后只恢复自己关掉的那一次。
 var _ads_smoothing_off := false
-## 连发散布累积量（弧度）：只有同一把枪连续开火才叠加，换枪清零。
-var _burst_spread := 0.0
-## 后坐力偏移（世界像素，y 为负表示向上）与镜头后坐踢（屏幕像素）。
-var _recoil_offset := Vector2.ZERO
-var _recoil_cam := Vector2.ZERO
-## 水平后坐的镜头翻滚，衰减回 0。
-var _recoil_roll := 0.0
-## 水平后坐的左右交替趋势，避免每发都朝同一边。
-var _recoil_side := 1.0
-## 最近一次射击的起点与中心方向：供弹道调试与回归测试使用。
-var last_shot_origin := Vector2.ZERO
-var last_shot_dir := Vector2.RIGHT
-## 最近一次射击每颗弹丸的实际方向（含散布），供回归测试验证弹着分布。
-var last_pellet_dirs: Array[Vector2] = []
-## 最近一次射击实际使用的散布（已乘首发收紧系数），供测试与调试。
-var last_pellet_spread := 0.0
-## 射击时钟与上次开火时间：用于判断首发（停火窗口）。
-var _shot_clock := 0.0
-var _last_shot_time := -100.0
-var _burst_weapon: StringName = &""
+## 战斗/散布/后坐力状态转发至 combat_system（保持测试读写字段兼容）。
+var _burst_spread: float:
+	get: return combat_system.burst_spread
+	set(v): combat_system.burst_spread = v
+var _recoil_offset: Vector2:
+	get: return combat_system.recoil_offset
+	set(v): combat_system.recoil_offset = v
+var _recoil_cam: Vector2:
+	get: return combat_system.recoil_cam
+	set(v): combat_system.recoil_cam = v
+var _recoil_roll: float:
+	get: return combat_system.recoil_roll
+	set(v): combat_system.recoil_roll = v
+var last_shot_origin: Vector2:
+	get: return combat_system.last_shot_origin
+	set(v): combat_system.last_shot_origin = v
+var last_shot_dir: Vector2:
+	get: return combat_system.last_shot_dir
+	set(v): combat_system.last_shot_dir = v
+var last_pellet_dirs: Array[Vector2]:
+	get: return combat_system.last_pellet_dirs
+	set(v): combat_system.last_pellet_dirs = v
+var last_pellet_spread: float:
+	get: return combat_system.last_pellet_spread
+	set(v): combat_system.last_pellet_spread = v
+var _shot_clock: float:
+	get: return combat_system.shot_clock
+	set(v): combat_system.shot_clock = v
+var _last_shot_time: float:
+	get: return combat_system.last_shot_time
+	set(v): combat_system.last_shot_time = v
+var _burst_weapon: StringName:
+	get: return combat_system.burst_weapon
+	set(v): combat_system.burst_weapon = v
 ## 整体视角缩放倍率与平滑值；滚轮改前者，镜头跟后者，避免跳变。
 var view_zoom_pct := 100.0
 var _view_zoom_visual := 100.0
@@ -245,6 +259,17 @@ func _ready() -> void:
 		_default_hint, _play_sfx)
 	interaction_system.container_search_requested.connect(_search_container)
 	interaction_system.extract_requested.connect(func(via_switch: bool) -> void: _finish_run(true, via_switch))
+	combat_system.setup(self, doll, fx_layer, reticle, enemies,
+		func() -> bool: return run_state == RunState.ACTIVE,
+		func() -> float: return _ads_t,
+		func() -> float: return talent_accuracy,
+		func() -> bool: return bullet_trail_enabled,
+		func() -> int: return hit_fx_level,
+		_play_muzzle_fx, _add_shake, _hitstop, _play_sfx)
+	combat_system.shot_fired.connect(func(wid: StringName, aid: StringName, pellets: int) -> void:
+		shot_fired.emit(wid, aid, pellets))
+	combat_system.hit_resolved.connect(func(target: Node, dmg: float, killed: bool, mat: String) -> void:
+		hit_resolved.emit(target, dmg, killed, mat))
 	reticle.setup(self)
 	scope_sight = SCOPE_SIGHT.new()
 	scope_sight.name = "ScopeSight2D"
@@ -586,7 +611,6 @@ func _scaled_materials(ratio: float) -> Dictionary:
 func _process(delta: float) -> void:
 	if run_state == RunState.ACTIVE:
 		run_elapsed += delta
-	_shot_clock += delta
 	# 右键瞄准只负责前探视野与散布收紧；整体缩放由 Alt+滚轮独立控制。
 	var want_ads := 1.0 if (doll.ads and run_state == RunState.ACTIVE) else 0.0
 	var ads_speed := ADS_ZOOM_SPEED
@@ -596,10 +620,7 @@ func _process(delta: float) -> void:
 	if dbg_progress != null:
 		ads_speed *= float(dbg_progress.debug_mul("ads"))
 	_ads_t = move_toward(_ads_t, want_ads, ads_speed * delta)
-	_update_burst_spread(delta)
-	_recoil_offset = _recoil_offset.move_toward(Vector2.ZERO, RECOIL_RECOVER * delta)
-	_recoil_cam = _recoil_cam.move_toward(Vector2.ZERO, 70.0 * delta)
-	_recoil_roll = move_toward(_recoil_roll, 0.0, 0.16 * delta)
+	combat_system.update(delta)
 	# 高倍镜开镜时主镜头保持腰射时的缩放与位置：任何拉宽/前探都会在鼠标不动时
 	# 改变准心下的世界点（瞄准箱子却看到旁边的门）。视野收益改由 40 米基础视野、
 	# 瞄具视野锥加宽与 4× 镜窗放大共同提供。
@@ -712,33 +733,14 @@ func _flash_hint(text: String) -> void:
 	interaction_system.flash_hint(text)
 
 
-## 射击原点用视觉枪口：弹道、tracer、枪口闪光和准心才能三点一线。
-## 枪口贴墙时只沿“身体中心 → 枪口”方向回退到墙前，绝不再退到身体中心。
+## --- 战斗 / 弹道 / 散布 / 后坐力（委托至 CombatSystem2D）----------------------
+
 func get_shot_origin() -> Vector2:
-	if doll.weapon_rig != null:
-		return doll.weapon_rig.get_muzzle_position()
-	return doll.global_position + SHOT_ORIGIN_OFFSET
+	return combat_system.get_shot_origin()
 
 
 func get_safe_shot_origin(muzzle_override: Vector2 = Vector2.INF) -> Vector2:
-	var muzzle: Vector2 = muzzle_override
-	if muzzle == Vector2.INF:
-		muzzle = get_shot_origin()
-	var center := doll.global_position + Vector2(0, -34)
-	var to_muzzle := muzzle - center
-	if to_muzzle.length_squared() < 4.0:
-		return muzzle
-	var query := PhysicsRayQueryParameters2D.create(center, muzzle, 1)
-	query.hit_from_inside = true
-	var hit := get_world_2d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
-		return muzzle
-	var dir := to_muzzle.normalized()
-	var point: Vector2 = hit["position"]
-	var safe := point - dir * 1.5
-	if (safe - center).dot(dir) <= 0.0:
-		return muzzle
-	return safe
+	return combat_system.get_safe_shot_origin(muzzle_override)
 
 
 ## 玩家当前视角缩放系数（1.0 = 100%，0.4 = 40%）。高倍镜用它联动镜内放大。
@@ -746,121 +748,57 @@ func view_zoom_scale() -> float:
 	return _view_zoom_visual / 100.0
 
 
-## 当前后坐力/开火抖动强度倍率：腰射 1.0，开镜逐步降到 RECOIL_ADS_MUL。
 func recoil_strength() -> float:
-	return lerpf(1.0, RECOIL_ADS_MUL, _ads_t)
+	return combat_system.recoil_strength()
 
 
-## 子弹与激光共用的射击方向：始终从起点指向准心 + 当前后坐力偏移；
-## 准心压在身上时退回枪口朝向，避免方向向量退化。
 func aim_direction_from(origin: Vector2) -> Vector2:
-	var aim := doll.aim_target + _recoil_offset
-	if aim.distance_to(origin) < 8.0 and doll.weapon_rig != null:
-		aim = origin + doll.weapon_rig.get_barrel_direction() * 120.0
-	var dir := aim - origin
-	if dir.length_squared() < 0.0001:
-		return Vector2.RIGHT
-	return dir.normalized()
+	return combat_system.aim_direction_from(origin)
 
 
-## 两点之间是否有墙/实体遮挡；用于拒绝“只打到探出墙外贴图”的伤害。
 func _wall_between(origin: Vector2, point: Vector2) -> Dictionary:
-	if origin.distance_squared_to(point) < 1.0:
-		return {}
-	var query := PhysicsRayQueryParameters2D.create(origin, point, 1)
-	query.hit_from_inside = true
-	return get_world_2d().direct_space_state.intersect_ray(query)
+	return combat_system.wall_between(origin, point)
 
 
-## 当前弹种：跟随武器装配表里的 ammo 字段，支持全部口径。
 func current_ammo() -> AmmoData:
-	var table := WeaponDB.ammo_table()
-	var data: WeaponData = doll.weapon_rig.data if doll.weapon_rig != null else null
-	if data != null and table.has(data.ammo_id):
-		return table[data.ammo_id]
-	return table[&"buckshot"]
+	return combat_system.current_ammo()
 
 
-## 全锥角（弧度）。统一委托 SpreadModel 计算，供准心圆环与开火共用。
 func get_aim_spread() -> float:
-	var ammo := current_ammo()
-	var weapon_data: WeaponData = doll.weapon_rig.data if doll.weapon_rig != null else null
-	var has_rig := doll.weapon_rig != null
-	var rig_mul := float(doll.weapon_rig.spread_mul) if has_rig else 1.0
-	var dbg_progress := get_node_or_null("/root/Progress")
-	var dbg_mul := float(dbg_progress.debug_mul("spread")) if dbg_progress != null else 1.0
-	return SPREAD_MODEL.compute_aim_spread(
-		ammo, weapon_data, _burst_spread, _recoil_offset,
-		rig_mul, has_rig, dbg_mul, _ads_t, talent_accuracy
-	)
+	return combat_system.get_aim_spread()
 
 
-## 全锥角均匀采样：get_aim_spread() 返回完整张角，弹丸在 [-S/2, +S/2] 内均匀分布。
 func _spread_offset(spread: float) -> float:
-	return SPREAD_MODEL.sample_offset(spread)
+	return combat_system.spread_offset(spread)
 
 
-## 每扣一次扳机累加一发散布（霰弹按一枪算，不按弹丸数）；开镜时增长更慢。
 func _add_burst_spread(data: WeaponData) -> void:
-	if data == null or data.spread_growth <= 0.0:
-		return
-	_burst_spread = SPREAD_MODEL.next_burst_spread(_burst_spread, data, doll.ads)
-	# 立刻标记当前武器，避免下一帧因 _burst_weapon 还是空而把首发累积清掉。
-	_burst_weapon = data.id
+	combat_system.add_burst_spread(data)
 
 
-## 每帧回落：换枪立即清零；换弹/切枪期间按更快的恢复速度回落。
 func _update_burst_spread(delta: float) -> void:
-	var data: WeaponData = doll.weapon_rig.data if doll.weapon_rig != null else null
-	if data == null:
-		_burst_spread = 0.0
-		_burst_weapon = &""
-		return
-	if data.id != _burst_weapon:
-		_burst_spread = 0.0
-		_burst_weapon = data.id
-		return
-	_burst_spread = SPREAD_MODEL.recover_burst_spread(
-		_burst_spread, data, doll.weapon_rig.is_busy(), delta)
+	combat_system.update_burst_spread(delta)
 
 
-## 准心遮挡提示：身体中心到鼠标之间是否有墙。
 func get_aim_block() -> Dictionary:
-	var origin := get_safe_shot_origin()
-	var aim := doll.aim_target
-	if aim.distance_to(origin) < 4.0:
-		return {"blocked": false, "point": aim}
-	var query := PhysicsRayQueryParameters2D.create(origin, aim, 1)
-	query.hit_from_inside = true
-	var hit := get_world_2d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
-		return {"blocked": false, "point": aim}
-	return {"blocked": true, "point": hit["position"]}
+	return combat_system.get_aim_block()
 
 
 func _shot_range() -> float:
-	var data: WeaponData = doll.weapon_rig.data if doll.weapon_rig != null else null
-	return BALLISTICS_MODEL.shot_range_px(data, WORLD_PER_METER)
+	return combat_system.shot_range()
 
 
-## 游戏内初速（px/s）：统一委托 BallisticsModel 计算。
 func bullet_speed_px_s(ammo: AmmoData, weapon_data: WeaponData = null) -> float:
-	return BALLISTICS_MODEL.bullet_speed_px_s(ammo, weapon_data, WORLD_PER_METER)
+	return combat_system.bullet_speed_px_s(ammo, weapon_data)
 
 
-## 带指数衰减的飞行时间（秒）：统一委托 BallisticsModel 计算。
 func bullet_travel_time(ammo: AmmoData, distance_m: float,
 		weapon_data: WeaponData = null) -> float:
-	return BALLISTICS_MODEL.bullet_travel_time(ammo, distance_m, weapon_data, WORLD_PER_METER)
+	return combat_system.bullet_travel_time(ammo, distance_m, weapon_data)
 
 
-## 单颗弹丸射线：墙（body layer 1）与敌人受击区（Area layer 2）一起查，取最近命中。
 func _trace_pellet(origin: Vector2, direction: Vector2, length: float) -> Dictionary:
-	var query := PhysicsRayQueryParameters2D.create(
-		origin, origin + direction * length, 1 | 2, [doll.get_rid()])
-	query.hit_from_inside = true
-	query.collide_with_areas = true
-	return get_world_2d().direct_space_state.intersect_ray(query)
+	return combat_system.trace_pellet(origin, direction, length)
 
 
 ## 枪口用 BAKED 模式。烘焙已交给主菜单/局内的 CombatFxWarmup 分摊，
@@ -928,221 +866,36 @@ func _warm_damage_fonts() -> void:
 		layer.queue_free()
 
 
-func _on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
-	if run_state != RunState.ACTIVE or doll.weapon_rig == null:
-		return
-	var data: WeaponData = doll.weapon_rig.data
-	if data == null:
-		return
-	var ammo := current_ammo()
-	shots_fired += 1
-	# 用信号里的真实枪口作为起点；只有枪口贴墙时才沿身体→枪口方向回退到墙前。
-	var origin := get_safe_shot_origin(muzzle)
-	# 第一发始终走准心；本发的后坐力在出膛后再累积，避免首发就偏。
-	var base_dir := aim_direction_from(origin)
-	last_shot_origin = origin
-	last_shot_dir = base_dir
-	last_pellet_dirs.clear()
-	# 后坐力：每发把弹道中心向上/水平推开；开镜时减弱，持续射击会累积上跳。
-	# 垂直/水平两套基础值与上限独立；累计越多，后续单发上跳越强。
-	var ads_mul := recoil_strength()
-	var dbg: Node = get_node_or_null("/root/Progress")
-	var dbg_v: float = float(dbg.debug_mul("recoil_v")) if dbg != null else 1.0
-	var dbg_h: float = float(dbg.debug_mul("recoil_h")) if dbg != null else 1.0
-	var dbg_cap: float = float(dbg.debug_mul("recoil_cap")) if dbg != null else 1.0
-	var cap_v: float = maxf(data.recoil_max_vertical * dbg_cap, data.recoil_vertical)
-	var cap_h: float = maxf(data.recoil_max_horizontal * dbg_cap, 1.0)
-	var build := clampf(absf(_recoil_offset.y) / cap_v, 0.0, 1.0)
-	var kick_v := data.recoil_vertical * dbg_v * ads_mul \
-		* lerpf(1.0, 1.0 + RECOIL_BUILD_GAIN, build)
-	var kick_h := (randf_range(-0.7, 0.7) + _recoil_side * 0.3) \
-		* data.recoil_horizontal * dbg_h * ads_mul * lerpf(1.0, 1.25, build)
-	_recoil_side = -_recoil_side
-	_recoil_offset += Vector2(kick_h, -kick_v)
-	_recoil_offset.x = clampf(_recoil_offset.x, -cap_h, cap_h)
-	_recoil_offset.y = clampf(_recoil_offset.y, -cap_v, 14.0)
-	_recoil_cam += Vector2(kick_h, -kick_v) * RECOIL_CAM_SCALE
-	_recoil_cam = _recoil_cam.limit_length(RECOIL_CAM_LIMIT)
-	_recoil_roll = clampf(_recoil_roll + kick_h * RECOIL_ROLL_SCALE,
-		-RECOIL_ROLL_LIMIT, RECOIL_ROLL_LIMIT)
-	# 枪口用纯函数特效，重播不重建粒子实例。
-	_play_muzzle_fx(muzzle, base_dir.angle())
-	var spread := get_aim_spread()
-	# 首发散布：停火超过窗口后的第一发按武器系数收紧；之后恢复全散布。
-	var first_shot := SPREAD_MODEL.is_first_shot(_shot_clock, _last_shot_time, FIRST_SHOT_WINDOW)
-	_last_shot_time = _shot_clock
-	var pellet_spread := SPREAD_MODEL.apply_first_shot(spread, data, first_shot)
-	last_pellet_spread = pellet_spread
-	# 本次射击用累积前的散布；扣完扳机再把这一发的累积加进去。
-	_add_burst_spread(data)
-	var length := _shot_range()
-	var damage_mul: float = doll.weapon_rig.damage_mul if doll.weapon_rig != null else 1.0
-	if dbg != null:
-		damage_mul *= float(dbg.debug_mul("damage"))
-
-	var pellet_count := maxi(1, ammo.pellets)
-	# 同一发子弹共享上下文：多弹丸在 50ms 内命中同一目标时合并结算，
-	# 保持护甲只减一次、伤害数字只跳一次。
-	var ctx := {
-		"data": data,
-		"ap": float(ammo.ap),
-		"knockback": float(data.knockback),
-		"multi": pellet_count > 1,
-		"pending": pellet_count,
-		"origin": origin,
-		"buckets": {},
-		"fx_targets": {},
-		"first_hit": false,
-		"first_kill": false,
-		"wall_fx": 0,
-		"flush_scheduled": false,
-	}
-	var speed := bullet_speed_px_s(ammo, data)
-	var drag_px := BALLISTICS_MODEL.drag_per_px(ammo, WORLD_PER_METER)
-	for i in pellet_count:
-		# 所有弹丸（含第一颗）都按实际散布锥均匀采样，不再强制中心线。
-		var direction := base_dir.rotated(_spread_offset(pellet_spread)).normalized()
-		last_pellet_dirs.append(direction)
-		var bullet := spawn_player_bullet(origin, direction, speed, drag_px,
-			ammo.damage * damage_mul, ammo.ap, length, ammo.color, ctx, data.knockback)
-		if bullet == null:
-			ctx["pending"] = int(ctx["pending"]) - 1
-
-	Shot2D.noise_ring(fx_layer, muzzle, 240.0, ammo.color)
-	for enemy in enemies:
-		if is_instance_valid(enemy):
-			enemy.hear_noise(muzzle, data.sound_radius)
-	_add_shake(data.shake_amount * ads_mul * lerpf(1.0, 1.35, build),
-		data.shake_roll * ads_mul, data.shake_decay)
-	_play_sfx(data.sfx_kind, -3.0)
-	shot_fired.emit(data.id, ammo.id, pellet_count)
+func _on_weapon_fired(muzzle: Vector2, dir: Vector2) -> void:
+	combat_system.on_weapon_fired(muzzle, dir)
 
 
-## 生成一颗解耦后的玩家弹丸，并把它的信号接入 Main2D 的命中/结束结算。
 func spawn_player_bullet(origin: Vector2, direction: Vector2, speed_px_s: float,
 		drag_px: float, dmg: float, pen: float, range_px: float,
 		bullet_color: Color, ctx: Dictionary, knock: float) -> PlayerBullet2D:
-	var exclude_rid := doll.get_rid() if doll != null else RID()
-	var bullet := PLAYER_BULLET.create(fx_layer, {
-		"origin": origin,
-		"direction": direction,
-		"speed_px_s": speed_px_s,
-		"drag_per_px": drag_px,
-		"damage": dmg,
-		"ap": pen,
-		"max_distance": range_px,
-		"color": bullet_color,
-		"shot_ctx": ctx,
-		"knockback": knock,
-		"exclude_rid": exclude_rid,
-		"trail_enabled": bullet_trail_enabled,
-		"wall_check": _wall_between,
-	})
-	if bullet != null:
-		bullet.enemy_hit.connect(_player_bullet_hit_enemy)
-		bullet.wall_hit.connect(_player_bullet_hit_wall)
-		bullet.finished.connect(_player_bullet_finished)
-	return bullet
+	return combat_system.spawn_player_bullet(origin, direction, speed_px_s, drag_px,
+		dmg, pen, range_px, bullet_color, ctx, knock)
 
-
-## --- 玩家弹丸命中结算 -------------------------------------------------------
-## 弹丸只负责飞行与扫掠检测，护甲/穿甲/击退/命中反馈统一在这里处理。
 
 func _player_bullet_hit_wall(bullet, point: Vector2, dir: Vector2) -> void:
-	var ctx: Dictionary = bullet.shot_ctx
-	if int(ctx.get("wall_fx", 0)) >= 3:
-		return
-	ctx["wall_fx"] = int(ctx.get("wall_fx", 0)) + 1
-	Shot2D.wall_hit(fx_layer, point, dir)
-	var audio := get_node_or_null("/root/Sfx")
-	if audio != null:
-		# 混凝土弹着：Sfx 内部有 45ms 节流，霰弹多颗弹丸只响一记。
-		audio.play_wall_impact(-15.0)
+	combat_system.on_bullet_hit_wall(bullet, point, dir)
 
 
 func _player_bullet_hit_enemy(bullet, target, point: Vector2, dir: Vector2) -> void:
-	var ctx: Dictionary = bullet.shot_ctx
-	if bool(ctx.get("multi", false)):
-		var bucket: Dictionary = ctx["buckets"].get(target, {})
-		if bucket.is_empty():
-			bucket = {"damage": 0.0, "point": point, "dir": dir}
-			ctx["buckets"][target] = bucket
-		bucket["damage"] = float(bucket["damage"]) + float(bullet.damage)
-		_schedule_shot_flush(ctx)
-		return
-	_apply_hit_batch(ctx, target, float(bullet.damage), point, dir)
+	combat_system.on_bullet_hit_enemy(bullet, target, point, dir)
 
 
-func _schedule_shot_flush(ctx: Dictionary) -> void:
-	if bool(ctx.get("flush_scheduled", false)):
-		return
-	ctx["flush_scheduled"] = true
-	get_tree().create_timer(BULLET_HIT_BATCH_WINDOW).timeout.connect(
-		_flush_shot_buckets.bind(ctx))
-
-
-## 窗口到点或弹丸全部结束时，把同一目标累计的弹丸伤害一次性结算。
 func _flush_shot_buckets(ctx: Dictionary) -> void:
-	ctx["flush_scheduled"] = false
-	var buckets: Dictionary = ctx.get("buckets", {})
-	if buckets.is_empty():
-		return
-	for target in buckets.keys():
-		var bucket: Dictionary = buckets[target]
-		buckets.erase(target)
-		if is_instance_valid(target):
-			_apply_hit_batch(ctx, target, float(bucket["damage"]),
-				bucket["point"], bucket["dir"])
+	combat_system.flush_shot_buckets(ctx)
 
 
 func _player_bullet_finished(bullet) -> void:
-	var ctx: Dictionary = bullet.shot_ctx
-	ctx["pending"] = maxi(0, int(ctx.get("pending", 0)) - 1)
-	if int(ctx["pending"]) <= 0:
-		_flush_shot_buckets(ctx)
+	combat_system.on_bullet_finished(bullet)
 
 
 func _apply_hit_batch(ctx: Dictionary, target, amount: float,
 		point: Vector2, dir: Vector2) -> void:
-	if run_state != RunState.ACTIVE:
-		return
-	var before := float(target.hp)
-	var dealt: float = target.take_damage(amount, float(ctx.get("ap", 0.0)),
-		dir * float(ctx.get("knockback", 0.0)))
-	damage_dealt += dealt
-	var killed := before > 0.0 and float(target.hp) <= 0.0
-	var material := "metal"
-	var weight := 1.0
-	if target.has_method("hit_material"):
-		material = String(target.hit_material())
-		weight = float(target.hit_weight())
-	if not ctx["fx_targets"].has(target):
-		ctx["fx_targets"][target] = true
-		HIT_FX.enemy_hit(fx_layer, point, dir, material, weight, killed, hit_fx_level)
-	var tint := Color(1.0, 0.84, 0.52) if material == "flesh" else Color(1.0, 0.95, 0.72)
-	DamageNumber2D.spawn(fx_layer, point, int(round(dealt)), tint,
-		material, killed or dealt >= 40.0)
-	_shot_hit_feedback(ctx, killed)
-	hit_resolved.emit(target, dealt, killed, material)
-
-
-func _shot_hit_feedback(ctx: Dictionary, killed: bool) -> void:
-	var data: WeaponData = ctx.get("data")
-	if data == null:
-		return
-	if not bool(ctx.get("first_hit", false)):
-		ctx["first_hit"] = true
-		shots_hit += 1
-		reticle.show_hit()
-		_add_shake(1.1 + data.shake_amount * 0.35,
-			data.shake_roll * 0.5, data.shake_decay)
-		# 命中顿帧：武器越重停得越久，击杀再多咬 30ms。
-		_hitstop(0.022 + data.shake_amount * 0.012 + (0.03 if killed else 0.0))
-	elif killed and not bool(ctx.get("first_kill", false)):
-		_hitstop(0.03)
-	if killed and not bool(ctx.get("first_kill", false)):
-		ctx["first_kill"] = true
-		_add_shake(1.4, maxf(data.shake_roll, 0.2), 26.0)
+	combat_system.apply_hit_batch(ctx, target, amount, point, dir)
 
 
 func _play_sfx(kind: String, volume_db := 0.0) -> void:
