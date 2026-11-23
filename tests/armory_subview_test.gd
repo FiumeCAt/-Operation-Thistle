@@ -6,6 +6,7 @@ extends SceneTree
 const TOOLTIP_VIEW := preload("res://scripts/ui/armory/ArmoryTooltipView.gd")
 const ARMOR_VIEW := preload("res://scripts/ui/armory/ArmoryArmorView.gd")
 const DETAIL_VIEW := preload("res://scripts/ui/armory/ArmoryDetailView.gd")
+const MOD_CANVAS_VIEW := preload("res://scripts/ui/armory/ArmoryModCanvasView.gd")
 
 var _pass := 0
 var _fail := 0
@@ -90,6 +91,27 @@ func _run() -> void:
 			and detail_view.detail_deltas["弹匣容量"].text.contains("(+2)")
 			and tip_view.tips["弹匣容量"].contains("加长管仓"),
 			"ArmoryDetailView computes modded stats, deltas, and refreshes tooltips")
+
+		# 4. ModCanvasView & ModStatsStrip 独立构建、锚点加载与实时预览对比
+		p.reset_for_test()
+		p.set_loadout_2d(&"akm", &"g17")
+		p.data["weapon_mods_2d"]["g17"] = {"core": "auto"}
+		p.set_fire_rate_display("rpm")
+		var mod_view: ArmoryModCanvasView = MOD_CANVAS_VIEW.new()
+		mod_view.build(host, func() -> Node: return p,
+			func() -> Dictionary: return {"primary": &"akm", "secondary": &"g17"})
+		mod_view.select_item("g17")
+		mod_view.select_slot("core")
+		_check(mod_view.mod_gun_tex != null and mod_view.mod_gun_anchors.size() == 6
+			and mod_view.mod_slot_buttons.size() == 6,
+			"ArmoryModCanvasView loads flat weapon texture and 6 anchor slots")
+		_check(mod_view.stats_strip.stat_values["rate"].text.contains("600")
+			and mod_view.stats_strip.stat_values["mode"].text == "全自动",
+			"ArmoryModStatsStrip renders live full-auto RPM and mode")
+		mod_view.select_item("armor")
+		_check(mod_view.mod_slots_box.visible and mod_view.mod_slots_box.get_child_count() == 3
+			and not mod_view.mod_gun_view.visible,
+			"ArmoryModCanvasView switches cleanly to 3-slot armor list")
 		p.reset_for_test()
 
 	host.queue_free()
