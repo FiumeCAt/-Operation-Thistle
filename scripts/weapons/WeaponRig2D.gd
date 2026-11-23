@@ -1,18 +1,20 @@
 extends Node2D
 class_name WeaponRig2D
 
-## 2D 持枪表现：两段手臂（大臂 + 小臂）+ 手 + 枪合成一个绕肩旋转的整体。
-## 腕固定在枪管轴线上，肩→肘→腕用两段 IK 解算，距离越近肘弯得越多。
-## 整组随鼠标 360°，朝上 / 背向身体时整组切到身体后面。
+## 2D 持枪表现协调入口：管理枪身/手臂/支撑臂/枪口焰/弹匣节点、输入与信号转发。
+## 供弹/换弹/切枪/收拔枪状态机委托至 WeaponFeedState2D；
+## 武器贴图度量、双臂 IK、枪管对齐、层级判定与姿态叠加委托至 WeaponPoseIK2D。
 
 signal fired(muzzle_global: Vector2, direction: Vector2)
 signal weapon_switched(id: StringName)
 signal reload_finished
 signal holstered_changed(stowed: bool)
 
-const META_PATH := "res://assets/art/weapons/%s/meta.json"
-const TEX_PATH := "res://assets/art/weapons/%s/side.png"
-## 手臂分件（tools/slice_arm_parts.py 从 image2.5 母版切出）。
+const UNITS := preload("res://scripts/core/GameUnits.gd")
+const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
+const FEED_STATE := preload("res://scripts/weapons/WeaponFeedState2D.gd")
+const POSE_IK := preload("res://scripts/weapons/WeaponPoseIK2D.gd")
+
 const UPPER_ARM_TEX := preload("res://assets/art/characters/doll_b/parts/arm2/upper_arm.png")
 const FOREARM_TEX := preload("res://assets/art/characters/doll_b/parts/arm2/forearm.png")
 const HAND_TEX := preload("res://assets/art/characters/doll_b/parts/arm2/hand.png")
@@ -20,45 +22,12 @@ const FLASH_TEX := preload("res://assets/art/weapons/fx/flash_strip.png")
 const MAG_TEX := preload("res://assets/art/weapons/fx/mag_pistol.png")
 const SHELL_TEX := preload("res://assets/art/weapons/fx/mag_shell.png")
 
-const UNITS := preload("res://scripts/core/GameUnits.gd")
-const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
-const FEED_STATE := preload("res://scripts/weapons/WeaponFeedState2D.gd")
-## 枪械贴图视觉缩放标尺（按参考角色 128px ≈ 1.7m 匹配握持长度，与世界 64 px/m 距离解耦）。
-const SPRITE_PX_PER_METER := UNITS.SPRITE_PX_PER_METER
-## 像素风里手枪需要适度夸张，否则只有 15px 看不清；长枪按真实比例即可。
-const SIZE_BOOST := 1.35
-const LONG_GUN_BOOST := 1.0
-## 手枪最短世界长度：低于这个值握持关系看不清，会显得枪浮在手边。
-const MIN_GUN_LEN := 36.0
-## 像素风里武器容易显得比角色还抢眼；统一缩到 0.8 倍，贴图本身不改。
-const GUN_WORLD_SCALE := 0.6
-## 分件和角色图集同比例（源图 2 倍 → 世界 0.5 倍）。
-const ARM_SCALE := 0.5
-## 两段骨架长度（源图 24px 长 → 世界 12px）。
-const UPPER_ARM_LEN := 12.0
-const FOREARM_LEN := 12.0
-## 小臂向肘部多压一点，盖住两段之间的直切接缝。
-const LIMB_OVERLAP := 1.5
-## 肩点 → 手心 的世界距离：髋射接近伸直，ADS 收回一截。
-const ARM_LENGTH := 22.8
-## 四向的肩点（相对脚底）。站定瞄准用的是图集 idle 帧，外套肩线
-## 在 -88 左右；两段 IK 手臂变细后可以贴回肩线，不再挡住脸。
-## 背向（1）的肩点外移，让朝上的枪在头侧露出来，不会整把被身体挡死。
-const SHOULDER := {
-	0: Vector2(6.0, -88.0),
-	1: Vector2(17.0, -90.0),
-	2: Vector2(0.0, -88.0),
-	3: Vector2(0.0, -88.0),
-}
-
-## 瞄准角落在这一区间（屏幕上方）时，武器画在身体后面。
-const BEHIND_FROM := -2.356      # -135°
-const BEHIND_TO := -0.785        # -45°
-const BEHIND_Z := -1
-const FRONT_Z := 2
-## 身体四向对应的世界角度（0=下 1=上 2=左 3=右）。
-## 枪指向身体背面超过 90° 时也切到身体后面，避免从胸口/手臂穿过去。
-const BODY_ANGLE := {0: PI * 0.5, 1: -PI * 0.5, 2: PI, 3: 0.0}
+## 枪械贴图视觉缩放标尺（game_units_test 校验常量，仅用于视觉缩放，与世界 64 px/m 解耦）。
+const SPRITE_PX_PER_METER := POSE_IK.SPRITE_PX_PER_METER
+const ARM_SCALE := POSE_IK.ARM_SCALE
+const ARM_LENGTH := POSE_IK.ARM_LENGTH
+const BEHIND_Z := POSE_IK.BEHIND_Z
+const FRONT_Z := POSE_IK.FRONT_Z
 
 const RECOIL_DISTANCE := 3.2
 const RECOIL_RETURN := 13.0
@@ -66,38 +35,12 @@ const RECOIL_KICK := 0.05
 const FLASH_TIME := 0.06
 const FLASH_SCALE := 0.55
 const TURN_SPEED := 22.0
-## 换弹：枪下压 + 弹匣掉落/插入的动画参数
-const RELOAD_DIP := 14.0
-const RELOAD_TILT := 0.5
 const MAG_SCALE := 0.7
-## 切枪：枪沉下去 → 换模型 → 抬起来
-const SWITCH_TIME := FEED_STATE.SWITCH_TIME
-const SWITCH_DIP := 24.0
-const SWITCH_TILT := 0.45
-## 收枪 / 拔枪：枪向下沉并淡出，拔枪时反向抬起。
-const HOLSTER_TIME := FEED_STATE.HOLSTER_TIME
-const DRAW_TIME := FEED_STATE.DRAW_TIME
-const STOW_DIP := 22.0
-const STOW_TILT := 0.5
-## 冲刺时枪口压低一点，表现“持枪冲刺”而不是举枪瞄准。
 const SPRINT_DIP := 3.0
-## 右键瞄准：手臂收到胸前、抬高一档，后坐与枪口抖动减弱。
 const ADS_ARM_LENGTH := 18.0
 const ADS_LIFT := 5.0
 const ADS_BLEND_SPEED := 12.0
-## 肘部换向速度：扫过正上/正下时让手臂先伸直再弯到另一侧，避免瞬间翻面。
 const ELBOW_TURN_SPEED := 9.0
-## 长枪支撑手：托住握把前方的护木。24px 的单臂够不到长枪护木，
-## 支撑臂允许按目标距离适度拉长袖子，手掌始终贴在护木上。
-const SUPPORT_GRIP_RATIO := 0.18
-const SUPPORT_LIFT := -2.0
-## 支撑肩从主肩略偏后侧伸出，避免背向朝上时手臂横穿头部。
-const SUPPORT_SHOULDER_OFFSET := Vector2(-4.0, 1.0)
-const SUPPORT_MIN_SEG := 12.0
-const SUPPORT_MAX_SEG := 28.0
-## 大臂 / 小臂贴图在 ARM_SCALE 下的世界长度，用于换算拉伸比例。
-const SUPPORT_UPPER_BASE := 13.0
-const SUPPORT_FORE_BASE := 13.5
 
 var feed: WeaponFeedState2D = FEED_STATE.new()
 
@@ -122,24 +65,17 @@ var cooldown: float:
 var shots: int:
 	get: return feed.shots
 	set(v): feed.shots = v
-## 配件汇总后的伤害与散布倍率；由 setup 时读取 Progress 装配表写入。
+## 配件汇总后的伤害、散布、后坐、视野与瞄具倍率。
 var damage_mul := 1.0
 var spread_mul := 1.0
-## 后托/握把：后坐力倍率（连发散布增长、上限、开火震动）。
 var recoil_mul := 1.0
-## 瞄具：玩家视野距离倍率，由 VisionFog2D 每帧读取。
 var vision_mul := 1.0
-## 下挂激光：瞄准过渡速度倍率。
 var ads_speed_mul := 1.0
-## 是否装备可见激光。
 var has_laser := false
-## 瞄具：标定倍率、准心类型、是否使用镜内放大视野。
 var sight_magnification := 1.0
 var sight_reticle := "iron"
-## 瞄具的瞄准时间倍率（>1 表示开镜更慢）。
 var sight_ads_time_mul := 1.0
 var has_scope_sight := false
-## 瞄准时主镜头放大倍率：非高倍镜按瞄具标定倍率放大（1.0 = 不额外放大）。
 var aim_zoom_mul := 1.0
 
 var mag: int:
@@ -166,29 +102,12 @@ var hold_reload_enabled: bool:
 var switch_t: float:
 	get: return feed.switch_t
 	set(v): feed.switch_t = v
-## 冲刺时由 Doll2D 写入：枪保持在手，但压低一点。
 var sprinting := false
-## 右键瞄准（ADS）由 Doll2D 写入；0→1 平滑过渡。
 var ads := false
 var _ads_t := 0.0
 var holstered: bool:
 	get: return feed.holstered
 	set(v): feed.holstered = v
-var _stow_t: float:
-	get: return feed.stow_t
-	set(v): feed.stow_t = v
-var _stow_total: float:
-	get: return feed.stow_total
-	set(v): feed.stow_total = v
-var _stow_kind: int:
-	get: return feed.stow_kind
-	set(v): feed.stow_kind = v
-var _pending_id: StringName:
-	get: return feed.pending_id
-	set(v): feed.pending_id = v
-var _mag_by_id: Dictionary:
-	get: return feed.mag_by_id
-	set(v): feed.mag_by_id = v
 
 var _pivot: Node2D
 var _gun: Sprite2D
@@ -197,18 +116,15 @@ var _flash: Sprite2D
 var _upper_arm: Sprite2D
 var _forearm: Sprite2D
 var _hand: Sprite2D
-## 长枪的第二条手臂链（支撑手），挂在身体上而不是枪的 Pivot 上。
 var _support_root: Node2D
 var _support_upper: Sprite2D
 var _support_forearm: Sprite2D
 var _support_hand: Sprite2D
-## 腕（手心）在 Pivot 局部空间的位置，由 IK 每帧解算。
-var _wrist_local := Vector2.ZERO
 var _mag_sprite: Sprite2D
-## 贴图里枪管相对 +X 的角度（不是握把→枪口连线）。
+
+var _wrist_local := Vector2.ZERO
 var _barrel_angle := 0.0
 var _gun_len := 20.0
-## 肘部弯向：+1/-1，换向时平滑经过 0（直臂）。
 var _elbow_sign := 1.0
 var _kick := 0.0
 var _flash_timer := 0.0
@@ -217,7 +133,6 @@ var _muzzle_px := Vector2.ZERO
 var _tex_size := Vector2.ZERO
 var _gun_scale := 1.0
 var _flipped := false
-## 当前是否因为朝向原因把武器画在身体后面（远侧手需要一起隐藏）。
 var _behind := false
 
 
@@ -225,7 +140,7 @@ func _ready() -> void:
 	setup(weapon_id)
 
 
-## 把当前武器的配件效果汇总到 WeaponData；统一委托给 WeaponStatsModel 计算。
+## 把当前武器的配件效果汇总到全新克隆的 WeaponData（绝不原地污染基础模板）。
 func _apply_mods() -> void:
 	damage_mul = 1.0
 	spread_mul = 1.0
@@ -258,50 +173,22 @@ func _apply_mods() -> void:
 	data = STATS_MODEL.build_weapon_data(data, stats)
 
 
-## 换装一把枪：读取 meta.json 的握把/枪口像素锚点，重建节点。
+## 换装一把枪：读取 meta.json 的握把/枪口像素锚点，重建视觉节点并恢复独立弹匣数。
 func setup(id: StringName) -> void:
 	weapon_id = id
 	data = WeaponDB.get_weapon(id)
 	_apply_mods()
-	var grip_px := Vector2.ZERO
-	var muzzle_px := Vector2.ZERO
-	var barrel_angle := 0.0
-	var has_barrel := false
-	var path := META_PATH % id
-	if FileAccess.file_exists(path):
-		var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
-		if parsed is Dictionary:
-			grip_px = Vector2(parsed.grip_px[0], parsed.grip_px[1])
-			muzzle_px = Vector2(parsed.muzzle_px[0], parsed.muzzle_px[1])
-			if parsed.has("barrel_angle_deg"):
-				barrel_angle = deg_to_rad(float(parsed.barrel_angle_deg))
-				has_barrel = true
-	if grip_px == Vector2.ZERO:
-		grip_px = Vector2(276, 552)
-		muzzle_px = Vector2(1361, 99)
-
-	var tex: Texture2D = load(TEX_PATH % id)
-	# 枪管方向必须用贴图里的枪管轴，而不是握把→枪口连线：
-	# 手枪的握把在枪管下方一大截，用连线会把整把枪抬翘近 20°。
-	_barrel_angle = barrel_angle if has_barrel else (muzzle_px - grip_px).angle()
-	var tex_len := (muzzle_px - grip_px).length()
-	# 长枪不再额外放大，否则 M870 会和角色一样高
-	var boost := SIZE_BOOST if data.visual_length < 0.5 else LONG_GUN_BOOST
-	var world_len: float = data.visual_length * SPRITE_PX_PER_METER * boost
-	# 手枪按真实比例只有 20px，在 128px 角色尺度下看不清握持关系，统一抬到可见长度
-	world_len = maxf(world_len, MIN_GUN_LEN) * GUN_WORLD_SCALE
-	_gun_scale = world_len / maxf(tex_len, 1.0)
-	_gun_len = world_len
-	_grip_px = grip_px
-	_muzzle_px = muzzle_px
-	_tex_size = Vector2(tex.get_width(), tex.get_height())
+	var m := POSE_IK.load_weapon_metrics(id, data.visual_length)
+	var tex: Texture2D = m["tex"]
+	_barrel_angle = float(m["barrel_angle"])
+	_gun_scale = float(m["gun_scale"])
+	_gun_len = float(m["gun_len"])
+	_grip_px = m["grip_px"]
+	_muzzle_px = m["muzzle_px"]
+	_tex_size = m["tex_size"]
 	_flipped = false
 
 	_clear_nodes()
-	# Pivot = 肩点；手臂、手、枪都挂在这里，整组一起旋转。
-	# 子节点不再单独设 z_index：整组只保留一个层级，靠添加顺序决定
-	# “枪 → 手臂/手 → 枪口焰”的叠压关系，否则切到身体后面时
-	# 手臂的相对层级会等于身体层级，描边会透在外套上。
 	_pivot = Node2D.new()
 	_pivot.name = "Pivot"
 	_pivot.position = _current_anchor()
@@ -315,14 +202,9 @@ func setup(id: StringName) -> void:
 	_pivot.add_child(_gun)
 	_align_gun(false)
 
-	_upper_arm = _make_limb("UpperArm", UPPER_ARM_TEX)
-	_forearm = _make_limb("Forearm", FOREARM_TEX)
-	_hand = Sprite2D.new()
-	_hand.name = "Hand"
-	_hand.texture = HAND_TEX
-	_hand.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_hand.scale = Vector2.ONE * ARM_SCALE
-	_pivot.add_child(_hand)
+	_upper_arm = _make_limb(_pivot, "UpperArm", UPPER_ARM_TEX)
+	_forearm = _make_limb(_pivot, "Forearm", FOREARM_TEX)
+	_hand = _make_hand(_pivot, "Hand")
 
 	_muzzle = Marker2D.new()
 	_muzzle.name = "Muzzle"
@@ -347,30 +229,42 @@ func setup(id: StringName) -> void:
 	_mag_sprite.visible = false
 	add_child(_mag_sprite)
 
-	# 长枪的支撑臂：独立于枪的 Pivot，从身体肩点伸到护木。
 	_support_root = Node2D.new()
 	_support_root.name = "SupportPivot"
 	add_child(_support_root)
-	_support_upper = _make_support_limb("SupportUpperArm", UPPER_ARM_TEX)
-	_support_forearm = _make_support_limb("SupportForearm", FOREARM_TEX)
-	_support_hand = Sprite2D.new()
-	_support_hand.name = "SupportHand"
-	_support_hand.texture = HAND_TEX
-	_support_hand.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_support_hand.scale = Vector2.ONE * ARM_SCALE
-	_support_root.add_child(_support_hand)
+	_support_upper = _make_limb(_support_root, "SupportUpperArm", UPPER_ARM_TEX)
+	_support_forearm = _make_limb(_support_root, "SupportForearm", FOREARM_TEX)
+	_support_hand = _make_hand(_support_root, "SupportHand")
 	_support_root.visible = false
 
-	# 每把枪保留自己的弹匣数，切回来时不会重置
 	feed.on_weapon_equipped(id, data.mag_capacity)
-
 	_update_layer()
 	_apply_pose()
 
 
+func _make_limb(parent: Node2D, node_name: String, tex: Texture2D) -> Sprite2D:
+	var limb := Sprite2D.new()
+	limb.name = node_name
+	limb.texture = tex
+	limb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	limb.scale = Vector2.ONE * ARM_SCALE
+	limb.offset = Vector2(tex.get_width() * 0.5, 0.0)
+	parent.add_child(limb)
+	return limb
+
+
+func _make_hand(parent: Node2D, node_name: String) -> Sprite2D:
+	var hand := Sprite2D.new()
+	hand.name = node_name
+	hand.texture = HAND_TEX
+	hand.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	hand.scale = Vector2.ONE * ARM_SCALE
+	parent.add_child(hand)
+	return hand
+
+
 func _clear_nodes() -> void:
-	# 先移出场景树再 queue_free：否则新旧节点同名，新节点会被改名成 Pivot2/Gun2，
-	# 调试与测试里按名字取节点会直接失败。
+	# 先移出场景树再 queue_free：避免同名新节点被改名成 Pivot2/Gun2。
 	for child in get_children():
 		remove_child(child)
 		child.queue_free()
@@ -388,14 +282,12 @@ func _process(delta: float) -> void:
 		reload_finished.emit()
 	if bool(ev["holster_completed"]):
 		holstered_changed.emit(true)
-	# aim_world 在 Doll2D 的物理帧里写入；首帧还是零向量时不要拿它算角度，
-	# 否则开局第一枪会朝左上角偏一大截。
+
 	if aim_enabled and aim_world != Vector2.ZERO and not holstered:
 		var target := (aim_world - global_position).angle()
 		aim_angle = wrapf(
 			lerp_angle(aim_angle, target, clampf(TURN_SPEED * delta, 0.0, 1.0)),
 			-PI, PI)
-	# 肘部弯向平滑换向：扫过正上/正下时手臂先伸直再弯到另一侧
 	var elbow_target := 1.0 if Vector2.from_angle(aim_angle + PI * 0.5).dot(Vector2.DOWN) >= 0.0 else -1.0
 	_elbow_sign = move_toward(_elbow_sign, elbow_target, ELBOW_TURN_SPEED * delta)
 	if recoil > 0.0:
@@ -409,6 +301,7 @@ func _process(delta: float) -> void:
 	_ads_t = move_toward(_ads_t, 1.0 if ads and not holstered else 0.0,
 		ADS_BLEND_SPEED * ads_speed_mul / maxf(sight_ads_time_mul, 0.2) * delta)
 	_apply_pose()
+
 	if InputMap.has_action("holster") and Input.is_action_just_pressed("holster"):
 		toggle_holster()
 	if InputMap.has_action("reload"):
@@ -418,14 +311,12 @@ func _process(delta: float) -> void:
 			process_hold_reload()
 	if InputMap.has_action("fire"):
 		if data.auto_fire:
-			# 全自动改件：按住左键，由 cooldown 控制射速。
 			if Input.is_action_pressed("fire"):
 				try_fire()
 		elif Input.is_action_just_pressed("fire"):
 			try_fire()
 
 
-## 数字键 1-4 与滚轮切枪（输入由武器层自己处理，Doll2D 不需要知道）。
 func _unhandled_input(event: InputEvent) -> void:
 	if data == null:
 		return
@@ -435,7 +326,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			if switch_to(loadout[index]):
 				get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed:
-		# Alt+滚轮用于整体视角缩放，不切枪。
 		if InputMap.has_action("view_zoom") and Input.is_action_pressed("view_zoom"):
 			return
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
@@ -444,89 +334,43 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cycle_weapon(-1)
 
 
-## 枪贴图默认朝右（枪口 +X）。朝左瞄准时不旋转 180°（那样枪托、机匣会倒过来），
-## 而是把贴图上下翻转，并按镜像后的枪管方向重新对齐握把。
+## --- 姿态、IK 与挂点坐标（委托至 WeaponPoseIK2D）-----------------------------
+
 func _align_gun(flip: bool) -> void:
 	_flipped = flip
-	if _gun == null:
-		return
-	_gun.flip_v = flip
-	var rot := _barrel_angle if flip else -_barrel_angle
-	var grip := _grip_px - _tex_size * 0.5
-	var muzzle := _muzzle_px - _tex_size * 0.5
-	if flip:
-		grip.y = -grip.y
-		muzzle.y = -muzzle.y
-	_gun.rotation = rot
-	# 握把对到手腕，枪口相对握把使用同一贴图锚点变换。
-	_gun.position = _wrist_local - grip.rotated(rot) * _gun_scale
-	if _muzzle != null:
-		_muzzle.position = _wrist_local + (muzzle - grip).rotated(rot) * _gun_scale
+	POSE_IK.align_gun(_gun, _muzzle, _wrist_local, _grip_px, _muzzle_px,
+		_tex_size, _barrel_angle, _gun_scale, flip)
 
 
-## 大臂 / 小臂共用：枢轴放在贴图左端中心（肩 / 肘），朝 +X 延伸。
-func _make_limb(node_name: String, tex: Texture2D) -> Sprite2D:
-	var limb := Sprite2D.new()
-	limb.name = node_name
-	limb.texture = tex
-	limb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	limb.scale = Vector2.ONE * ARM_SCALE
-	limb.offset = Vector2(tex.get_width() * 0.5, 0.0)
-	_pivot.add_child(limb)
-	return limb
+## 将侧视图上的任意像素坐标（如瞄具导轨/枪口/下挂槽位）转为当前 Pivot 局部坐标。
+func get_mount_local(px: Vector2) -> Vector2:
+	return POSE_IK.pixel_to_pivot(px, _grip_px, _barrel_angle, _gun_scale, _wrist_local, _flipped)
 
 
-## 支撑臂分件挂在 SupportPivot 下，不随枪管轴线整体旋转。
-func _make_support_limb(node_name: String, tex: Texture2D) -> Sprite2D:
-	var limb := Sprite2D.new()
-	limb.name = node_name
-	limb.texture = tex
-	limb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	limb.scale = Vector2.ONE * ARM_SCALE
-	limb.offset = Vector2(tex.get_width() * 0.5, 0.0)
-	_support_root.add_child(limb)
-	return limb
-
-
-## 两段 IK：肩 → 肘 → 腕。腕固定在枪管轴线上，肘朝屏幕下方弯，
-## 手腕距离越近弯得越多；超过两段总长时完全伸直。
-func _solve_arm(d: float) -> void:
-	var reach := UPPER_ARM_LEN + FOREARM_LEN
-	var wrist_x := minf(d, reach)
-	_wrist_local = Vector2(wrist_x, 0.0)
-	if wrist_x >= reach - 0.01:
-		_upper_arm.rotation = 0.0
-		_forearm.position = Vector2(UPPER_ARM_LEN - LIMB_OVERLAP, 0.0)
-		_forearm.rotation = 0.0
-		return
-	var cos_shoulder := clampf(
-		(UPPER_ARM_LEN * UPPER_ARM_LEN + wrist_x * wrist_x - FOREARM_LEN * FOREARM_LEN)
-		/ (2.0 * UPPER_ARM_LEN * wrist_x), -1.0, 1.0)
-	# 肘朝屏幕下方弯；_elbow_sign 平滑换向，扫过正上/正下时手臂先伸直，
-	# 不会在一帧里突然翻到另一侧。
-	var shoulder_angle := acos(cos_shoulder) * _elbow_sign
-	var elbow := Vector2.from_angle(shoulder_angle) * UPPER_ARM_LEN
-	_upper_arm.rotation = shoulder_angle
-	_forearm.rotation = (Vector2(wrist_x, 0.0) - elbow).angle()
-	_forearm.position = elbow - Vector2.from_angle(_forearm.rotation) * LIMB_OVERLAP
-
-
-## 右键瞄准时手臂收回一截，枪贴近身体。
 func _arm_length() -> float:
 	return lerpf(ARM_LENGTH, ADS_ARM_LENGTH, _ads_t)
 
 
-## 瞄准过渡进度 0~1，供 HUD / 精度计算用。
 func get_ads_blend() -> float:
 	return _ads_t
+
+
+func _current_anchor() -> Vector2:
+	return POSE_IK.shoulder_anchor(body_direction)
+
+
+func _update_layer() -> void:
+	_behind = POSE_IK.is_behind_body(aim_angle, body_direction)
+	var target_z := BEHIND_Z if _behind else FRONT_Z
+	if z_index != target_z:
+		z_index = target_z
 
 
 func _apply_pose() -> void:
 	if _pivot == null:
 		return
-	# 朝左时贴图上下镜像，避免整把枪倒置；每帧重解手臂 IK 以跟随 ADS
 	var flip := absf(aim_angle) > PI * 0.5
-	_solve_arm(_arm_length())
+	_wrist_local = POSE_IK.solve_primary_arm(_upper_arm, _forearm, _arm_length(), _elbow_sign)
 	_align_gun(flip)
 	if _hand != null:
 		_hand.position = _wrist_local
@@ -535,180 +379,36 @@ func _apply_pose() -> void:
 	if _flash != null:
 		_flash.position = _muzzle.position + Vector2(2.0, 0.0)
 	var anchor := _current_anchor() - Vector2(0.0, ADS_LIFT * _ads_t)
-	# 枪身贴图按枪管轴对齐，枢轴只需对齐瞄准角
 	_pivot.rotation = aim_angle + _kick * recoil * lerpf(1.0, 0.45, _ads_t)
-	# 朝镜头方向（屏幕下方）瞄准时把枪沿枪管压短，假装透视缩短
 	var toward_camera := clampf(Vector2.DOWN.dot(Vector2.from_angle(aim_angle)), 0.0, 1.0)
 	var foreshorten := lerpf(1.0, 0.45, toward_camera)
 	_pivot.scale = Vector2(foreshorten, 1.0)
 	var back := Vector2.from_angle(aim_angle) * RECOIL_DISTANCE * recoil * lerpf(1.0, 0.6, _ads_t)
 	_pivot.position = anchor - back
 	if _flash != null:
-		# 抵消枢轴在 X 方向的压缩，枪口焰形状不被压扁
 		_flash.scale = Vector2(FLASH_SCALE / maxf(foreshorten, 0.01), FLASH_SCALE)
-	_apply_reload_pose()
-	_apply_switch_pose()
-	_apply_stow_pose()
-	# 冲刺持枪：枪不收起，只压低一点点，和举枪瞄准区分开。
-	if sprinting and not aiming and not holstered and _stow_t <= 0.0:
+
+	var limbs := [_upper_arm, _forearm, _hand]
+	POSE_IK.apply_reload_pose(_pivot, _mag_sprite, _current_anchor(), reload_t, reload_total)
+	POSE_IK.apply_switch_pose(_pivot, _gun, limbs, _support_root, switch_t)
+	POSE_IK.apply_stow_pose(_pivot, _gun, limbs, _support_root, _flash,
+		holstered, feed.stow_t, feed.stow_total, feed.stow_kind)
+	if sprinting and not aiming and not holstered and feed.stow_t <= 0.0:
 		_pivot.position.y += SPRINT_DIP
-	# 支撑手最后解算：目标跟随枪的最终变换（含收枪/换弹/切枪的下沉）。
-	_solve_support_arm()
+	var show_support := data != null and data.visual_length >= 0.5 \
+		and (not holstered or feed.stow_t > 0.0)
+	POSE_IK.solve_support_arm(_support_root, _support_upper, _support_forearm, _support_hand,
+		_pivot, _current_anchor(), _wrist_local, _gun_len, _elbow_sign, _flipped, show_support)
 
 
-## 长枪支撑手：肩点固定在身体，手掌目标跟随枪的护木；两段 IK 的手掌始终
-## 贴在护木上。袖子沿长度方向拉伸，弥补 24px 手臂够不到长枪护木的问题。
-func _solve_support_arm() -> void:
-	if _support_root == null or _support_upper == null or _gun == null:
-		return
-	var long_gun := data != null and data.visual_length >= 0.5
-	# 收/拔枪动画期间也显示，让支撑手跟着枪一起淡出/淡入。
-	var show := long_gun and (not holstered or _stow_t > 0.0)
-	_support_root.visible = show
-	if not show:
-		return
-	_support_root.position = _current_anchor() + SUPPORT_SHOULDER_OFFSET
-	var support_local := _wrist_local + Vector2(_gun_len * SUPPORT_GRIP_RATIO, SUPPORT_LIFT)
-	var target := _support_root.to_local(_pivot.to_global(support_local))
-	var dist := target.length()
-	if dist < 0.5:
-		return
-	var dir := target / dist
-	var seg := clampf(dist * 0.5 + 0.5, SUPPORT_MIN_SEG, SUPPORT_MAX_SEG)
-	var a := dist * 0.5
-	var h := sqrt(maxf(seg * seg - a * a, 0.0))
-	var perp := Vector2(-dir.y, dir.x) * _elbow_sign
-	var elbow := dir * a + perp * h
-	_support_upper.position = Vector2.ZERO
-	_support_upper.rotation = elbow.angle()
-	_support_upper.scale = Vector2(ARM_SCALE * (seg + LIMB_OVERLAP) / SUPPORT_UPPER_BASE, ARM_SCALE)
-	var wrist_dir := target - elbow
-	wrist_dir = wrist_dir.normalized() if wrist_dir.length() > 0.01 else dir
-	_support_forearm.position = elbow - wrist_dir * LIMB_OVERLAP
-	_support_forearm.rotation = wrist_dir.angle()
-	_support_forearm.scale = Vector2(ARM_SCALE * (seg + LIMB_OVERLAP) / SUPPORT_FORE_BASE, ARM_SCALE)
-	_support_hand.position = target
-	_support_hand.rotation = _pivot.global_rotation - _support_root.global_rotation
-	_support_hand.flip_v = not _flipped
-
-
-## 收枪 / 拔枪动画：整组手臂与枪一起下沉淡出，拔枪时反向抬起淡入。
-func _apply_stow_pose() -> void:
-	if _gun == null:
-		return
-	var alpha := 1.0
-	if _stow_t <= 0.0:
-		_gun.visible = not holstered
-		_gun.modulate.a = 1.0
-		_set_limbs_visible(not holstered)
-		if _support_root != null:
-			_support_root.modulate.a = 1.0
-		return
-	var p := clampf(1.0 - _stow_t / maxf(_stow_total, 0.001), 0.0, 1.0)
-	if _stow_kind < 0:
-		_pivot.position += Vector2(0.0, STOW_DIP * p)
-		_pivot.rotation += STOW_TILT * p
-		alpha = 1.0 - p
-	else:
-		var lift := 1.0 - p
-		_pivot.position += Vector2(0.0, STOW_DIP * lift)
-		_pivot.rotation += STOW_TILT * lift
-		alpha = p
-	_gun.visible = true
-	_gun.modulate.a = alpha
-	_set_limbs_visible(true)
-	for limb in [_upper_arm, _forearm, _hand]:
-		if limb != null:
-			limb.modulate.a = alpha
-	if _support_root != null:
-		_support_root.modulate.a = alpha
-	if _flash != null:
-		_flash.visible = false
-
-
-func _set_limbs_visible(shown: bool) -> void:
-	for limb in [_upper_arm, _forearm, _hand]:
-		if limb != null:
-			limb.visible = shown
-			limb.modulate.a = 1.0
-
-
-## 换弹：枪先下压侧摆，旧弹匣掉落、新弹匣从下方插入，最后抬回瞄准位置。
-func _apply_reload_pose() -> void:
-	if _mag_sprite == null:
-		return
-	if reload_t <= 0.0:
-		_mag_sprite.visible = false
-		return
-	var p := 1.0 - reload_t / maxf(reload_total, 0.001)
-	var dip := sin(clampf(p, 0.0, 1.0) * PI)
-	_pivot.position += Vector2(0.0, RELOAD_DIP * dip)
-	_pivot.rotation += -RELOAD_TILT * dip
-	var anchor := _current_anchor()
-	if p >= 0.24 and p <= 0.5:
-		# 旧弹匣掉下去
-		var k := (p - 0.24) / 0.26
-		_mag_sprite.visible = true
-		_mag_sprite.position = anchor + Vector2(0.0, 2.0 + 24.0 * k * k)
-		_mag_sprite.rotation = 1.1 * k
-		_mag_sprite.modulate.a = 1.0 - k
-	elif p > 0.5 and p <= 0.82:
-		# 新弹匣从下方插回去
-		var k2 := (p - 0.5) / 0.32
-		_mag_sprite.visible = true
-		_mag_sprite.position = anchor + Vector2(0.0, 20.0 * (1.0 - k2))
-		_mag_sprite.rotation = 0.0
-		_mag_sprite.modulate.a = clampf(k2 * 2.0, 0.0, 1.0)
-	else:
-		_mag_sprite.visible = false
-
-
-## 切枪：整组沉下去、倾斜、淡出，中点换模型后再抬回来。
-func _apply_switch_pose() -> void:
-	if switch_t <= 0.0:
-		return
-	var p := 1.0 - switch_t / SWITCH_TIME
-	var dip := sin(clampf(p, 0.0, 1.0) * PI)
-	_pivot.position += Vector2(0.0, SWITCH_DIP * dip)
-	_pivot.rotation += SWITCH_TILT * dip
-	if _gun != null:
-		_gun.modulate.a = 1.0 - 0.92 * dip
-	for limb in [_upper_arm, _forearm, _hand]:
-		if limb != null:
-			limb.modulate.a = _gun.modulate.a
-	if _support_root != null:
-		_support_root.modulate.a = _gun.modulate.a
-
-
-## 肩点是手、枪、手臂共同的枢轴；四向只差肩点位置。
-func _current_anchor() -> Vector2:
-	return SHOULDER.get(body_direction, SHOULDER[0])
-
-
-## 朝上瞄准、或枪口指向身体背面时，把武器画到身体后面，
-## 避免枪身从胸口/远侧手臂中间穿过去。
-func _update_layer() -> void:
-	var behind_up := aim_angle > BEHIND_FROM and aim_angle < BEHIND_TO
-	# 背向时持枪手在屏幕右侧：朝上 / 右上举枪走前景，手臂才看得见；
-	# 只有朝左上会横穿头部，仍然压到身体后面。
-	if body_direction == 1:
-		behind_up = aim_angle > BEHIND_FROM and aim_angle < -1.75
-	var body_angle: float = BODY_ANGLE.get(body_direction, 0.0)
-	var far_side := absf(angle_difference(aim_angle, body_angle)) > PI * 0.5
-	_behind = behind_up or far_side
-	var target_z := BEHIND_Z if _behind else FRONT_Z
-	if z_index != target_z:
-		z_index = target_z
-
+## --- 供弹/动作接口（委托至 WeaponFeedState2D）--------------------------------
 
 func try_fire() -> bool:
 	match feed.try_fire(data):
 		&"need_draw":
-			# 收枪状态扣扳机 = 自动拔枪，不直接开火
 			draw()
 			return false
 		&"need_reload":
-			# 空仓扣扳机：直接开始换弹，省得玩家再按一次 R
 			reload()
 			return false
 		&"fired":
@@ -722,23 +422,9 @@ func try_fire() -> bool:
 		_:
 			return false
 
+func reload() -> bool: return feed.reload(data)
+func process_hold_reload() -> void: feed.process_hold_reload(data)
 
-## R 换弹：弹匣枪整匣更换，霰弹枪一次压一发。
-func reload() -> bool:
-	return feed.reload(data)
-
-
-## 「持续装填」：按住 R 时，上一发装完后自动续压下一发。
-func process_hold_reload() -> void:
-	feed.process_hold_reload(data)
-
-
-func _finish_reload() -> void:
-	feed.finish_reload(data)
-	reload_finished.emit()
-
-
-## 切枪：中途换模型，前后各有一段收/举枪动画。
 func switch_to(id: StringName) -> bool:
 	var result := feed.start_switch(id, data)
 	if result == &"rejected":
@@ -750,36 +436,16 @@ func switch_to(id: StringName) -> bool:
 		weapon_switched.emit(id)
 	return true
 
-
 func _cycle_weapon(step: int) -> void:
 	var next_id := feed.cycle_target(step)
 	if next_id != &"":
 		switch_to(next_id)
 
-
-func get_reserve() -> int:
-	return feed.get_reserve(data)
-
-
-func _set_reserve(value: int) -> void:
-	feed.set_reserve(data, value)
-
-
-func apply_reserve_talent(mul: float) -> void:
-	feed.apply_reserve_talent(mul)
-
-
-func refill_all_ammo() -> void:
-	feed.refill_all_ammo(data)
-
-
-func get_reload_progress() -> float:
-	return feed.get_reload_progress()
-
-
-func get_stow_progress() -> float:
-	return feed.get_stow_progress()
-
+func get_reserve() -> int: return feed.get_reserve(data)
+func apply_reserve_talent(mul: float) -> void: feed.apply_reserve_talent(mul)
+func refill_all_ammo() -> void: feed.refill_all_ammo(data)
+func get_reload_progress() -> float: return feed.get_reload_progress()
+func get_stow_progress() -> float: return feed.get_stow_progress()
 
 func holster() -> bool:
 	if not feed.holster():
@@ -789,7 +455,6 @@ func holster() -> bool:
 	_play_stow_sfx()
 	return true
 
-
 func draw() -> bool:
 	if not feed.draw():
 		return false
@@ -797,31 +462,21 @@ func draw() -> bool:
 	holstered_changed.emit(false)
 	return true
 
+func toggle_holster() -> bool: return draw() if holstered else holster()
+func is_holstered() -> bool: return feed.holstered
+func is_stowing() -> bool: return feed.is_stowing()
+func is_drawing() -> bool: return feed.is_drawing()
+func is_busy() -> bool: return feed.is_busy()
+func get_ammo_text() -> String: return feed.get_ammo_text(data)
+func get_side_texture() -> Texture2D: return _gun.texture if _gun != null else null
+func get_stow_scale() -> float: return _gun_scale
+func get_muzzle_position() -> Vector2: return _muzzle.global_position if _muzzle != null else global_position
+func get_barrel_direction() -> Vector2: return Vector2.from_angle(aim_angle)
+func get_barrel_angle() -> float: return _barrel_angle
+func get_gun_length() -> float: return _gun_len
 
-func toggle_holster() -> bool:
-	return draw() if holstered else holster()
-
-
-func is_holstered() -> bool:
-	return feed.holstered
-
-
-func is_stowing() -> bool:
-	return feed.is_stowing()
-
-
-func is_drawing() -> bool:
-	return feed.is_drawing()
-
-
-## 背后挂点用：当前枪的侧视贴图与同一世界比例。
-func get_side_texture() -> Texture2D:
-	return _gun.texture if _gun != null else null
-
-
-func get_stow_scale() -> float:
-	return _gun_scale
-
+func get_grip_position() -> Vector2:
+	return _pivot.to_global(_wrist_local) if _pivot != null else to_global(_current_anchor())
 
 func _play_stow_sfx() -> void:
 	var tree := get_tree()
@@ -830,36 +485,3 @@ func _play_stow_sfx() -> void:
 	var sfx := tree.root.get_node_or_null("Sfx")
 	if sfx != null:
 		sfx.play_2d("switch", -10.0, randf_range(0.95, 1.05))
-
-
-func is_busy() -> bool:
-	return feed.is_busy()
-
-
-func get_ammo_text() -> String:
-	return feed.get_ammo_text(data)
-
-
-func get_muzzle_position() -> Vector2:
-	return _muzzle.global_position if _muzzle != null else global_position
-
-
-func get_barrel_direction() -> Vector2:
-	return Vector2.from_angle(aim_angle)
-
-
-## 贴图里的枪管倾角（弧度）：枪身按它反向旋转后，枪管才和瞄准轴一致。
-func get_barrel_angle() -> float:
-	return _barrel_angle
-
-
-## 握把（手心）在世界里的位置：直接读 IK 解出的腕点。
-func get_grip_position() -> Vector2:
-	if _pivot != null:
-		return _pivot.to_global(_wrist_local)
-	return to_global(_current_anchor())
-
-
-## 枪在世界里的长度（握把到枪口，像素）。
-func get_gun_length() -> float:
-	return _gun_len

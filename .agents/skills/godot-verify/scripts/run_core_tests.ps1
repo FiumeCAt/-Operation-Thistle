@@ -60,6 +60,7 @@ $DefaultCoreTests = @(
     "weapon_feed_state_test",
     "weapon_m2_m4_test",
     "weapon_m3_test",
+    "weapon_pose_ik_test",
     "weapon_rig_test",
     "weapon_stats_model_test"
 )
