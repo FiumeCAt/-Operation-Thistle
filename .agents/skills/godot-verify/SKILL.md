@@ -2,7 +2,7 @@
 name: godot-verify
 description: >-
   Use this skill after editing GDScript, scenes, shaders, or data/*.json in
-  HellWalker_DollProtocol to refresh Godot 4.7.2 imports, run the 37-test core
+  HellWalker_DollProtocol to refresh Godot 4.7.2 imports, run the 38-test core
   2D regression gate, inspect logs via godot-ai MCP, and visually verify
   screenshots.
 ---
@@ -22,11 +22,11 @@ $PROJ  = "D:\AI Game\HellWalker\HellWalker_DollProtocol"
 ```
 核查无新增 `SCRIPT ERROR`、`Parse Error`、`Could not find type`（注：`addons/phantom_camera` 自带 `update_button.gd:62` 插件内部噪音，与业务脚本无关）。若 Godot GUI 编辑器正打开且未增删脚本/资源，测试时可加 `-SkipImport` 避免与编辑器争夺 `.godot` 缓存。
 
-## 步骤 2：运行核心 2D 回归门禁（37 个测试）
+## 步骤 2：运行核心 2D 回归门禁（38 个测试）
 使用汇总脚本 [run_core_tests.ps1](./scripts/run_core_tests.ps1)（日志输出至 `out/test_logs/`，自动校验输出摘要而非仅看进程退出码）：
 
 ```powershell
-# 全量 37 个核心 2D 回归（任务收口前必跑；基线 1336 条断言，0 失败）
+# 全量 38 个核心 2D 回归（任务收口前必跑；基线 1352 条断言，0 失败）
 powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1
 
 # 跳过 --import（编辑器正运行或仅验证已有脚本时）

@@ -30,6 +30,7 @@ $DefaultCoreTests = @(
     "mods_2d_test",
     "navigation_2d_test",
     "new_enemies_2d_test",
+    "player_bullet_test",
     "resources_2d_test",
     "save_slots_2d_test",
     "save_system_test",

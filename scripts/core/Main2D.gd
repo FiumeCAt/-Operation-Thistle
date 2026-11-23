@@ -1095,9 +1095,8 @@ func _on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 		# 所有弹丸（含第一颗）都按实际散布锥均匀采样，不再强制中心线。
 		var direction := base_dir.rotated(_spread_offset(pellet_spread)).normalized()
 		last_pellet_dirs.append(direction)
-		var bullet = PLAYER_BULLET.spawn(fx_layer, self, origin, direction, speed,
-			drag_px, ammo.damage * damage_mul, ammo.ap, length, ammo.color,
-			ctx, data.knockback)
+		var bullet := spawn_player_bullet(origin, direction, speed, drag_px,
+			ammo.damage * damage_mul, ammo.ap, length, ammo.color, ctx, data.knockback)
 		if bullet == null:
 			ctx["pending"] = int(ctx["pending"]) - 1
 
@@ -1108,6 +1107,33 @@ func _on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 	_add_shake(data.shake_amount * ads_mul * lerpf(1.0, 1.35, build),
 		data.shake_roll * ads_mul, data.shake_decay)
 	_play_sfx(data.sfx_kind, -3.0)
+
+
+## 生成一颗解耦后的玩家弹丸，并把它的信号接入 Main2D 的命中/结束结算。
+func spawn_player_bullet(origin: Vector2, direction: Vector2, speed_px_s: float,
+		drag_px: float, dmg: float, pen: float, range_px: float,
+		bullet_color: Color, ctx: Dictionary, knock: float) -> PlayerBullet2D:
+	var exclude_rid := doll.get_rid() if doll != null else RID()
+	var bullet := PLAYER_BULLET.create(fx_layer, {
+		"origin": origin,
+		"direction": direction,
+		"speed_px_s": speed_px_s,
+		"drag_per_px": drag_px,
+		"damage": dmg,
+		"ap": pen,
+		"max_distance": range_px,
+		"color": bullet_color,
+		"shot_ctx": ctx,
+		"knockback": knock,
+		"exclude_rid": exclude_rid,
+		"trail_enabled": bullet_trail_enabled,
+		"wall_check": _wall_between,
+	})
+	if bullet != null:
+		bullet.enemy_hit.connect(_player_bullet_hit_enemy)
+		bullet.wall_hit.connect(_player_bullet_hit_wall)
+		bullet.finished.connect(_player_bullet_finished)
+	return bullet
 
 
 ## --- 玩家弹丸命中结算 -------------------------------------------------------

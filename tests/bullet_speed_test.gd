@@ -128,7 +128,7 @@ func _run() -> void:
 		"flush_scheduled": false,
 	}
 	var hp_before: float = _enemy.hp
-	var bullet = PlayerBullet2D.spawn(_main.fx_layer, _main, origin,
+	var bullet = _main.spawn_player_bullet(origin,
 		(aim - origin).normalized(), 50000.0, 0.0, 7.0, 0.0, 2000.0,
 		Color.WHITE, ctx, 0.0)
 	_check(bullet != null, "高速测试弹丸生成")

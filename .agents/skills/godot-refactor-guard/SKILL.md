@@ -18,11 +18,11 @@ description: >-
    - 若项目已初始化 Git：确认工作树干净或先做安全 commit（如 `chore: checkpoint before refactoring <module>`）。
    - 若尚未初始化 Git：按 `backups/<YYYYMMDD_topic>/` 复制待改文件并写 `ROLLBACK.txt`（严禁混用不同检查点文件）。
 3. **锁定测试基线**：
-   - 运行 `powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1` 确认全量 37 个核心 2D 测试 `PASS`（约 1336 条断言，0 失败）。**基线不绿，禁止开始重构。**
+   - 运行 `powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1` 确认全量 38 个核心 2D 测试 `PASS`（约 1352 条断言，0 失败）。**基线不绿，禁止开始重构。**
 4. **盘点外部契约与已知陷阱**：
    - **纯计算模型已收口（Stage 2 完成）**：武器属性（`WeaponStatsModel`）、散布（`SpreadModel`）、弹道（`BallisticsModel`）、RHA 护甲/伤害（`DamageModel`）已抽离至单一纯模型，后续调整公式必须只在模型内修改。
    - **`WeaponData` 原地可变前提**：`WeaponDB.get_weapon()` 目前每次新建实例，而 `WeaponRig2D._apply_mods()` 会原地修改它；切勿在未做只读隔离前将 `WeaponDB.get_weapon()` 改为返回缓存共享实例。
-   - **私有方法与硬编码路径依赖**：`PlayerBullet2D` 反向调用 `Main2D._wall_between()` / `_player_bullet_hit_enemy()`；`Level2D` 通过 `../World2D/SortLayer` 等相对路径访问 `Main2D.tscn` 节点；大量 UI 在 `_build()` 中手写构造且测试直接读取节点名和私有属性。
+   - **硬编码路径依赖**：`PlayerBullet2D` 已完成信号/回调解耦（Step 3.1）；`Level2D` 仍通过 `../World2D/SortLayer` 等相对路径访问 `Main2D.tscn` 节点；大量 UI 在 `_build()` 中手写构造且测试直接读取节点名和私有属性。
    - **初始化与缓存顺序**：`Main2D._ready()` 的调用顺序（HUD/准心 → 玩家位置/天赋 → `VisionFog2D.setup` → `_spawn_enemies` → FX 预热）及 `GameData.table()` 静态 `_cache` 不可随意打乱。
    - **`Progress.data` 共享与归档兼容**：2D/3D 共用同一份 `data`，`_normalize_data()` 决定旧存档能否读取；`save_data()` 含备份轮换逻辑。
    - **世界单位已统一**：所有世界距离常量统一在 `GameUnits.gd`（`64 px/m`）；`SPRITE_PX_PER_METER` 仅限枪械贴图缩放使用。

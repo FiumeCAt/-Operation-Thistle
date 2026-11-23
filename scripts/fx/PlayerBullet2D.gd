@@ -1,8 +1,12 @@
 extends Node2D
 class_name PlayerBullet2D
 ## 玩家弹丸：按“真实初速 × 弹种时间压缩”飞行，逐物理帧做线段扫掠检测。
-## 速度按 v(s) = v0 * exp(-drag_per_px * s) 衰减；命中结算统一交给 Main2D，
-## 这样护甲/穿甲/击退/命中反馈仍只有一套规则。
+## 速度按 v(s) = v0 * exp(-drag_per_px * s) 衰减；命中与结束通过信号通知宿主
+## （enemy_hit / wall_hit / finished），不反向依赖 Main2D 的私有方法或场景结构。
+
+signal enemy_hit(bullet: PlayerBullet2D, target: Node, point: Vector2, direction: Vector2)
+signal wall_hit(bullet: PlayerBullet2D, point: Vector2, direction: Vector2)
+signal finished(bullet: PlayerBullet2D)
 
 var velocity := Vector2.ZERO
 var damage := 0.0
@@ -12,9 +16,11 @@ var max_distance := 1000.0
 var drag_per_px := 0.0
 var color := Color(1.0, 0.82, 0.45)
 var shot_ctx: Dictionary = {}
-var main = null
 var player_rid := RID()
 var travelled := 0.0
+## 可选墙体遮挡查询回调 (from: Vector2, to: Vector2) -> Dictionary；
+## 未注入时使用弹丸自身所在 World2D 的 layer 1 射线检测。
+var wall_check: Callable = Callable()
 ## 弹道线条：从枪口持续连到弹丸当前位置，命中后保留一小段渐隐。
 ## 与弹丸实体分离；设置关闭时只隐藏这条线，弹丸仍然可见并正常飞行。
 var origin := Vector2.ZERO
@@ -24,30 +30,40 @@ var trail_enabled := true
 var _finished := false
 
 
-## 起点/方向来自 Main2D 的枪口与散布采样；speed 为游戏内 px/s。
-static func spawn(parent: Node, main_node, from: Vector2, direction: Vector2,
-		speed_px_s: float, drag: float, dmg: float, pen: float,
-		range_px: float, bullet_color: Color, ctx: Dictionary,
-		knock: float) -> PlayerBullet2D:
-	if parent == null or not parent.is_inside_tree() or main_node == null:
+## 无耦合构造接口：通过显式配置字典创建弹丸，由宿主订阅 enemy_hit / wall_hit / finished 信号。
+static func create(parent: Node, config: Dictionary) -> PlayerBullet2D:
+	if parent == null or not parent.is_inside_tree():
 		return null
+	var direction: Vector2 = config.get("direction", Vector2.ZERO)
 	if direction.length_squared() < 0.000001:
 		return null
+	var from: Vector2 = config.get("origin", Vector2.ZERO)
 	var bullet := PlayerBullet2D.new()
-	bullet.main = main_node
-	bullet.velocity = direction.normalized() * maxf(speed_px_s, 1.0)
-	bullet.damage = dmg
-	bullet.ap = pen
-	bullet.knockback = knock
-	bullet.max_distance = maxf(range_px, 1.0)
-	bullet.drag_per_px = maxf(drag, 0.0)
-	bullet.color = bullet_color
-	bullet.shot_ctx = ctx
+	bullet.velocity = direction.normalized() * maxf(float(config.get("speed_px_s", 1.0)), 1.0)
+	bullet.damage = float(config.get("damage", 0.0))
+	bullet.ap = float(config.get("ap", 0.0))
+	bullet.knockback = float(config.get("knockback", 0.0))
+	bullet.max_distance = maxf(float(config.get("max_distance", 1000.0)), 1.0)
+	bullet.drag_per_px = maxf(float(config.get("drag_per_px", 0.0)), 0.0)
+	bullet.color = config.get("color", Color(1.0, 0.82, 0.45))
+	bullet.shot_ctx = config.get("shot_ctx", {})
 	bullet.origin = from
-	if main_node.get("doll") != null:
-		bullet.player_rid = main_node.doll.get_rid()
-	var trail_flag = main_node.get("bullet_trail_enabled")
-	bullet.trail_enabled = true if trail_flag == null else bool(trail_flag)
+	var exclude_rid = config.get("exclude_rid", RID())
+	if exclude_rid is RID:
+		bullet.player_rid = exclude_rid
+	bullet.trail_enabled = bool(config.get("trail_enabled", true))
+	var check_cb = config.get("wall_check", Callable())
+	if check_cb is Callable and (check_cb as Callable).is_valid():
+		bullet.wall_check = check_cb
+	var on_enemy = config.get("on_enemy_hit", Callable())
+	if on_enemy is Callable and (on_enemy as Callable).is_valid():
+		bullet.enemy_hit.connect(on_enemy)
+	var on_wall = config.get("on_wall_hit", Callable())
+	if on_wall is Callable and (on_wall as Callable).is_valid():
+		bullet.wall_hit.connect(on_wall)
+	var on_done = config.get("on_finished", Callable())
+	if on_done is Callable and (on_done as Callable).is_valid():
+		bullet.finished.connect(on_done)
 	bullet.rotation = bullet.velocity.angle()
 	bullet.z_index = 61
 	parent.add_child(bullet)
@@ -117,6 +133,16 @@ func _physics_process(delta: float) -> void:
 	queue_redraw()
 
 
+func _query_wall_between(from_pos: Vector2, to_pos: Vector2) -> Dictionary:
+	if wall_check.is_valid():
+		return wall_check.call(from_pos, to_pos)
+	if from_pos.distance_squared_to(to_pos) < 1.0:
+		return {}
+	var query := PhysicsRayQueryParameters2D.create(from_pos, to_pos, 1)
+	query.hit_from_inside = true
+	return get_world_2d().direct_space_state.intersect_ray(query)
+
+
 func _resolve_hit(hit: Dictionary, dir: Vector2) -> void:
 	var point: Vector2 = hit["position"]
 	var collider = hit.get("collider")
@@ -126,22 +152,18 @@ func _resolve_hit(hit: Dictionary, dir: Vector2) -> void:
 
 	if target != null and target.has_method("take_damage"):
 		# 敌人贴墙只露出受击盒时，从开火点回看身体核心；被墙挡住就不结算伤害。
-		if target.has_method("body_center") and main != null \
-				and main.has_method("_wall_between"):
-			var shot_origin: Vector2 = shot_ctx.get("origin", global_position)
-			var blocked: Dictionary = main._wall_between(shot_origin, target.body_center())
+		if target.has_method("body_center"):
+			var shot_origin: Vector2 = shot_ctx.get("origin", origin)
+			var blocked: Dictionary = _query_wall_between(shot_origin, target.body_center())
 			if not blocked.is_empty():
-				if main.has_method("_player_bullet_hit_wall"):
-					main._player_bullet_hit_wall(self, blocked["position"], dir)
+				wall_hit.emit(self, blocked["position"], dir)
 				_finish(blocked["position"])
 				return
-		if main != null and main.has_method("_player_bullet_hit_enemy"):
-			main._player_bullet_hit_enemy(self, target, point, dir)
+		enemy_hit.emit(self, target, point, dir)
 		_finish(point)
 		return
 
-	if main != null and main.has_method("_player_bullet_hit_wall"):
-		main._player_bullet_hit_wall(self, point, dir)
+	wall_hit.emit(self, point, dir)
 	_finish(point)
 
 
@@ -150,11 +172,7 @@ func _finish(endpoint: Vector2) -> void:
 		return
 	_finished = true
 	_end_trail_line(endpoint)
-	var owner_main = main
-	main = null
-	if owner_main != null and is_instance_valid(owner_main) \
-			and owner_main.has_method("_player_bullet_finished"):
-		owner_main._player_bullet_finished(self)
+	finished.emit(self)
 	queue_free()
 
 
