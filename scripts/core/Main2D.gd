@@ -5,6 +5,13 @@ extends Node2D
 
 enum RunState { ACTIVE, SUCCESS, FAILED }
 
+## 行动期核心事件总线：供 UI、统计、音频或后续拆分出的子系统只读订阅。
+signal shot_fired(weapon_id: StringName, ammo_id: StringName, pellet_count: int)
+signal hit_resolved(target: Node, damage: float, killed: bool, material: String)
+signal loot_gained(item_id: StringName, amount: int, is_advanced: bool)
+signal wave_changed(wave: int, state: String)
+signal run_finished(success: bool, stats: Dictionary)
+
 @onready var doll: Doll2D = $World2D/SortLayer/Doll2D
 @onready var sort_layer: Node2D = $World2D/SortLayer
 @onready var fx_layer: Node2D = $World2D/FXLayer
@@ -239,11 +246,15 @@ func _ready() -> void:
 	map_overlay.name = "MapOverlay2D"
 	add_child(map_overlay)
 	map_overlay.setup(self)
+	map_overlay.opened.connect(_on_overlay_visibility_changed.bind(true))
+	map_overlay.closed.connect(_on_overlay_visibility_changed.bind(false))
 
 	backpack = BackpackMenu2D.new()
 	backpack.name = "BackpackMenu2D"
 	add_child(backpack)
 	backpack.setup(self)
+	backpack.opened.connect(_on_overlay_visibility_changed.bind(true))
+	backpack.closed.connect(_on_overlay_visibility_changed.bind(false))
 	result_label = hud.result_label
 	var size: Vector2 = level.map_size()
 	var bounds: Rect2 = level.camera_bounds()
@@ -548,11 +559,59 @@ func _on_pickup_collected(kind: String, id: StringName, amount: int) -> void:
 func _add_loot(id: StringName, amount: int) -> void:
 	if amount <= 0:
 		return
-	if ResourceDB.is_basic(id):
+	var is_basic := ResourceDB.is_basic(id)
+	if is_basic:
 		loot[String(id)] = int(loot.get(String(id), 0)) + amount
 	else:
 		advanced_loot[String(id)] = int(advanced_loot.get(String(id), 0)) + amount
 	resources += amount
+	loot_gained.emit(id, amount, not is_basic)
+
+
+## UI 只读快照：给 BackpackMenu2D 读取本局物资副本，避免直接访问内部字段。
+func get_loot_snapshot() -> Dictionary:
+	return {
+		"basic": loot.duplicate(),
+		"advanced": advanced_loot.duplicate(),
+	}
+
+
+## UI 只读快照：给 Minimap2D / MapOverlay2D 绘制地图、玩家与敌人状态，避免反向遍历 Main2D 节点。
+func get_map_snapshot() -> Dictionary:
+	if doll == null or level == null:
+		return {}
+	var player_pos: Vector2 = doll.global_position
+	var aim_dir: Vector2 = (doll.aim_target - player_pos).normalized()
+	if aim_dir == Vector2.ZERO:
+		aim_dir = Vector2.RIGHT
+	var enemy_positions: Array[Vector2] = []
+	for enemy in enemies:
+		if is_instance_valid(enemy):
+			enemy_positions.append(enemy.global_position)
+	return {
+		"map_size": level.map_size(),
+		"tile_size": Level2D.TILE,
+		"floor_rects": level.map_floor_rects(),
+		"rooms": level.rooms,
+		"containers": level.containers,
+		"exits": level.exits,
+		"power_position": level.power_position,
+		"power_on": level.power_on,
+		"switch_exit_position": level.switch_exit_position,
+		"exit_position": level.exit_position,
+		"player_spawn": level.player_spawn,
+		"player_pos": player_pos,
+		"aim_dir": aim_dir,
+		"tracking": waves_tracking_active(),
+		"enemy_positions": enemy_positions,
+	}
+
+
+func _on_overlay_visibility_changed(active: bool) -> void:
+	if hud != null:
+		hud.visible = not active
+	if reticle != null:
+		reticle.visible = not active
 
 
 ## 拾取弹药：id 为通用弹药种类（light/medium/heavy/shotgun/special）。
@@ -1107,6 +1166,7 @@ func _on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 	_add_shake(data.shake_amount * ads_mul * lerpf(1.0, 1.35, build),
 		data.shake_roll * ads_mul, data.shake_decay)
 	_play_sfx(data.sfx_kind, -3.0)
+	shot_fired.emit(data.id, ammo.id, pellet_count)
 
 
 ## 生成一颗解耦后的玩家弹丸，并把它的信号接入 Main2D 的命中/结束结算。
@@ -1214,6 +1274,7 @@ func _apply_hit_batch(ctx: Dictionary, target, amount: float,
 	DamageNumber2D.spawn(fx_layer, point, int(round(dealt)), tint,
 		material, killed or dealt >= 40.0)
 	_shot_hit_feedback(ctx, killed)
+	hit_resolved.emit(target, dealt, killed, material)
 
 
 func _shot_hit_feedback(ctx: Dictionary, killed: bool) -> void:
@@ -1569,17 +1630,19 @@ func _finish_run(success: bool, via_switch := false,
 	else:
 		display_loot = {}
 		display_advanced = {}
-	hud.show_result(success, display_loot, display_advanced, meta_reward, xp_reward, bonus_note, {
+	var stats := {
 		"kills": kills,
 		"damage": int(round(damage_dealt)),
 		"shots": shots_fired,
 		"hits": shots_hit,
 		"time": run_elapsed,
-	})
+	}
+	hud.show_result(success, display_loot, display_advanced, meta_reward, xp_reward, bonus_note, stats)
 	doll.set_physics_process(false)
 	if doll.weapon_rig != null:
 		doll.weapon_rig.set_process(false)
 	hud.set_hint("按 R 重新开始 · ESC 返回基地")
+	run_finished.emit(success, stats)
 
 
 func _on_player_damaged(_amount: int, armor_damage: int, hp_damage: int, pos: Vector2) -> void:
@@ -1658,6 +1721,7 @@ func _begin_wave(index: int) -> void:
 	_wave_spawn_t = 0.0
 	hud.flash("第 %d 波来袭 · %d 个目标" % [wave_index, count])
 	_play_sfx("ui", -6.0)
+	wave_changed.emit(wave_index, "started")
 
 
 ## 累计增长：count(N) = count(N-1) + N，例如第 10 波 59 只，第 11 波就是 70 只。
@@ -1706,6 +1770,9 @@ func _on_wave_cleared() -> void:
 			level.refresh_containers()
 			hud.flash("第 %d 波清除 · 补给已刷新 · 可撤离 100%%" % wave_index)
 		_wave_popup.open(wave_index)
+		wave_changed.emit(wave_index, "extract_window")
+	else:
+		wave_changed.emit(wave_index, "cleared")
 
 
 ## 浪潮掉落倍率：其他模式保持 1.0。

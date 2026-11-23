@@ -1,9 +1,13 @@
 extends CanvasLayer
 class_name BackpackMenu2D
 ## TAB 背包：左栏本局拾取的物资，右栏仓库库存与信用点。
-## 打开时暂停游戏，TAB / ESC 关闭；数据直接从 Main2D 与 Progress 读取。
+## 打开时暂停游戏，TAB / ESC 关闭；通过只读快照回调与 opened/closed 信号解耦 Main2D。
+
+signal opened
+signal closed
 
 var run: Node2D
+var loot_provider: Callable = Callable()
 var run_total_label: Label
 var stash_credit_label: Label
 ## 测试与外部读取用：资源 id → 数量标签。
@@ -23,6 +27,14 @@ func _ready() -> void:
 
 func setup(target: Node2D) -> void:
 	run = target
+	if target != null and target.has_method("get_loot_snapshot"):
+		loot_provider = target.get_loot_snapshot
+	else:
+		loot_provider = Callable()
+
+
+func set_loot_provider(provider: Callable) -> void:
+	loot_provider = provider
 
 
 func is_open() -> bool:
@@ -150,11 +162,7 @@ func open() -> void:
 	_open = true
 	visible = true
 	refresh()
-	if run != null:
-		if run.get("hud") != null:
-			run.hud.visible = false
-		if run.get("reticle") != null:
-			run.reticle.visible = false
+	opened.emit()
 	get_tree().paused = true
 
 
@@ -163,11 +171,7 @@ func close() -> void:
 		return
 	_open = false
 	visible = false
-	if run != null:
-		if run.get("hud") != null:
-			run.hud.visible = true
-		if run.get("reticle") != null:
-			run.reticle.visible = true
+	closed.emit()
 	get_tree().paused = false
 
 
@@ -179,10 +183,19 @@ func toggle() -> void:
 
 
 func refresh() -> void:
-	if run == null:
+	var snap: Dictionary = {}
+	if loot_provider.is_valid():
+		var data = loot_provider.call()
+		if data is Dictionary:
+			snap = data
+	elif run != null and run.has_method("get_loot_snapshot"):
+		var data = run.get_loot_snapshot()
+		if data is Dictionary:
+			snap = data
+	else:
 		return
-	var loot: Dictionary = run.get("loot") if run.get("loot") != null else {}
-	var advanced: Dictionary = run.get("advanced_loot") if run.get("advanced_loot") != null else {}
+	var loot: Dictionary = snap.get("basic", {})
+	var advanced: Dictionary = snap.get("advanced", {})
 	var total := 0
 	for id in ResourceDB.BASIC:
 		var value := int(loot.get(String(id), 0))

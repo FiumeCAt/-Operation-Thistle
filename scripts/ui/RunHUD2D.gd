@@ -11,13 +11,6 @@ const WEAPON_PLATE_TEX: Texture2D = preload("res://assets/art/ui/hud/weapon_plat
 const PLATE_POS := Vector2(20, -148)
 const PLATE_SIZE := Vector2(560, 132)
 const WEAPON_PLATE_SIZE := Vector2(360, 150)
-## 武器面板只显示短名，长名会挤掉右侧状态。
-const WEAPON_SHORT_NAME := {
-	&"g17": "G17",
-	&"m870": "M870",
-	&"m1014": "M1014",
-	&"saiga12k": "SAIGA-12K",
-}
 
 ## 右上角小地图：只显示玩家附近敌情，目标点常显。
 signal return_requested
@@ -67,7 +60,7 @@ var _armor_broken := false
 func setup(run: Node2D) -> void:
 	main = run
 	if _minimap != null:
-		_minimap.run = run
+		_minimap.setup(run)
 
 
 func _ready() -> void:

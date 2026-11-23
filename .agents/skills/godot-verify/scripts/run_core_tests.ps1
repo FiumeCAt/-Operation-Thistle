@@ -32,6 +32,7 @@ $DefaultCoreTests = @(
     "new_enemies_2d_test",
     "player_bullet_test",
     "resources_2d_test",
+    "run_events_hud_test",
     "save_slots_2d_test",
     "save_system_test",
     "settings_2d_test",

@@ -2,7 +2,7 @@
 name: godot-verify
 description: >-
   Use this skill after editing GDScript, scenes, shaders, or data/*.json in
-  HellWalker_DollProtocol to refresh Godot 4.7.2 imports, run the 38-test core
+  HellWalker_DollProtocol to refresh Godot 4.7.2 imports, run the 39-test core
   2D regression gate, inspect logs via godot-ai MCP, and visually verify
   screenshots.
 ---
@@ -22,11 +22,11 @@ $PROJ  = "D:\AI Game\HellWalker\HellWalker_DollProtocol"
 ```
 核查无新增 `SCRIPT ERROR`、`Parse Error`、`Could not find type`（注：`addons/phantom_camera` 自带 `update_button.gd:62` 插件内部噪音，与业务脚本无关）。若 Godot GUI 编辑器正打开且未增删脚本/资源，测试时可加 `-SkipImport` 避免与编辑器争夺 `.godot` 缓存。
 
-## 步骤 2：运行核心 2D 回归门禁（38 个测试）
+## 步骤 2：运行核心 2D 回归门禁（39 个测试）
 使用汇总脚本 [run_core_tests.ps1](./scripts/run_core_tests.ps1)（日志输出至 `out/test_logs/`，自动校验输出摘要而非仅看进程退出码）：
 
 ```powershell
-# 全量 38 个核心 2D 回归（任务收口前必跑；基线 1352 条断言，0 失败）
+# 全量 39 个核心 2D 回归（任务收口前必跑；基线 1369 条断言，0 失败）
 powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1
 
 # 跳过 --import（编辑器正运行或仅验证已有脚本时）
@@ -58,13 +58,10 @@ powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run
 - `editor_screenshot`：采集实时编辑器或游戏窗口画面。
 
 ## 步骤 4：视觉验收（UI、瞄具、武器对齐、视野、动画改动必做）
-1. 抓图/录屏脚本（`_capture_*`、`_record_*`、`capture_*`、`record_*`）**必须在窗口模式下运行，不能加 `--headless`**，输出一般落在 `screenshots/`（建议加 `--save-path user://...` 隔离存档）：
-   ```powershell
-   & $GODOT --path $PROJ --script res://tests/_capture_bullet_speed.gd
-   ```
-2. 使用 `read_file` 直接查看生成的 `.png` 图片，核查布局溢出、遮挡、层级、准心对齐、透明通道白边及比例。
+1. 抓图/录屏脚本（`_capture_*`、`_record_*`、`capture_*`、`record_*`）**必须在窗口模式下运行，不能加 `--headless`**；为保持游戏本体轻量，截图与 MovieWriter 录屏原始帧统一输出到工程外的 **`D:\AI Game\HellWalker\captures\screenshots\`** 与 **`D:\AI Game\HellWalker\captures\record\`**（成片 GIF 放至 `D:\AI Game\temp_20261027_01\videos\`），不要堆在 `HellWalker_DollProtocol` 内（并加 `--save-path user://...` 隔离存档）。
+2. 使用 `read_file` 直接查看生成的 `.png` 截图与录像关键帧，核查布局溢出、遮挡、层级、准心对齐、透明通道白边及比例。
 
 ## 验收标准
 - `--import` 无本项目脚本解析/类型错误；
-- 相关测试及全量 37 项核心 2D 门禁全部 `PASS`（0 fail，无新增 `SCRIPT ERROR`）；
+- 相关测试及全量 39 项核心 2D 门禁全部 `PASS`（0 fail，无新增 `SCRIPT ERROR`）；
 - 涉及画面/UI 的改动已通过 `read_file` 实图核验。

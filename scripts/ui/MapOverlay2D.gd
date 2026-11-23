@@ -3,7 +3,11 @@ class_name MapOverlay2D
 ## M 键全屏设施地图：房间名、玩家位置/朝向、出生点、两个常开撤离点、供电与货运电梯。
 ## 打开时暂停游戏，M / ESC 关闭。
 
+signal opened
+signal closed
+
 var run: Node2D
+var snapshot_provider: Callable = Callable()
 var _open := false
 var _view: _MapView
 
@@ -17,8 +21,16 @@ func _ready() -> void:
 
 func setup(target: Node2D) -> void:
 	run = target
+	if target != null and target.has_method("get_map_snapshot"):
+		set_snapshot_provider(target.get_map_snapshot)
+	else:
+		set_snapshot_provider(Callable())
+
+
+func set_snapshot_provider(provider: Callable) -> void:
+	snapshot_provider = provider
 	if _view != null:
-		_view.run = target
+		_view.snapshot_provider = provider
 
 
 func _build() -> void:
@@ -65,11 +77,7 @@ func open() -> void:
 		return
 	_open = true
 	visible = true
-	if run != null:
-		if run.get("hud") != null:
-			run.hud.visible = false
-		if run.get("reticle") != null:
-			run.reticle.visible = false
+	opened.emit()
 	get_tree().paused = true
 	if _view != null:
 		_view.queue_redraw()
@@ -80,11 +88,7 @@ func close() -> void:
 		return
 	_open = false
 	visible = false
-	if run != null:
-		if run.get("hud") != null:
-			run.hud.visible = true
-		if run.get("reticle") != null:
-			run.reticle.visible = true
+	closed.emit()
 	get_tree().paused = false
 
 
@@ -109,7 +113,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 class _MapView extends Control:
-	var run: Node2D
+	var snapshot_provider: Callable = Callable()
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -122,69 +126,74 @@ class _MapView extends Control:
 	func _draw() -> void:
 		var s := size
 		draw_rect(Rect2(Vector2.ZERO, s), Color(0.012, 0.018, 0.026, 0.9), true)
-		if run == null or run.doll == null:
+		if not snapshot_provider.is_valid():
 			return
-		var level := run.level as Level2D
-		if level == null:
+		var snap = snapshot_provider.call()
+		if not (snap is Dictionary) or (snap as Dictionary).is_empty():
 			return
+		var data: Dictionary = snap
 		var area := Rect2(Vector2(12, 12), s - Vector2(24, 24))
-		var map_size: Vector2 = level.map_size()
+		var map_size: Vector2 = data.get("map_size", Vector2.ZERO)
+		if map_size.x <= 0.0 or map_size.y <= 0.0:
+			return
+		var tile_size := float(data.get("tile_size", GameUnits.TILE))
 		var scale := minf(area.size.x / map_size.x, area.size.y / map_size.y)
 		var offset := area.position + (area.size - map_size * scale) * 0.5
 
-		for rect in level.map_floor_rects():
+		for rect in data.get("floor_rects", []):
 			var r := Rect2(
-				offset + Vector2(rect.position) * Level2D.TILE * scale,
-				Vector2(rect.size) * Level2D.TILE * scale,
+				offset + Vector2(rect.position) * tile_size * scale,
+				Vector2(rect.size) * tile_size * scale,
 			)
 			draw_rect(r, Color(0.24, 0.27, 0.30, 0.95), true)
-		for room in level.rooms:
+		var rooms: Array = data.get("rooms", [])
+		for room in rooms:
 			var rect: Rect2 = room["rect"]
 			var r := Rect2(offset + rect.position * scale, rect.size * scale)
 			draw_rect(r, Color(PixelUI.AMBER, 0.14), true)
 			draw_rect(r, Color(PixelUI.AMBER, 0.45), false, 1.0)
 
-		for entry in level.containers:
+		for entry in data.get("containers", []):
 			if not bool(entry["searched"]):
 				var pos: Vector2 = entry["position"]
 				draw_circle(offset + pos * scale, 3.0, Color(0.95, 0.68, 0.24, 0.9))
 
-		for exit_data in level.exits:
+		for exit_data in data.get("exits", []):
 			var pos: Vector2 = exit_data["position"]
 			var p := offset + pos * scale
 			draw_circle(p, 7.0, Color(0.16, 0.86, 0.76, 0.95))
 			draw_circle(p, 3.0, Color(0.02, 0.10, 0.09, 0.95))
-			var name := String(exit_data["name"])
-			draw_string(PixelUI.FONT, p + Vector2(-name.length() * 7.0, 24),
-				name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.45, 0.96, 0.88, 0.9))
+			var exit_name := String(exit_data["name"])
+			draw_string(PixelUI.FONT, p + Vector2(-exit_name.length() * 7.0, 24),
+				exit_name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.45, 0.96, 0.88, 0.9))
 
-		var lift := offset + level.switch_exit_position * scale
+		var power_on := bool(data.get("power_on", false))
+		var switch_exit_pos: Vector2 = data.get("switch_exit_position", Vector2.ZERO)
+		var power_pos: Vector2 = data.get("power_position", Vector2.ZERO)
+		var lift := offset + switch_exit_pos * scale
 		draw_circle(lift, 6.0,
-			PixelUI.OK if level.power_on else Color(0.62, 0.52, 0.35, 0.85))
-		var power := offset + level.power_position * scale
+			PixelUI.OK if power_on else Color(0.62, 0.52, 0.35, 0.85))
+		var power := offset + power_pos * scale
 		draw_circle(power, 6.0,
-			PixelUI.OK if level.power_on else Color(0.35, 0.72, 0.95, 0.9))
+			PixelUI.OK if power_on else Color(0.35, 0.72, 0.95, 0.9))
 
 		# 浪潮收尾追踪：剩余敌人很少时，大地图也标红所有敌人。
-		var tracking := run.has_method("waves_tracking_active") \
-			and bool(run.waves_tracking_active())
-		if tracking:
-			for enemy in run.enemies:
-				if not is_instance_valid(enemy):
-					continue
-				var ep: Vector2 = offset + enemy.global_position * scale
+		if bool(data.get("tracking", false)):
+			for enemy_pos in data.get("enemy_positions", []):
+				var ep: Vector2 = offset + (enemy_pos as Vector2) * scale
 				draw_circle(ep, 6.2, Color(1.0, 0.16, 0.10, 0.26))
 				draw_circle(ep, 3.4, Color(1.0, 0.20, 0.12, 1.0))
 				draw_arc(ep, 6.8, 0.0, TAU, 16, Color(1.0, 0.35, 0.20, 0.7), 1.2)
 
-		var spawn := offset + level.player_spawn * scale
+		var player_spawn: Vector2 = data.get("player_spawn", Vector2.ZERO)
+		var spawn := offset + player_spawn * scale
 		draw_arc(spawn, 9.0, 0.0, TAU, 24, Color(0.92, 0.92, 0.92, 0.8), 2.0)
 		draw_string(PixelUI.FONT, spawn + Vector2(-21, -16), "部署点",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.85, 0.85, 0.85, 0.75))
 
-		var player: Vector2 = run.doll.global_position
+		var player: Vector2 = data.get("player_pos", Vector2.ZERO)
 		var p := offset + player * scale
-		var dir: Vector2 = (run.doll.aim_target - player).normalized()
+		var dir: Vector2 = data.get("aim_dir", Vector2.RIGHT)
 		if dir == Vector2.ZERO:
 			dir = Vector2.RIGHT
 		var side := Vector2(-dir.y, dir.x) * 7.0
@@ -194,7 +203,7 @@ class _MapView extends Control:
 		draw_circle(p, 2.5, Color(0.1, 0.2, 0.15, 1.0))
 
 		# 房间名最后画，盖住补给点等小标记，保持文字可读。
-		for room in level.rooms:
+		for room in rooms:
 			var rect: Rect2 = room["rect"]
 			var label := String(room["name"])
 			var text_pos := offset + rect.position * scale + Vector2(6.0, 18.0)

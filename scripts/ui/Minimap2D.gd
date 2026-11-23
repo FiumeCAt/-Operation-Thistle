@@ -10,8 +10,33 @@ const HEADER := 30.0
 const ENEMY_RADIUS := 760.0
 
 var run: Node2D
+var snapshot_provider: Callable = Callable()
 
 var _tick := 0.0
+
+
+func setup(target: Node2D) -> void:
+	run = target
+	if target != null and target.has_method("get_map_snapshot"):
+		snapshot_provider = target.get_map_snapshot
+	else:
+		snapshot_provider = Callable()
+
+
+func set_snapshot_provider(provider: Callable) -> void:
+	snapshot_provider = provider
+
+
+func _read_snapshot() -> Dictionary:
+	if snapshot_provider.is_valid():
+		var data = snapshot_provider.call()
+		if data is Dictionary:
+			return data
+	if run != null and run.has_method("get_map_snapshot"):
+		var data = run.get_map_snapshot()
+		if data is Dictionary:
+			return data
+	return {}
 
 
 func _ready() -> void:
@@ -39,54 +64,57 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 15, PixelUI.AMBER)
 	draw_line(Vector2(12, 34), Vector2(s.x - 12, 34), Color(PixelUI.AMBER, 0.3), 1.0)
 
-	if run == null or run.doll == null:
-		return
-	var level := run.level as Level2D
-	if level == null:
+	var snap := _read_snapshot()
+	if snap.is_empty():
 		return
 
 	var area := Rect2(Vector2(MAP_MARGIN, HEADER + 6),
 		s - Vector2(MAP_MARGIN * 2.0, HEADER + 16.0))
-	var map_size: Vector2 = level.map_size()
+	var map_size: Vector2 = snap.get("map_size", Vector2.ZERO)
+	if map_size.x <= 0.0 or map_size.y <= 0.0:
+		return
+	var tile_size := float(snap.get("tile_size", GameUnits.TILE))
 	var scale := minf(area.size.x / map_size.x, area.size.y / map_size.y)
 	var offset := area.position + (area.size - map_size * scale) * 0.5
 
-	for rect in level.map_floor_rects():
+	for rect in snap.get("floor_rects", []):
 		var r := Rect2(
-			offset + Vector2(rect.position) * Level2D.TILE * scale,
-			Vector2(rect.size) * Level2D.TILE * scale,
+			offset + Vector2(rect.position) * tile_size * scale,
+			Vector2(rect.size) * tile_size * scale,
 		)
 		draw_rect(r, Color(0.26, 0.29, 0.32, 0.95), true)
-	for room in level.rooms:
+	for room in snap.get("rooms", []):
 		var rect: Rect2 = room["rect"]
 		draw_rect(Rect2(offset + rect.position * scale, rect.size * scale),
 			Color(PixelUI.AMBER, 0.22), true)
 		draw_rect(Rect2(offset + rect.position * scale, rect.size * scale),
 			Color(PixelUI.AMBER, 0.55), false, 1.0)
 
-	for entry in level.containers:
+	for entry in snap.get("containers", []):
 		if not bool(entry["searched"]):
 			var container_pos: Vector2 = entry["position"]
 			draw_circle(offset + container_pos * scale, 1.4,
 				Color(0.95, 0.68, 0.24, 0.75))
 
-	draw_circle(offset + level.power_position * scale, 3.2,
-		PixelUI.OK if level.power_on else Color(0.35, 0.72, 0.95, 0.95))
-	draw_circle(offset + level.switch_exit_position * scale, 3.2,
-		PixelUI.OK if level.power_on else Color(0.55, 0.50, 0.40, 0.8))
-	draw_circle(offset + level.exit_position * scale, 3.8, Color(0.22, 0.88, 0.78, 0.95))
+	var power_on := bool(snap.get("power_on", false))
+	var power_pos: Vector2 = snap.get("power_position", Vector2.ZERO)
+	var switch_exit_pos: Vector2 = snap.get("switch_exit_position", Vector2.ZERO)
+	var exit_pos: Vector2 = snap.get("exit_position", Vector2.ZERO)
+	draw_circle(offset + power_pos * scale, 3.2,
+		PixelUI.OK if power_on else Color(0.35, 0.72, 0.95, 0.95))
+	draw_circle(offset + switch_exit_pos * scale, 3.2,
+		PixelUI.OK if power_on else Color(0.55, 0.50, 0.40, 0.8))
+	draw_circle(offset + exit_pos * scale, 3.8, Color(0.22, 0.88, 0.78, 0.95))
 
-	var player: Vector2 = run.doll.global_position
+	var player: Vector2 = snap.get("player_pos", Vector2.ZERO)
 	# 浪潮收尾：剩余敌人很少时取消距离裁剪，所有敌人标红，方便追踪。
-	var tracking := run.has_method("waves_tracking_active") \
-		and bool(run.waves_tracking_active())
-	for enemy in run.enemies:
-		if not is_instance_valid(enemy):
-			continue
-		var dist := player.distance_to(enemy.global_position)
+	var tracking := bool(snap.get("tracking", false))
+	for enemy_pos in snap.get("enemy_positions", []):
+		var ep_world: Vector2 = enemy_pos
+		var dist := player.distance_to(ep_world)
 		if not tracking and dist >= ENEMY_RADIUS:
 			continue
-		var p: Vector2 = offset + enemy.global_position * scale
+		var p: Vector2 = offset + ep_world * scale
 		if tracking:
 			draw_circle(p, 2.6, Color(1.0, 0.20, 0.12, 1.0))
 			draw_arc(p, 4.6, 0.0, TAU, 12, Color(1.0, 0.30, 0.18, 0.75), 1.0)
@@ -94,7 +122,7 @@ func _draw() -> void:
 			draw_circle(p, 1.8, Color(0.95, 0.32, 0.26, 0.9))
 
 	var p := offset + player * scale
-	var dir: Vector2 = (run.doll.aim_target - player).normalized()
+	var dir: Vector2 = snap.get("aim_dir", Vector2.RIGHT)
 	if dir == Vector2.ZERO:
 		dir = Vector2.RIGHT
 	draw_circle(p, 3.6, Color(0.90, 0.96, 1.0, 1.0))
