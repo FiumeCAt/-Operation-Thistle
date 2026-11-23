@@ -44,6 +44,7 @@ $DefaultCoreTests = @(
     "talents_2d_test",
     "vision_2d_test",
     "vision_fog_2d_test",
+    "wave_system_test",
     "waves_2d_test",
     "weapon_m2_m4_test",
     "weapon_m3_test",

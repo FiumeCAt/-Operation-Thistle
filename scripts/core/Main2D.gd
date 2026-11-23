@@ -69,13 +69,13 @@ const TILE := UNITS.TILE
 ## 新脚本用 preload 引用，避免依赖编辑器生成的全局类缓存。
 const HIT_FX := preload("res://scripts/fx/HitFX2D.gd")
 const PLAYER_BULLET := preload("res://scripts/fx/PlayerBullet2D.gd")
-const WAVES_POPUP := preload("res://scripts/ui/WavesExitPopup2D.gd")
 const COMBAT_FX_WARMUP := preload("res://scripts/fx/CombatFxWarmup.gd")
 const VISION_FOG := preload("res://scripts/fx/VisionFog2D.gd")
 const LASER_SIGHT := preload("res://scripts/fx/LaserSight2D.gd")
 const SCOPE_SIGHT := preload("res://scripts/fx/ScopeSight2D.gd")
 const HEARING_INDICATOR := preload("res://scripts/fx/HearingIndicator2D.gd")
 const LOOT_SYSTEM := preload("res://scripts/systems/LootSystem2D.gd")
+const WAVE_SYSTEM := preload("res://scripts/systems/WaveSystem2D.gd")
 ## 战利品/掉落常量统一收口至 LootSystem2D，此处保留只读别名供旧测试兼容引用。
 const BASIC_DROP_TABLE := LOOT_SYSTEM.BASIC_DROP_TABLE
 const CONTAINER_LOOT_MIN := LOOT_SYSTEM.CONTAINER_LOOT_MIN
@@ -123,20 +123,16 @@ var bullet_trail_enabled := true
 ## 滑杆 100% 对应旧版 500% 的实际震动强度，统一在这里换算。
 const SHAKE_SCALE_BASE := 5.0
 
-## 浪潮模式：第 N 波在上一波基础上再增加 N 个敌人（累计增长）；
-## 生命/伤害每波固定 +5%（线性，第 N 波 = 1 + 0.05 × (N-1)）。
-const WAVES_BASE_COUNT := 5
-const WAVES_STAT_STEP := 0.05
-const WAVES_INTERMISSION := 4.0
-const WAVES_SPAWN_INTERVAL := 0.12
-const WAVES_START_DELAY := 3.0
-## 每 5 波弹一次撤离窗口，同时刷新全部补给容器。
-const WAVES_EXTRACT_EVERY := 5
-## 结算比例：死亡 / ESC 提前撤离 30%，撤离弹窗正常撤离 100%。
-const WAVES_EARLY_RATIO := 0.30
-const WAVES_EXTRACT_RATIO := 1.0
-## 每存活一波，容器与敌人掉落率、掉落数量 +2%。
-const WAVES_LOOT_STEP := 0.02
+## 浪潮模式常量统一收口至 WaveSystem2D，保留别名供测试兼容引用。
+const WAVES_BASE_COUNT := WAVE_SYSTEM.BASE_COUNT
+const WAVES_STAT_STEP := WAVE_SYSTEM.STAT_STEP
+const WAVES_INTERMISSION := WAVE_SYSTEM.INTERMISSION
+const WAVES_SPAWN_INTERVAL := WAVE_SYSTEM.SPAWN_INTERVAL
+const WAVES_START_DELAY := WAVE_SYSTEM.START_DELAY
+const WAVES_EXTRACT_EVERY := WAVE_SYSTEM.EXTRACT_EVERY
+const WAVES_EARLY_RATIO := WAVE_SYSTEM.EARLY_RATIO
+const WAVES_EXTRACT_RATIO := WAVE_SYSTEM.EXTRACT_RATIO
+const WAVES_LOOT_STEP := WAVE_SYSTEM.LOOT_STEP
 
 var _label_timer := 0.0
 var _near_container: Dictionary = {}
@@ -201,21 +197,38 @@ var scope_sight: ScopeSight2D
 ## 枪口纯函数特效复用一个节点：无粒子实例，重播没有创建 spike。
 var _muzzle_fx: PixelFx2D
 var _muzzle_stop_ms := 0
-## 浪潮模式状态：波数、存活数、分批投放队列与波间倒计时。
-var waves_mode := false
-## 歌利亚狂潮：浪潮模式下的纯平地竞技场，只刷歌利亚，每波结束回满状态。
-var goliath_map := false
-var wave_index := 0
-var wave_active := false
-var wave_alive := 0
-## 浪潮掉落倍率：每存活一波 +2%，作用于容器与敌人掉落。
-var wave_loot_mul := 1.0
-var _wave_spawn_queue: Array[Dictionary] = []
-var _wave_spawn_t := 0.0
-var _wave_spawn_batch := 1
-var _wave_total := 0
-var _wave_intermission := 0.0
-var _wave_popup: CanvasLayer
+## 浪潮模式子系统与对外兼容属性转发（单一状态源在 wave_system 内）。
+var wave_system: WaveSystem2D = WAVE_SYSTEM.new()
+var waves_mode: bool:
+	get: return wave_system.waves_mode
+	set(v): wave_system.waves_mode = v
+var goliath_map: bool:
+	get: return wave_system.goliath_map
+	set(v): wave_system.goliath_map = v
+var wave_index: int:
+	get: return wave_system.wave_index
+	set(v): wave_system.wave_index = v
+var wave_active: bool:
+	get: return wave_system.wave_active
+	set(v): wave_system.wave_active = v
+var wave_alive: int:
+	get: return wave_system.wave_alive
+	set(v): wave_system.wave_alive = v
+var wave_loot_mul: float:
+	get: return wave_system.wave_loot_mul
+	set(v): wave_system.wave_loot_mul = v
+var _wave_spawn_queue: Array[Dictionary]:
+	get: return wave_system.spawn_queue
+	set(v): wave_system.spawn_queue = v
+var _wave_total: int:
+	get: return wave_system.wave_total
+	set(v): wave_system.wave_total = v
+var _wave_intermission: float:
+	get: return wave_system.intermission
+	set(v): wave_system.intermission = v
+var _wave_popup: CanvasLayer:
+	get: return wave_system.popup
+	set(v): wave_system.popup = v
 
 
 func _ready() -> void:
@@ -225,6 +238,11 @@ func _ready() -> void:
 	hud.restart_requested.connect(func() -> void: get_tree().reload_current_scene())
 	loot_system = LOOT_SYSTEM.new()
 	loot_system.setup(fx_layer, level, doll, hud, wave_loot_scale, _play_sfx, _add_loot)
+	wave_system.setup(self, sort_layer, level, doll, hud, enemies,
+		func() -> bool: return run_state == RunState.ACTIVE,
+		_on_enemy_died, _play_sfx)
+	wave_system.wave_changed.connect(func(w: int, state: String) -> void: wave_changed.emit(w, state))
+	wave_system.finish_requested.connect(_finish_run)
 	reticle.setup(self)
 	scope_sight = SCOPE_SIGHT.new()
 	scope_sight.name = "ScopeSight2D"
@@ -736,13 +754,7 @@ func _objective_text() -> String:
 	if run_state == RunState.SUCCESS:
 		return "行动结束"
 	if waves_mode:
-		var wave_name := "歌利亚狂潮" if goliath_map else "浪潮"
-		if wave_active:
-			return "%s %d · 剩余 %d" % [
-				wave_name, wave_index, wave_alive + _wave_spawn_queue.size()]
-		if wave_index == 0:
-			return "%s · 准备中" % wave_name
-		return "%s %d 已清除 · 下一波准备中" % [wave_name, wave_index]
+		return wave_system.objective_text()
 	if level.power_on:
 		return "目标：撤离 · 拉闸 +20%"
 	return "目标：搜刮 → 撤离（可选：供电）"
@@ -752,12 +764,7 @@ func _objective_text() -> String:
 func _default_hint() -> String:
 	if not waves_mode:
 		return HINT_DEFAULT
-	if wave_active:
-		return "浪潮 %d · 剩余 %d（ESC 可提前撤离）" % [
-			wave_index, wave_alive + _wave_spawn_queue.size()]
-	if wave_index == 0:
-		return "浪潮模式：守住每一波 · 每 5 波可撤离"
-	return "第 %d 波已清除 · 下一波准备中（ESC 可提前撤离）" % wave_index
+	return wave_system.default_hint()
 
 
 func _flash_hint(text: String) -> void:
@@ -1506,192 +1513,70 @@ func _on_player_died() -> void:
 
 
 ## 浪潮模式：每 5 波弹一次撤离窗口，同时刷新补给。
+## --- 浪潮与歌利亚狂潮（委托至 WaveSystem2D）----------------------------------
+
 func _build_waves_exit_popup() -> void:
-	_wave_popup = WAVES_POPUP.new()
-	_wave_popup.name = "WavesExitPopup2D"
-	add_child(_wave_popup)
-	_wave_popup.extract_requested.connect(_on_waves_extract)
-	_wave_popup.continue_requested.connect(_on_waves_continue)
+	wave_system.build_exit_popup()
 
 
-## 波次推进：分批投放 → 清空后进入波间倒计时 → 下一波。
 func _update_waves(delta: float) -> void:
-	if run_state != RunState.ACTIVE:
-		return
-	if not _wave_spawn_queue.is_empty():
-		_wave_spawn_t -= delta
-		var spawned := 0
-		while _wave_spawn_t <= 0.0 and not _wave_spawn_queue.is_empty() \
-				and spawned < _wave_spawn_batch:
-			_spawn_wave_enemy(_wave_spawn_queue.pop_front())
-			_wave_spawn_t += WAVES_SPAWN_INTERVAL
-			spawned += 1
-		return
-	if wave_active:
-		if wave_alive <= 0:
-			wave_active = false
-			_on_wave_cleared()
-		return
-	if _wave_intermission > 0.0:
-		_wave_intermission = maxf(_wave_intermission - delta, 0.0)
-		if _wave_intermission <= 0.0:
-			_begin_wave(wave_index + 1)
+	wave_system.update(delta)
 
 
-## 第 N 波：在上一波基础上再增加 N 个敌人（1→基础，2→基础+2，3→再+3…）。
-## 生命与伤害按线性固定 +5% 叠加（第 11 波 = 150%，不是复利 162.9%）。
 func _begin_wave(index: int) -> void:
-	wave_index = index
-	wave_active = true
-	_wave_intermission = 0.0
-	var stat_mul := wave_stat_scale(wave_index)
-	var count := _wave_enemy_count(wave_index)
-	_wave_total = count
-	# 波数越高敌人越多，按批次投放，避免几十只同时生成造成卡顿。
-	_wave_spawn_batch = clampi(int(ceil(float(count) / 25.0)), 1, 4)
-	var points := _wave_spawn_points()
-	_wave_spawn_queue.clear()
-	for i in count:
-		_wave_spawn_queue.append({
-			"kind": _wave_enemy_kind(wave_index),
-			"pos": points[i % points.size()] + Vector2(randf_range(-20, 20), randf_range(-20, 20)),
-			"stat_mul": stat_mul,
-		})
-	_wave_spawn_t = 0.0
-	hud.flash("第 %d 波来袭 · %d 个目标" % [wave_index, count])
-	_play_sfx("ui", -6.0)
-	wave_changed.emit(wave_index, "started")
+	wave_system.begin_wave(index)
 
 
-## 累计增长：count(N) = count(N-1) + N，例如第 10 波 59 只，第 11 波就是 70 只。
 func _wave_enemy_count(index: int) -> int:
-	var count := WAVES_BASE_COUNT
-	for step in range(2, index + 1):
-		count += step
-	return count
+	return WAVE_SYSTEM.enemy_count(index)
 
 
-## 生命/伤害倍率：线性固定 +5%/波；第 1 波 100%，第 11 波 150%。
 func wave_stat_scale(index: int) -> float:
-	return 1.0 + WAVES_STAT_STEP * float(maxi(index, 1) - 1)
+	return WAVE_SYSTEM.stat_scale(index)
 
 
-## 收尾追踪：剩余敌人少于 10 个，或少于本波总数的 10% 时，
-## 小地图与大地图强制标出所有敌人，方便寻找最后的漏网之鱼。
 func waves_tracking_active() -> bool:
-	if not waves_mode or not wave_active or _wave_total <= 0:
-		return false
-	var remaining := wave_alive + _wave_spawn_queue.size()
-	if remaining <= 0:
-		return false
-	return remaining < 10 or float(remaining) < float(_wave_total) * 0.1
+	return wave_system.tracking_active()
 
 
 func _on_wave_cleared() -> void:
-	_wave_intermission = WAVES_INTERMISSION
-	wave_loot_mul += WAVES_LOOT_STEP
-	var clear_text := "第 %d 波清除 · 掉落 +2%%" % wave_index
-	if goliath_map:
-		# 歌利亚狂潮：每波结束自动补满生命、护甲、弹匣与备弹。
-		doll.hp = doll.hp_max
-		doll.armor = doll.armor_max
-		if doll.weapon_rig != null:
-			doll.weapon_rig.refill_all_ammo()
-		clear_text += " · 状态/弹药回满"
-	hud.flash(clear_text)
-	_play_sfx("ui", -6.0)
-	if wave_index % WAVES_EXTRACT_EVERY == 0 and _wave_popup != null:
-		_wave_intermission = 0.0
-		# 设施浪潮每 5 波刷新补给；竞技场没有容器，只弹撤离窗口。
-		if goliath_map:
-			hud.flash("第 %d 波清除 · 可撤离 100%%" % wave_index)
-		else:
-			level.refresh_containers()
-			hud.flash("第 %d 波清除 · 补给已刷新 · 可撤离 100%%" % wave_index)
-		_wave_popup.open(wave_index)
-		wave_changed.emit(wave_index, "extract_window")
-	else:
-		wave_changed.emit(wave_index, "cleared")
+	wave_system.on_wave_cleared()
 
 
-## 浪潮掉落倍率：其他模式保持 1.0。
 func wave_loot_scale() -> float:
-	return wave_loot_mul if waves_mode else 1.0
+	return wave_system.loot_scale()
 
 
-## 掉落数量按当前浪潮倍率放大，至少保留 1 个。
 func _loot_amount(value: int) -> int:
 	return LOOT_SYSTEM.scale_amount(value, wave_loot_scale())
 
 
-## 掉落概率按当前浪潮倍率放大，并夹在 0–1。
 func _loot_chance(chance: float) -> float:
 	return LOOT_SYSTEM.scale_chance(chance, wave_loot_scale())
 
 
-## 出生点优先取离玩家 9 格以外的位置，避免整波贴脸刷新。
 func _wave_spawn_points() -> Array[Vector2]:
-	var far: Array[Vector2] = []
-	var near: Array[Vector2] = []
-	for pos in level.enemy_spawns:
-		if pos.distance_to(doll.global_position) >= 9.0 * TILE:
-			far.append(pos)
-		else:
-			near.append(pos)
-	far.shuffle()
-	near.shuffle()
-	var out: Array[Vector2] = []
-	out.append_array(far)
-	out.append_array(near)
-	if out.is_empty():
-		out.append(doll.global_position + Vector2(12.0, 0.0) * TILE)
-	return out
+	return wave_system.spawn_points()
 
 
-## 精英单位随波数逐步加入，后期猎人/重装占比提高。
 func _wave_enemy_kind(index: int) -> StringName:
-	if goliath_map:
-		return &"goliath"
-	var roll := randf()
-	if index >= 6 and roll < 0.15:
-		return &"hunter"
-	if index >= 4 and roll < 0.35:
-		return &"heavy"
-	if index >= 2 and roll < 0.65:
-		return &"rusher"
-	return &"rifleman"
+	return wave_system.enemy_kind(index)
 
 
 func _spawn_wave_enemy(entry: Dictionary) -> void:
-	var pos: Vector2 = entry["pos"]
-	var stat_mul := float(entry["stat_mul"])
-	var enemy := Enemy2D.new()
-	enemy.setup(StringName(entry["kind"]), pos, 1, stat_mul, stat_mul)
-	enemy.always_hunt = true
-	enemy.nav_level = level
-	sort_layer.add_child(enemy)
-	enemy.died.connect(_on_enemy_died)
-	enemies.append(enemy)
-	wave_alive += 1
+	wave_system.spawn_enemy(entry)
 
 
-## ESC 菜单提前撤离：按 30% 结算。
 func _on_waves_retreat() -> void:
-	if not waves_mode or run_state != RunState.ACTIVE:
-		return
-	_finish_run(true, false, WAVES_EARLY_RATIO, "提前撤离 · 信用点/材料按 30% 回收")
+	wave_system.on_retreat()
 
 
-## 每 5 波撤离弹窗：正常撤离按 100% 结算。
 func _on_waves_extract() -> void:
-	if run_state != RunState.ACTIVE:
-		return
-	_finish_run(true, false, WAVES_EXTRACT_RATIO, "浪潮撤离 · 信用点/材料按 100% 回收")
+	wave_system.on_extract()
 
 
 func _on_waves_continue() -> void:
-	_wave_intermission = WAVES_INTERMISSION
-	hud.flash("继续挑战 · 第 %d 波准备" % (wave_index + 1))
+	wave_system.on_continue()
 
 
 func _apply_debug_visual_mode() -> void:
