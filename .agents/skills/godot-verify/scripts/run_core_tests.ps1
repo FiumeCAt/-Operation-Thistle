@@ -25,6 +25,7 @@ $DefaultCoreTests = @(
     "fx_warmup_test",
     "game_units_test",
     "goliath_arena_test",
+    "loot_system_test",
     "map_2d_test",
     "menu_2d_test",
     "mods_2d_test",

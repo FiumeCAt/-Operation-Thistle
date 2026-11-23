@@ -75,21 +75,14 @@ const VISION_FOG := preload("res://scripts/fx/VisionFog2D.gd")
 const LASER_SIGHT := preload("res://scripts/fx/LaserSight2D.gd")
 const SCOPE_SIGHT := preload("res://scripts/fx/ScopeSight2D.gd")
 const HEARING_INDICATOR := preload("res://scripts/fx/HearingIndicator2D.gd")
-## 敌人基础资源掉落权重；进阶资源走 EnemyDB 的 advanced_drop。
-const BASIC_DROP_TABLE := {
-	&"rifleman": [[&"electronics", 45], [&"energy", 35], [&"parts", 20]],
-	&"rusher": [[&"parts", 55], [&"energy", 30], [&"electronics", 15]],
-	&"heavy": [[&"parts", 45], [&"electronics", 35], [&"energy", 20]],
-	&"hunter": [[&"energy", 50], [&"electronics", 50]],
-}
-## 容器产出比单个掉落物更多，且更容易同时出第二种资源。
-## 所有资源概率已含 +5% 资源爆率修正（弹药不在调整范围内）。
-const CONTAINER_LOOT_MIN := 2
-const CONTAINER_LOOT_MAX := 4
-const CONTAINER_SECONDARY_CHANCE := 0.68
-const CONTAINER_ADVANCED_CHANCE := 0.084
-## 敌人也能掉多种资源，但第二种的触发率明显低于容器，不减少原有必掉物。
-const ENEMY_SECONDARY_CHANCE := 0.37
+const LOOT_SYSTEM := preload("res://scripts/systems/LootSystem2D.gd")
+## 战利品/掉落常量统一收口至 LootSystem2D，此处保留只读别名供旧测试兼容引用。
+const BASIC_DROP_TABLE := LOOT_SYSTEM.BASIC_DROP_TABLE
+const CONTAINER_LOOT_MIN := LOOT_SYSTEM.CONTAINER_LOOT_MIN
+const CONTAINER_LOOT_MAX := LOOT_SYSTEM.CONTAINER_LOOT_MAX
+const CONTAINER_SECONDARY_CHANCE := LOOT_SYSTEM.CONTAINER_SECONDARY_CHANCE
+const CONTAINER_ADVANCED_CHANCE := LOOT_SYSTEM.CONTAINER_ADVANCED_CHANCE
+const ENEMY_SECONDARY_CHANCE := LOOT_SYSTEM.ENEMY_SECONDARY_CHANCE
 ## 全项目统一世界距离标尺：1 格 = 1 米 = 64 px（来自 GameUnits）。
 const WORLD_PER_METER := UNITS.PIXELS_PER_METER
 const INTERACT_RADIUS := 96.0
@@ -196,6 +189,7 @@ var _ads_look := Vector2.ZERO
 var pause_menu: PauseMenu2D
 var map_overlay: MapOverlay2D
 var backpack: BackpackMenu2D
+var loot_system: LootSystem2D
 ## 玩家分层视野与视野迷雾：清晰主锥 / 相对暗外圈 / 近身黑暗视野。
 var vision: VisionFog2D
 ## 下挂激光：装备后从枪口绘制绿色光束与命中点光斑。
@@ -229,6 +223,8 @@ func _ready() -> void:
 	hud.setup(self)
 	hud.return_requested.connect(_return_to_base)
 	hud.restart_requested.connect(func() -> void: get_tree().reload_current_scene())
+	loot_system = LOOT_SYSTEM.new()
+	loot_system.setup(fx_layer, level, doll, hud, wave_loot_scale, _play_sfx, _add_loot)
 	reticle.setup(self)
 	scope_sight = SCOPE_SIGHT.new()
 	scope_sight.name = "ScopeSight2D"
@@ -467,92 +463,30 @@ func _alert_enemies_near_death(victim: Enemy2D) -> void:
 		other.alert_by_ally_death(pos)
 
 
-## 敌人尸体掉落：基础资源必掉，35% 额外掉一种不同资源，远程概率掉弹药，稀有进阶小概率。
+## --- 掉落 / 拾取 / 入包（委托至 LootSystem2D）---------------------------------
+
 func _spawn_enemy_drops(enemy: Enemy2D) -> void:
-	var origin: Vector2 = enemy.global_position + Vector2(0, -18)
-	var pieces := _loot_amount(2 if enemy.kind == &"heavy" else 1)
-	var primary := &"parts"
-	for i in pieces:
-		primary = _roll_basic_drop(enemy.kind)
-		_spawn_pickup(origin + Vector2(randf_range(-16, 16), randf_range(-10, 10)),
-			"resource", primary, 1)
-	if randf() < _loot_chance(ENEMY_SECONDARY_CHANCE):
-		var secondary := _roll_basic_excluding(primary)
-		_spawn_pickup(origin + Vector2(randf_range(-16, 16), randf_range(-10, 10)),
-			"resource", secondary, 1)
-	var ammo_chance := float(enemy.stats.get("ammo_drop", 0.0))
-	if ammo_chance > 0.0 and randf() < _loot_chance(ammo_chance):
-		# 敌人掉落的弹药按通用种类合并，9mm / 5.7 / .45 都归入轻型弹。
-		var ammo_key := StringName(enemy.stats.get("ammo", &"9mm"))
-		var category := WeaponDB.category_of(ammo_key)
-		var bounds: Array = enemy.stats.get("ammo_amount", [12, 24])
-		var count := _loot_amount(randi_range(int(bounds[0]), int(bounds[1])))
-		_spawn_pickup(origin + Vector2(randf_range(-14, 14), randf_range(-8, 8)),
-			"ammo", category, count)
-	var advanced_chance := float(enemy.stats.get("advanced_drop", 0.0525))
-	if randf() < _loot_chance(advanced_chance):
-		_spawn_pickup(origin + Vector2(randf_range(-12, 12), randf_range(-8, 8)),
-			"resource", _random_advanced(), 1)
+	loot_system.spawn_enemy_drops(enemy)
 
 
 func _roll_basic_drop(kind: StringName) -> StringName:
-	var table: Array = BASIC_DROP_TABLE.get(kind, BASIC_DROP_TABLE[&"rifleman"])
-	var total := 0
-	for entry in table:
-		total += int(entry[1])
-	var roll := randi() % maxi(total, 1)
-	for entry in table:
-		roll -= int(entry[1])
-		if roll < 0:
-			return StringName(entry[0])
-	return StringName(table[0][0])
+	return LOOT_SYSTEM.roll_basic_drop(kind)
 
 
-## 第二种基础资源：排除已经掉过的主类型，保证一次掉落里类型不同。
 func _roll_basic_excluding(excluded: StringName) -> StringName:
-	var pool: Array[StringName] = []
-	for id in ResourceDB.BASIC:
-		if id != excluded:
-			pool.append(id)
-	if pool.is_empty():
-		return excluded
-	return pool[randi() % pool.size()]
+	return LOOT_SYSTEM.roll_basic_excluding(excluded)
 
 
-## 进阶资源按权重抽取：枪械零件（1.5 阶）出现率高于其余进阶材料。
 func _random_advanced() -> StringName:
-	var total := 0
-	for id in ResourceDB.ADVANCED:
-		total += int(ResourceDB.ADVANCED_WEIGHTS.get(id, 0))
-	if total <= 0:
-		return ResourceDB.ADVANCED[randi() % ResourceDB.ADVANCED.size()]
-	var roll := randi() % total
-	for id in ResourceDB.ADVANCED:
-		roll -= int(ResourceDB.ADVANCED_WEIGHTS.get(id, 0))
-		if roll < 0:
-			return id
-	return ResourceDB.ADVANCED[0]
+	return LOOT_SYSTEM.roll_advanced()
 
 
 func _spawn_pickup(pos: Vector2, kind: String, id: StringName, amount: int) -> void:
-	var pickup := LootPickup2D.new()
-	pickup.setup(kind, id, amount, Callable(self, "_on_pickup_collected"))
-	fx_layer.add_child(pickup)
-	pickup.global_position = pos
+	loot_system.spawn_pickup(pos, kind, id, amount)
 
 
 func _on_pickup_collected(kind: String, id: StringName, amount: int) -> void:
-	if kind == "ammo":
-		_grant_ammo(id, amount)
-		var info: Dictionary = WeaponDB.category_table().get(String(id), {})
-		var color := Color.html(String(info.get("color", "#ffd18a")))
-		var label := String(info.get("display_name", String(id)))
-		hud.push_pickup("+%d 发 %s" % [amount, label], color)
-	else:
-		_add_loot(id, amount)
-		hud.push_pickup("+%d %s" % [amount, ResourceDB.display_name(id)],
-			ResourceDB.color_of(id))
-	_play_sfx("pickup", -7.0)
+	loot_system.on_pickup_collected(kind, id, amount)
 
 
 ## 拾取/容器入包：只改本局库存，撤离时才写回存档。
@@ -616,47 +550,17 @@ func _on_overlay_visibility_changed(active: bool) -> void:
 
 ## 拾取弹药：id 为通用弹药种类（light/medium/heavy/shotgun/special）。
 func _grant_ammo(category: StringName, amount: int) -> void:
-	if doll.weapon_rig == null or amount <= 0:
-		return
-	var info: Dictionary = WeaponDB.category_table().get(String(category), {})
-	var base := int(info.get("reserve_max", 0))
-	var current := int(doll.weapon_rig.reserve.get(category, base))
-	doll.weapon_rig.reserve[category] = current + amount
+	loot_system.grant_ammo(category, amount)
 
 
 ## 撤离结算用：基础资源吃搜刮天赋加成，进阶资源按原样入库。
 func _banked_materials() -> Dictionary:
-	var banked := {}
-	for id in loot:
-		var count := int(loot[id])
-		if count > 0:
-			banked[String(id)] = maxi(1, int(round(float(count) * talent_scavenge)))
-	for id in advanced_loot:
-		var count := int(advanced_loot[id])
-		if count > 0:
-			banked[String(id)] = count
-	return banked
+	return LOOT_SYSTEM.compute_banked_materials(loot, advanced_loot, talent_scavenge)
 
 
 ## 浪潮结算：按比例回收物资，并把基础/进阶拆开供结算面板展示。
 func _scaled_materials(ratio: float) -> Dictionary:
-	var basic := {}
-	var advanced := {}
-	var merged := {}
-	var banked := _banked_materials()
-	for key in banked:
-		var count := int(banked[key])
-		var value := count
-		if ratio < 1.0:
-			value = int(round(float(count) * ratio))
-			if count > 0 and value < 1:
-				value = 1
-		merged[key] = value
-		if ResourceDB.BASIC.has(StringName(key)):
-			basic[key] = value
-		else:
-			advanced[key] = value
-	return {"materials": merged, "basic": basic, "advanced": advanced}
+	return LOOT_SYSTEM.compute_scaled_materials(loot, advanced_loot, talent_scavenge, ratio)
 
 
 func _process(delta: float) -> void:
@@ -1488,82 +1392,17 @@ func _try_switch_extract() -> void:
 
 
 func _search_container(entry: Dictionary) -> void:
-	if bool(entry["searched"]):
-		return
-	entry["searched"] = true
-	var node: Node2D = entry["node"]
-	if node != null:
-		node.modulate = Color(0.86, 0.86, 0.86)
-	# 换开启贴图：盖子/门/抽屉打开，箱体尺寸不变。
-	# 衣服、物料箱等装饰物件只有关闭态贴图，保持原图并依靠变暗表示已搜刮。
-	var chest: Sprite2D = entry.get("sprite")
-	if chest != null and not bool(entry.get("keep_closed_art", false)):
-		var art: Dictionary = level.container_art(StringName(entry.get("art", &"material_box")))
-		if art.has("open"):
-			chest.texture = art["open"]
-	_play_sfx("crate_open", -4.0)
-	var hint: Label = entry.get("hint")
-	if hint != null:
-		hint.visible = false
-	var loot_id := StringName(entry.get("loot", &"parts"))
-	match loot_id:
-		&"repair":
-			doll.heal(30)
-			doll.repair_armor(30)
-			hud.push_pickup("医疗包：生命 / 护甲 +30", PixelUI.OK)
-			# 医疗箱同时带少量能量单元，偶尔再出第二种材料。
-			_grant_container_gains(_roll_container_bundle(&"energy", 1, 2, 0.42, 0.032))
-		&"ammo":
-			# 弹药箱按通用种类补给：轻型弹必出，再随机补一种其它通用弹药。
-			var categories: Array[StringName] = [&"light", &"medium", &"heavy", &"shotgun"]
-			var light_amount := _loot_amount(30)
-			_grant_ammo(&"light", light_amount)
-			var second: StringName = categories[randi() % categories.size()]
-			var second_amount := _loot_amount(
-				30 if second == &"light" else (10 if second == &"heavy" else 12))
-			_grant_ammo(second, second_amount)
-			var info: Dictionary = WeaponDB.category_table().get(String(second), {})
-			hud.push_pickup("弹药补给 · 轻型弹 ×%d / %s ×%d" % [
-				light_amount, String(info.get("display_name", "中型弹")), second_amount],
-				Color.html(String(info.get("color", "#ffd18a"))))
-			# 弹药箱同时带少量电子元件。
-			_grant_container_gains(_roll_container_bundle(&"electronics", 1, 2, 0.42, 0.032))
-		_:
-			var final_id := loot_id if ResourceDB.has(loot_id) else &"parts"
-			_grant_container_gains(_roll_container_bundle(
-				final_id, CONTAINER_LOOT_MIN, CONTAINER_LOOT_MAX,
-				CONTAINER_SECONDARY_CHANCE, CONTAINER_ADVANCED_CHANCE))
-	# 保险箱保底：小型保险箱以外的保险箱必出 1 份进阶材料。
-	if level.container_guarantees_advanced(StringName(entry.get("art", &"material_box"))):
-		_grant_container_gains([{"id": _random_advanced(), "amount": _loot_amount(1)}])
+	loot_system.search_container(entry)
 
 
-## 容器一次开箱的完整产物：主资源必出，按概率追加不同种类的基础/进阶资源。
-## 浪潮模式下数量与概率都随存活波次提升。
 func _roll_container_bundle(primary: StringName, amount_min: int, amount_max: int,
 		secondary_chance: float, advanced_chance: float) -> Array[Dictionary]:
-	var min_amount := _loot_amount(amount_min)
-	var max_amount := maxi(min_amount, _loot_amount(amount_max))
-	var gains: Array[Dictionary] = [{
-		"id": primary, "amount": randi_range(min_amount, max_amount),
-	}]
-	if randf() < _loot_chance(secondary_chance):
-		gains.append({
-			"id": _roll_basic_excluding(primary),
-			"amount": randi_range(_loot_amount(1), maxi(1, _loot_amount(2))),
-		})
-	if randf() < _loot_chance(advanced_chance):
-		gains.append({"id": _random_advanced(), "amount": _loot_amount(1)})
-	return gains
+	return LOOT_SYSTEM.roll_container_bundle(primary, amount_min, amount_max,
+		secondary_chance, advanced_chance, wave_loot_scale())
 
 
 func _grant_container_gains(gains: Array[Dictionary]) -> void:
-	for gain in gains:
-		var id: StringName = gain["id"]
-		var amount := int(gain["amount"])
-		_add_loot(id, amount)
-		hud.push_pickup("搜刮：%s ×%d" % [ResourceDB.display_name(id), amount],
-			ResourceDB.color_of(id))
+	loot_system.grant_container_gains(gains)
 
 
 func _try_extract() -> void:
@@ -1782,12 +1621,12 @@ func wave_loot_scale() -> float:
 
 ## 掉落数量按当前浪潮倍率放大，至少保留 1 个。
 func _loot_amount(value: int) -> int:
-	return maxi(1, int(round(float(value) * wave_loot_scale())))
+	return LOOT_SYSTEM.scale_amount(value, wave_loot_scale())
 
 
 ## 掉落概率按当前浪潮倍率放大，并夹在 0–1。
 func _loot_chance(chance: float) -> float:
-	return clampf(chance * wave_loot_scale(), 0.0, 1.0)
+	return LOOT_SYSTEM.scale_chance(chance, wave_loot_scale())
 
 
 ## 出生点优先取离玩家 9 格以外的位置，避免整波贴脸刷新。
