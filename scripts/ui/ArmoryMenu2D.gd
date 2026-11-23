@@ -7,6 +7,7 @@ signal closed
 
 const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
 const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
+const MOD_SERVICE := preload("res://scripts/ui/armory/ModInstallService.gd")
 const PANEL_SIZE := Vector2(1240, 820)
 ## 武器数据行；顺序即显示顺序。
 const STAT_KEYS: Array[String] = [
@@ -566,10 +567,7 @@ func _build_armor_page(parent: Node) -> void:
 
 
 func _armor_display_mode() -> String:
-	var p := get_node_or_null("/root/Progress")
-	if p != null and p.has_method("armor_display"):
-		return String(p.armor_display())
-	return "value"
+	return MOD_SERVICE.armor_display_mode(get_node_or_null("/root/Progress"))
 
 
 func _refresh_armor() -> void:
@@ -753,10 +751,7 @@ func _refresh_reticle_switch() -> void:
 		return
 	_reticle_box.visible = true
 	var default_style := String(entry.get("reticle", "cross"))
-	var is_scope := bool(entry.get("scope", false))
-	var styles := [["native", "默认"], ["cross", "十字"], ["pso", "PSO"],
-		["mildot", "密位点"], ["vudu", "Vudu"]] if is_scope \
-		else [["dot", "红点"], ["holo", "全息"]]
+	var styles := MOD_SERVICE.reticle_styles_for(entry)
 	var current := String(p.reticle_style(sight_id, default_style))
 	for pair in styles:
 		var style := String(pair[0])
@@ -1180,12 +1175,10 @@ func _refresh_mod_detail(installed: Dictionary) -> void:
 		if String(slot_def["id"]) == slot:
 			slot_name = String(slot_def["name"])
 			break
-	var english := {"muzzle": "MUZZLE", "magazine": "MAGAZINE", "core": "BOLT",
-		"stock": "STOCK", "grip": "GRIP", "sight": "SIGHT"}
 	var installed_entry := ModDB.option(slot, current, false, _mod_item)
 	var installed_name := "未装配" if installed_entry.is_empty() \
 		else String(installed_entry["name"])
-	_mod_detail_title.text = "%s // %s" % [slot_name, String(english.get(slot, ""))]
+	_mod_detail_title.text = "%s // %s" % [slot_name, MOD_SERVICE.slot_english_name(slot)]
 	_mod_detail_state.text = "当前：%s" % installed_name
 	_mod_detail_cost.text = "消耗：%s\n%s" % [_cost_line(entry), _material_line(entry)]
 	var option_text := "%s%s\n%s" % [
@@ -1204,13 +1197,7 @@ func _refresh_mod_detail(installed: Dictionary) -> void:
 
 ## 瞄具固定属性摘要：倍率 / 视野 / 射程 / 瞄准时间。
 func _sight_stats_line(entry: Dictionary) -> String:
-	var mag := float(entry.get("magnification", 1.0))
-	var fx: Dictionary = entry.get("effects", {})
-	var vision := (float(fx.get("vision_mul", 1.0)) - 1.0) * 100.0
-	var range_pct := (float(fx.get("range_mul", 1.0)) - 1.0) * 100.0
-	var ads_pct := (float(fx.get("ads_time_mul", 1.0)) - 1.0) * 100.0
-	return "倍率 %.1f× · 视野 +%d%% · 射程 +%d%% · 瞄准时间 +%d%%" % [
-		mag, int(round(vision)), int(round(range_pct)), int(round(ads_pct))]
+	return MOD_SERVICE.sight_stats_line(entry)
 
 
 ## 按给定装配表计算武器实际数据（统一委托 WeaponStatsModel，与 WeaponRig2D 完全同源）。
@@ -1323,46 +1310,28 @@ func _install_mod(slot: String, option_id: String) -> void:
 	var p := get_node_or_null("/root/Progress")
 	if p == null:
 		return
-	var ok: bool = p.install_armor_mod(StringName(slot), StringName(option_id)) \
-		if _mod_item == "armor" \
-		else p.install_weapon_mod(StringName(_mod_item), StringName(slot), StringName(option_id))
-	if ok:
-		_mod_feedback.text = "已安装 · 开始行动后生效"
+	var res := MOD_SERVICE.install_mod(p, _mod_item, slot, option_id)
+	if bool(res["ok"]):
+		_mod_feedback.text = String(res["message"])
 		_mod_feedback.add_theme_color_override("font_color", PixelUI.OK)
 		# 安装后预览跟随新配件
 		_mod_choices.erase(slot)
 	else:
-		_mod_feedback.text = "信用点或进阶资源不足"
+		_mod_feedback.text = String(res["message"])
 		_mod_feedback.add_theme_color_override("font_color", PixelUI.DANGER)
 	_refresh_mods()
 
 
 func _cost_line(entry: Dictionary) -> String:
-	var credits := int(entry.get("credits", 0))
-	return "免费" if credits <= 0 else "%d 信用点" % credits
+	return MOD_SERVICE.cost_line(entry)
 
 
 func _material_line(entry: Dictionary) -> String:
-	var cost: Dictionary = entry.get("cost", {})
-	var parts: Array[String] = []
-	for id in cost:
-		parts.append("%s×%d" % [ResourceDB.display_name(StringName(id)), int(cost[id])])
-	if parts.is_empty():
-		return "无材料"
-	return "、".join(PackedStringArray(parts))
+	return MOD_SERVICE.material_line(entry)
 
 
 func _can_pay_mod(entry: Dictionary) -> bool:
-	var p := get_node_or_null("/root/Progress")
-	if p == null:
-		return false
-	if p.credits() < int(entry.get("credits", 0)):
-		return false
-	var cost: Dictionary = entry.get("cost", {})
-	for id in cost:
-		if p.advanced_count(StringName(id)) < int(cost[id]):
-			return false
-	return true
+	return MOD_SERVICE.can_pay_mod(get_node_or_null("/root/Progress"), entry)
 
 
 func open() -> void:
@@ -1391,16 +1360,7 @@ func _select(id: StringName) -> void:
 
 ## 当前装备的主/副武器固定到列表最上方，其余保持原顺序。
 func _pinned_weapon_order() -> Array[String]:
-	var order: Array[String] = []
-	if _primary != &"":
-		order.append(String(_primary))
-	if _secondary != &"" and _secondary != _primary:
-		order.append(String(_secondary))
-	for id in WeaponDB.WEAPON_ORDER:
-		var sid := String(id)
-		if not order.has(sid):
-			order.append(sid)
-	return order
+	return MOD_SERVICE.pinned_weapon_order(_primary, _secondary)
 
 
 func _apply_pinned_order(list: VBoxContainer, buttons: Dictionary, string_keys: bool) -> void:
@@ -1415,14 +1375,9 @@ func _apply_pinned_order(list: VBoxContainer, buttons: Dictionary, string_keys: 
 
 
 func _read_loadout() -> void:
-	var p := get_node_or_null("/root/Progress")
-	if p == null:
-		return
-	var loadout: Array = p.loadout_2d()
-	if not loadout.is_empty():
-		_primary = StringName(loadout[0])
-	if loadout.size() > 1:
-		_secondary = StringName(loadout[1])
+	var slots := MOD_SERVICE.read_loadout(get_node_or_null("/root/Progress"), _primary, _secondary)
+	_primary = slots["primary"]
+	_secondary = slots["secondary"]
 
 
 ## 数据页读取「基础值 × 配件加成」的实际值，统一由 WeaponStatsModel 计算。
@@ -1570,19 +1525,11 @@ func _equip(primary_slot: bool) -> void:
 	var p := get_node_or_null("/root/Progress")
 	if p == null:
 		return
-	var new_primary := _primary
-	var new_secondary := _secondary
-	if primary_slot:
-		new_primary = _selected
-		if _selected == _secondary:
-			new_secondary = _primary
-	else:
-		new_secondary = _selected
-		if _selected == _primary:
-			new_primary = _secondary
-	if not p.set_loadout_2d(new_primary, new_secondary):
-		_feedback.text = "装备失败：主副武器不能相同"
+	var res := MOD_SERVICE.equip_weapon(p, _selected, _primary, _secondary, primary_slot)
+	_feedback.text = String(res["message"])
+	if not bool(res["ok"]):
 		return
-	_feedback.text = "已装备为%s · 开始行动后生效" % ("主武器" if primary_slot else "副武器")
+	_primary = res["primary"]
+	_secondary = res["secondary"]
 	_refresh()
 	_refresh_mods()

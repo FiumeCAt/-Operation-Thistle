@@ -31,6 +31,7 @@ $DefaultCoreTests = @(
     "loot_system_test",
     "map_2d_test",
     "menu_2d_test",
+    "mod_install_service_test",
     "mods_2d_test",
     "navigation_2d_test",
     "new_enemies_2d_test",
