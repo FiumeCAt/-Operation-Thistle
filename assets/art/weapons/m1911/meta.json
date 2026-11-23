@@ -1,7 +1,7 @@
 {
   "id": "m1911",
-  "grip_px": [152, 412],
-  "muzzle_px": [680, 168],
+  "grip_px": [152, 428],
+  "muzzle_px": [680, 176],
   "visual_length": 0.22,
-  "barrel_angle_deg": -0.03
+  "barrel_angle_deg": 0.0
 }

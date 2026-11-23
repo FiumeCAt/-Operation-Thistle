@@ -1,7 +1,7 @@
 {
   "id": "akm",
-  "grip_px": [420, 404],
-  "muzzle_px": [1212, 184],
+  "grip_px": [420, 256],
+  "muzzle_px": [1212, 144],
   "visual_length": 0.88,
-  "barrel_angle_deg": 0.02
+  "barrel_angle_deg": 0.0
 }

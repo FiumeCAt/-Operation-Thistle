@@ -1,7 +1,7 @@
 {
   "id": "p90",
-  "grip_px": [708, 344],
-  "muzzle_px": [984, 192],
+  "grip_px": [576, 264],
+  "muzzle_px": [984, 152],
   "visual_length": 0.5,
-  "barrel_angle_deg": 0.18
+  "barrel_angle_deg": 0.0
 }

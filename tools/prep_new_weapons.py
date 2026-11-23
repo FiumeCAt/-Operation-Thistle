@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "tools" / "art_sources" / "weapons"
 OUT = ROOT / "assets" / "art" / "weapons"
-PREV = ROOT / "tools" / "previews"
+PREV = ROOT.parent / "captures" / "weapon_calib"
 
 ICON_SIZE = 128
 # 逻辑画布宽度（规范：长枪 240~320、冲锋枪 200~260、手枪 140~180）
@@ -49,9 +49,9 @@ SPECS = {
     "m1911": ("pistol", 0.22, 0.18, 0.86),
     "fn57": ("pistol", 0.21, 0.19, 0.86),
     "python": ("revolver", 0.30, 0.17, 0.84),
-    "mp7": ("smg", 0.60, 0.44, 0.70),
+    "mp7": ("smg", 0.60, 0.44, 0.50),
     "tmp": ("smg", 0.45, 0.47, 0.72),
-    "p90": ("smg", 0.50, 0.70, 0.72),
+    "p90": ("smg", 0.50, 0.56, 0.78),
     "ump45": ("smg", 0.69, 0.40, 0.72),
     "fal": ("rifle", 1.10, 0.31, 0.72),
     "akm": ("rifle", 0.88, 0.31, 0.72),
@@ -256,7 +256,7 @@ def draw_calib(im: Image.Image, grip, muzzle, wid: str, axis_y: int) -> None:
     bg.convert("RGB").save(PREV / f"weapon_{wid}_calib.png")
 
 
-def process(wid: str) -> bool:
+def process(wid: str, manual_rotate_deg: float = 0.0) -> bool:
     if wid not in SPECS:
         print(f"未知武器 id：{wid}")
         return False
@@ -266,12 +266,13 @@ def process(wid: str) -> bool:
         print(f"缺少原图：{raw}")
         return False
 
+    # 原图素材本身为 0° 平直像素画；不再使用顶边拟合自动旋转（会因护木/准星与细枪管落差把枪拧歪）。
     im = alpha_crop(load_rgba(raw))
-    im = ensure_facing_right(alpha_crop(level(im)))
-    im, residual = refine_axis(im)
+    if abs(manual_rotate_deg) > 1e-4:
+        im = alpha_crop(rotate_clean(im, manual_rotate_deg))
+    im = ensure_facing_right(im)
     im = alpha_crop(im)
-    if residual > 0.2:
-        print(f"[warn] {wid} 枪管轴残余 {residual:.2f}° 超过 0.2°")
+    residual = 0.0
 
     logical, box = compose(im, kind)
     grip, muzzle = anchors(logical, box, grip_x, grip_y)
@@ -296,7 +297,7 @@ def process(wid: str) -> bool:
         (muzzle[0] * UPSCALE, muzzle[1] * UPSCALE), wid, muzzle[1] * UPSCALE)
     axis_pct = 100.0 * muzzle[1] / max(logical.height, 1)
     print(f"[{wid}] {kind} canvas={logical.width}x{logical.height} "
-          f"axis={axis_pct:.1f}% residual={residual:+.2f}° "
+          f"axis={axis_pct:.1f}% rot={manual_rotate_deg:+.2f}° "
           f"grip={grip} muzzle={muzzle} len={length}")
     return True
 
@@ -306,10 +307,23 @@ def main() -> int:
     if not args:
         print(__doc__)
         return 2
-    targets = list(SPECS.keys()) if args[0] == "--all" else args
+    manual_rotate = 0.0
+    filtered = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--rotate" and i + 1 < len(args):
+            manual_rotate = float(args[i + 1])
+            i += 2
+            continue
+        filtered.append(args[i])
+        i += 1
+    if not filtered:
+        print(__doc__)
+        return 2
+    targets = list(SPECS.keys()) if filtered[0] == "--all" else filtered
     ok = True
     for wid in targets:
-        ok = process(wid) and ok
+        ok = process(wid, manual_rotate) and ok
     return 0 if ok else 1
 
 

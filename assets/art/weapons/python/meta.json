@@ -1,7 +1,7 @@
 {
   "id": "python",
-  "grip_px": [148, 364],
-  "muzzle_px": [680, 152],
+  "grip_px": [148, 400],
+  "muzzle_px": [680, 164],
   "visual_length": 0.3,
-  "barrel_angle_deg": 0.16
+  "barrel_angle_deg": 0.0
 }

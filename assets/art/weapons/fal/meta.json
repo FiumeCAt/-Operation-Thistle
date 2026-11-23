@@ -1,7 +1,7 @@
 {
   "id": "fal",
-  "grip_px": [420, 332],
-  "muzzle_px": [1212, 144],
+  "grip_px": [420, 168],
+  "muzzle_px": [1212, 96],
   "visual_length": 1.1,
-  "barrel_angle_deg": 0.07
+  "barrel_angle_deg": 0.0
 }

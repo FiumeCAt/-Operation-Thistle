@@ -1,7 +1,7 @@
 {
   "id": "fn57",
-  "grip_px": [160, 408],
-  "muzzle_px": [680, 168],
+  "grip_px": [160, 428],
+  "muzzle_px": [680, 176],
   "visual_length": 0.21,
-  "barrel_angle_deg": 0.04
+  "barrel_angle_deg": 0.0
 }

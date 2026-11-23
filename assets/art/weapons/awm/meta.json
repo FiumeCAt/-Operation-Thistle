@@ -1,7 +1,7 @@
 {
   "id": "awm",
-  "grip_px": [408, 152],
-  "muzzle_px": [1212, 88],
+  "grip_px": [408, 144],
+  "muzzle_px": [1212, 80],
   "visual_length": 1.23,
-  "barrel_angle_deg": 0.02
+  "barrel_angle_deg": 0.0
 }

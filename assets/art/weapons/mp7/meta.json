@@ -1,7 +1,7 @@
 {
   "id": "mp7",
-  "grip_px": [464, 504],
-  "muzzle_px": [984, 272],
+  "grip_px": [464, 344],
+  "muzzle_px": [984, 208],
   "visual_length": 0.6,
-  "barrel_angle_deg": 0.08
+  "barrel_angle_deg": 0.0
 }
