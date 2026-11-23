@@ -8,6 +8,8 @@ signal enemy_hit(bullet: PlayerBullet2D, target: Node, point: Vector2, direction
 signal wall_hit(bullet: PlayerBullet2D, point: Vector2, direction: Vector2)
 signal finished(bullet: PlayerBullet2D)
 
+const WALL_OVERLAP_LOOKAHEAD := 120.0
+
 var velocity := Vector2.ZERO
 var damage := 0.0
 var ap := 0.0
@@ -152,19 +154,69 @@ func _resolve_hit(hit: Dictionary, dir: Vector2) -> void:
 
 	if target != null and target.has_method("take_damage"):
 		# 敌人贴墙只露出受击盒时，从开火点回看身体核心；被墙挡住就不结算伤害。
+		# 但 2.5D 立绘向上延伸，敌人贴在北墙下方或门框拐角旁时，body_center() 可能投影进墙内，
+		# 而脚底物理核心 ground_center() 仍在同侧开阔地面；仅当身体核心与脚底核心（及命中点到脚底）
+		# 均被墙体隔开时，才判定为隔墙穿射并拒绝结算伤害。
 		if target.has_method("body_center"):
 			var shot_origin: Vector2 = shot_ctx.get("origin", origin)
 			var blocked: Dictionary = _query_wall_between(shot_origin, target.body_center())
 			if not blocked.is_empty():
-				wall_hit.emit(self, blocked["position"], dir)
-				_finish(blocked["position"])
-				return
+				var clear_via_ground := false
+				if target.has_method("ground_center"):
+					var ground: Vector2 = target.ground_center()
+					if _query_wall_between(shot_origin, ground).is_empty():
+						clear_via_ground = true
+					elif _query_wall_between(point, ground).is_empty():
+						clear_via_ground = true
+				if not clear_via_ground:
+					wall_hit.emit(self, blocked["position"], dir)
+					_finish(blocked["position"])
+					return
 		enemy_hit.emit(self, target, point, dir)
 		_finish(point)
 		return
 
+	# 2.5D 遮挡修正：敌人站在北墙/掩体南侧时，其立绘与上半身 Hitbox 会向上投影盖在墙前；
+	# 瞄准胸口/头部可能先擦到敌人身后的墙体碰撞盒。仅当敌人脚底严格位于墙面南侧且开火点到脚底无墙阻挡时，
+	# 才将该次擦墙还原为命中敌人，同时保持 0 隔墙穿射漏洞。
+	var overlap_hit := _find_wall_front_enemy_hit(point, dir)
+	if not overlap_hit.is_empty():
+		enemy_hit.emit(self, overlap_hit["target"], overlap_hit["point"], dir)
+		_finish(overlap_hit["point"])
+		return
+
 	wall_hit.emit(self, point, dir)
 	_finish(point)
+
+
+func _find_wall_front_enemy_hit(wall_pt: Vector2, dir: Vector2) -> Dictionary:
+	var dist_to_wall := global_position.distance_to(wall_pt)
+	var lookahead := minf(maxf(max_distance - travelled - dist_to_wall, 0.0), WALL_OVERLAP_LOOKAHEAD)
+	if lookahead < 1.0:
+		return {}
+	var exclude: Array[RID] = []
+	if player_rid.is_valid():
+		exclude.append(player_rid)
+	var query := PhysicsRayQueryParameters2D.create(
+		wall_pt, wall_pt + dir * lookahead, 2, exclude)
+	query.hit_from_inside = true
+	query.collide_with_areas = true
+	var hit := get_world_2d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return {}
+	var collider = hit.get("collider")
+	var target = collider
+	if collider is Area2D:
+		target = collider.get_parent()
+	if target == null or not target.has_method("take_damage") or not target.has_method("ground_center"):
+		return {}
+	var ground: Vector2 = target.ground_center()
+	if wall_pt.y >= ground.y:
+		return {}
+	var shot_origin: Vector2 = shot_ctx.get("origin", origin)
+	if not _query_wall_between(shot_origin, ground).is_empty():
+		return {}
+	return {"target": target, "point": hit["position"]}
 
 
 func _finish(endpoint: Vector2) -> void:

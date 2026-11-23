@@ -145,6 +145,21 @@ func get_safe_shot_origin(muzzle_override: Vector2 = Vector2.INF) -> Vector2:
 	var point: Vector2 = hit["position"]
 	var safe := point - dir * 1.5
 	if (safe - center).dot(dir) <= 0.0:
+		# 玩家贴在北墙下方时，胸口参考点 (0, -34) 可能落在北墙碰撞体内；
+		# 改从必定位于可行走地面的脚底圆心 (0, -6) 向枪口投影，把起射点退回墙面外侧。
+		var foot := _doll.global_position + Vector2(0, -6)
+		var from_foot := muzzle - foot
+		if from_foot.length_squared() >= 4.0:
+			var fq := PhysicsRayQueryParameters2D.create(foot, muzzle, 1)
+			fq.hit_from_inside = true
+			var fhit := _owner.get_world_2d().direct_space_state.intersect_ray(fq)
+			if fhit.is_empty():
+				return muzzle
+			var fdir := from_foot.normalized()
+			var fsafe: Vector2 = fhit["position"] - fdir * 1.5
+			if (fsafe - foot).dot(fdir) > 0.0:
+				return fsafe
+			return foot
 		return muzzle
 	return safe
 

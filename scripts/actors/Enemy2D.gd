@@ -1089,6 +1089,12 @@ func body_center() -> Vector2:
 	return global_position + Vector2(0.0, -_sprite_h * 0.45)
 
 
+## 脚底物理核心点：CharacterBody2D 碰撞圆心，始终位于可行走地面，
+## 用于区分“敌人贴在北墙下方（立绘投影进墙但人就在同侧）”与“敌人真在墙另一侧”。
+func ground_center() -> Vector2:
+	return global_position + Vector2(0.0, -8.0)
+
+
 ## 命中材质：决定火花还是血，来自 enemies.json 的 hit_material。
 func hit_material() -> String:
 	return String(stats.get("hit_material", "metal"))

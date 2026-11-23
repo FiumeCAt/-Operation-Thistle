@@ -52,8 +52,8 @@
    & "D:\Godot\Godot_v4.7.2-stable_win64_console.exe" --headless --path "D:\AI Game\HellWalker\HellWalker_DollProtocol" --import
    ```
    否则会触发全局类缓存缺失导致的连锁解析错误。（注：若编辑器正在运行且未修改脚本/资源，跑纯测试时可跳过 `--import` 避免竞争 `.godot` 缓存。）
-2. **核心测试门禁（44 个 2D 回归）**：
-   - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 44 个核心 2D 测试（基线 1433 条断言，0 失败，含 `stage1_2d_test`、`game_units_test`、4 个纯计算模型单测、`player_bullet_test`、`run_events_hud_test` 以及 `Main2D` 拆出的 5 个子系统单测 `loot_system_test`、`wave_system_test`、`interaction_system_test`、`combat_system_test`、`feedback_system_test`）。
+2. **核心测试门禁（45 个 2D 回归）**：
+   - 改动代码或数据后，使用 `.agents/skills/godot-verify/scripts/run_core_tests.ps1` 跑对应子集或全部 45 个核心 2D 测试（基线 1441 条断言，0 失败，含 `stage1_2d_test`、`game_units_test`、4 个纯计算模型单测、`player_bullet_test`、`run_events_hud_test`、`wall_edge_hit_test` 以及 `Main2D` 拆出的 5 个子系统单测 `loot_system_test`、`wave_system_test`、`interaction_system_test`、`combat_system_test`、`feedback_system_test`）。
    - 21 个 3D 遗留测试**不纳入 2D 回归门禁**。
 3. **版本控制与回滚规范**：
    - Git 仓库已建仓，日常开发严格以**本地原子 commit** 作为安全回滚点。
