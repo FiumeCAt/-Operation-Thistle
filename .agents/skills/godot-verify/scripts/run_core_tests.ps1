@@ -13,6 +13,7 @@ $DefaultCoreTests = @(
     "ai_alert_test",
     "armor_2d_test",
     "armory_2d_test",
+    "armory_subview_test",
     "backpack_2d_test",
     "bullet_speed_test",
     "codex_menu_test",

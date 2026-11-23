@@ -8,27 +8,13 @@ signal closed
 const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
 const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
 const MOD_SERVICE := preload("res://scripts/ui/armory/ModInstallService.gd")
+const TOOLTIP_VIEW := preload("res://scripts/ui/armory/ArmoryTooltipView.gd")
+const ARMOR_VIEW := preload("res://scripts/ui/armory/ArmoryArmorView.gd")
 const PANEL_SIZE := Vector2(1240, 820)
-## 武器数据行；顺序即显示顺序。
-const STAT_KEYS: Array[String] = [
-	"口径", "弹匣容量", "供弹方式", "换弹时间", "射速", "射程", "子弹速度", "散布",
-	"枪声范围", "弹药", "弹丸数", "穿甲", "伤害",
-	"后坐抑制", "垂直后坐", "水平后坐", "视野倍率", "瞄准速度",
-]
-## 行 → 影响它的配件效果键，用于生成加成来源悬浮提示。
-const STAT_EFFECT := {
-	"换弹时间": "reload_mul",
-	"射速": "fire_mul",
-	"射程": "range_mul",
-	"散布": "spread_mul",
-	"枪声范围": "sound_mul",
-	"伤害": "damage_mul",
-	"后坐抑制": "recoil_mul",
-	"视野倍率": "vision_mul",
-	"瞄准速度": "ads_speed_mul",
-}
-## 悬浮窗文本宽度；底板在此之上加 14/10 的内边距。
-const TIP_WIDTH := 520.0
+## 武器数据行 / 效果映射 / 悬浮窗宽度统一收口至 ArmoryTooltipView，保留兼容别名。
+const STAT_KEYS: Array[String] = TOOLTIP_VIEW.STAT_KEYS
+const STAT_EFFECT := TOOLTIP_VIEW.STAT_EFFECT
+const TIP_WIDTH := TOOLTIP_VIEW.TIP_WIDTH
 ## 激光/准心颜色预设。
 const COLOR_PRESETS: Array[Color] = [
 	Color(0.35, 1.0, 0.50), Color(1.0, 0.30, 0.22), Color(0.35, 0.80, 1.0),
@@ -48,9 +34,16 @@ var _detail_values: Dictionary = {}
 var _detail_deltas: Dictionary = {}
 var _detail_base: Dictionary = {}
 var _detail_rows: Dictionary = {}
-var _detail_tips: Dictionary = {}
-var _tip_panel: PanelContainer
-var _tip_label: Label
+var _tooltip_view: ArmoryTooltipView = TOOLTIP_VIEW.new()
+var _detail_tips: Dictionary:
+	get: return _tooltip_view.tips
+	set(v): _tooltip_view.tips = v
+var _tip_panel: PanelContainer:
+	get: return _tooltip_view.tip_panel
+	set(v): _tooltip_view.tip_panel = v
+var _tip_label: Label:
+	get: return _tooltip_view.tip_label
+	set(v): _tooltip_view.tip_label = v
 var _detail_title: Label
 var _detail_icon: TextureRect
 var _loadout_label: Label
@@ -61,12 +54,15 @@ var _page := "weapon"
 var _weapon_sub := "data"
 var _weapon_page: Control
 var _weapon_data_page: Control
-var _armor_page: Control
+var _armor_view: ArmoryArmorView = ARMOR_VIEW.new()
+var _armor_page: Control:
+	get: return _armor_view.page
 var _tab_weapon: Button
 var _tab_armor: Button
 var _sub_tab_data: Button
 var _sub_tab_mods: Button
-var _armor_values: Dictionary = {}
+var _armor_values: Dictionary:
+	get: return _armor_view.values
 var _mods_page: Control
 var _mod_item := "m870"
 var _mod_item_buttons: Dictionary = {}
@@ -251,18 +247,10 @@ func _build() -> void:
 	_build_tooltip()
 
 
-## 悬浮窗：与菜单同款的切角描边底板，替代系统默认 tooltip。
-## 底板与文本都是独立节点，尺寸由文本行数手动计算，避免容器自动布局抖动。
+## --- 悬浮提示（委托至 ArmoryTooltipView）---------------------------------------
+
 func _build_tooltip() -> void:
-	_tip_panel = PixelUI.panel(PixelUI.BG_LIGHT)
-	_tip_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_tip_panel.visible = false
-	add_child(_tip_panel)
-	_tip_label = PixelUI.label(self, "", 18, PixelUI.TEXT)
-	_tip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_tip_label.visible = false
-	# 兜底：即使字体测量有亚像素误差，文本也不会越出底板边缘。
-	_tip_label.clip_text = true
+	_tooltip_view.build(self)
 
 
 func _stat_row(parent: Node, key: String) -> void:
@@ -285,112 +273,17 @@ func _stat_row(parent: Node, key: String) -> void:
 	line.mouse_exited.connect(_hide_tip)
 
 
-## 悬浮来源面板：跟随鼠标并做边缘翻转，避免超出屏幕。
-## 文本先按固定宽度手动折行，再按行数反推底板尺寸，保证首帧排版正确。
 func _show_tip(key: String) -> void:
-	if _tip_panel == null:
-		return
-	var text := String(_detail_tips.get(key, ""))
-	if text == "":
-		return
-	var view := get_viewport_rect().size
-	var tip_width := minf(TIP_WIDTH, maxf(view.x - 80.0, 240.0))
-	var wrapped := _wrap_tip_text(text, tip_width, 18)
-	var font: Font = _tip_label.get_theme_font("font")
-	var text_size := font.get_multiline_string_size(
-		wrapped, HORIZONTAL_ALIGNMENT_LEFT, tip_width, 18)
-	var content := Vector2(tip_width, maxf(ceilf(text_size.y) + 4.0, 22.0))
-	_tip_label.text = wrapped
-	_tip_panel.size = content + Vector2(28.0, 20.0)
-	_tip_label.size = content
-	_tip_panel.visible = true
-	_tip_label.visible = true
-	_tip_panel.move_to_front()
-	_tip_label.move_to_front()
-	_place_tip()
-
-
-## 按像素宽度折行：中文逐字、连续 ASCII 视为一个词，避免把数字/英文拆断。
-## 单个词本身就比悬浮窗宽时（长编号/网址），退化为逐字拆分，保证不越界。
-func _wrap_tip_text(text: String, width: float, font_size: int) -> String:
-	var font: Font = _tip_label.get_theme_font("font")
-	var lines: Array[String] = []
-	for paragraph in text.split("\n"):
-		var line := ""
-		for token in _tip_tokens(paragraph, width, font, font_size):
-			if line != "" and font.get_string_size(
-					line + token, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > width:
-				lines.append(line)
-				line = token
-			else:
-				line += token
-		lines.append(line)
-	return "\n".join(PackedStringArray(lines))
-
-
-## 把一段文字切成可折行的词元：ASCII 连续串算一个词，其他字符逐字。
-func _tip_tokens(paragraph: String, width: float,
-		font: Font, font_size: int) -> Array[String]:
-	var out: Array[String] = []
-	var i := 0
-	while i < paragraph.length():
-		var ch := paragraph[i]
-		var token := paragraph.substr(i, 1)
-		if ch != " " and _is_ascii_char(ch):
-			var j := i
-			while j + 1 < paragraph.length():
-				var next := paragraph[j + 1]
-				if next == " " or not _is_ascii_char(next):
-					break
-				j += 1
-			token = paragraph.substr(i, j - i + 1)
-			i = j
-		if token != " " and font.get_string_size(
-				token, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > width:
-			for c in token:
-				out.append(String(c))
-		else:
-			out.append(token)
-		i += 1
-	return out
-
-
-func _is_ascii_char(ch: String) -> bool:
-	var code := ch.unicode_at(0)
-	return code >= 32 and code < 127
+	_tooltip_view.show_tip(key)
 
 
 func _hide_tip() -> void:
-	if _tip_panel != null:
-		_tip_panel.visible = false
-	if _tip_label != null:
-		_tip_label.visible = false
-
-
-func _place_tip() -> void:
-	if _tip_panel == null or not _tip_panel.visible:
-		return
-	var mouse := get_global_mouse_position()
-	var view := get_viewport_rect().size
-	var size := _tip_panel.size
-	var pos := mouse + Vector2(22, 16)
-	if pos.x + size.x > view.x - 12.0:
-		pos.x = mouse.x - size.x - 22.0
-	if pos.y + size.y > view.y - 12.0:
-		pos.y = mouse.y - size.y - 16.0
-	var max_pos := view - size - Vector2(8, 8)
-	if max_pos.x < 8.0 or max_pos.y < 8.0:
-		# 文本比视口还高时贴左上角，至少保证左侧与顶部不越界。
-		pos = Vector2(8, 8)
-	else:
-		pos = pos.clamp(Vector2(8, 8), max_pos)
-	_tip_panel.global_position = pos
-	_tip_label.global_position = pos + Vector2(14, 10)
+	_tooltip_view.hide_tip()
 
 
 func _process(_delta: float) -> void:
-	if _tip_panel != null and _tip_panel.visible:
-		_place_tip()
+	if _tooltip_view.is_visible():
+		_tooltip_view.place_tip()
 
 
 ## 写入实际数值与增减标注。delta 为相对基础值的差值；
@@ -415,155 +308,15 @@ func _set_stat(key: String, text: String, base_text: String,
 	delta_label.add_theme_color_override("font_color", PixelUI.OK if gain else PixelUI.DANGER)
 
 
-## 悬浮提示：基础值 → 实际值，再列出参与该数值的配件。
 func _refresh_tooltips(installed: Dictionary, reload_talent: float, ammo) -> void:
-	for key in STAT_KEYS:
-		var text := key
-		if _detail_base.has(key) and String(_detail_base[key]) != "":
-			text += "\n基础 %s → 实际 %s" % [
-				String(_detail_base[key]), _detail_values[key].text]
-		if key == "弹药" and ammo != null:
-			# 弹药行只描述弹种自身属性，伤害计算放在「伤害」行。
-			var cat: Dictionary = WeaponDB.category_table().get(String(ammo.category), {})
-			text += "\n弹丸 %d · 散布 %.1f° · 穿甲 %d · 通用备弹 %d" % [
-				ammo.pellets, rad_to_deg(ammo.spread), int(ammo.ap),
-				int(cat.get("reserve_max", ammo.reserve_max))]
-			if not cat.is_empty():
-				text += "\n属性：%s · %s" % [
-					String(cat.get("display_name", "")), String(cat.get("note", ""))]
-			_detail_tips[key] = text
-			continue
-		if key == "弹丸数" and ammo != null:
-			text += "\n每发 %d 颗弹丸，全部命中才吃满伤害" % ammo.pellets
-			_detail_tips[key] = text
-			continue
-		if key == "穿甲" and ammo != null:
-			text += "\n穿甲 %d · 每 2 点穿甲抵消 1 级护甲" % int(ammo.ap)
-			_detail_tips[key] = text
-			continue
-		var effect_key := String(STAT_EFFECT.get(key, ""))
-		var sources: Array[String] = []
-		if effect_key != "":
-			for slot_def in ModDB.WEAPON_SLOTS:
-				var slot := String(slot_def["id"])
-				var option_id := String(installed.get(slot, ""))
-				if option_id == "":
-					continue
-				var entry := ModDB.option(slot, option_id, false, String(_selected))
-				if entry.is_empty():
-					continue
-				var effects: Dictionary = entry.get("effects", {})
-				if not effects.has(effect_key):
-					continue
-				sources.append("· %s · %s：%s" % [
-					String(slot_def["name"]), String(entry["name"]),
-					String(entry["desc"])])
-		if key == "弹匣容量":
-			# 弹匣是绝对容量配件：列出当前弹匣与「弹匣扩容」天赋。
-			var mag_entry := ModDB.option(
-				"magazine", String(installed.get("magazine", "")), false, String(_selected))
-			if not mag_entry.is_empty():
-				sources.append("· 弹匣 · %s：%s" % [
-					String(mag_entry["name"]), String(mag_entry["desc"])])
-			var p := get_node_or_null("/root/Progress")
-			if p != null:
-				var mag_level := int(p.talent_2d_level(&"magazine"))
-				if mag_level > 0:
-					sources.append("· 战术天赋 · 弹匣扩容 Lv.%d：容量 +%d%%" % [
-						mag_level, mag_level * 8])
-		elif key == "射速":
-			# 全自动改件用固定射速，不经过 fire_mul，需要单独列出。
-			var core := ModDB.option(
-				"core", String(installed.get("core", "")), false, String(_selected))
-			if not core.is_empty():
-				var core_fx: Dictionary = core.get("effects", {})
-				if core_fx.has("fire_interval_set"):
-					sources.append("· 枪机 · %s：%s" % [
-						String(core["name"]), String(core["desc"])])
-		if key == "换弹时间" and reload_talent < 0.999:
-			sources.append("· 战术天赋 · 快速换弹：换弹时间 %+.0f%%" % [
-				(reload_talent - 1.0) * 100.0])
-		if key == "散布":
-			text += "\n腰射全锥角；配件收益与开镜收紧按弹种区分"
-			if ammo != null:
-				var ads_pct := int(round((1.0 - float(ammo.ads_spread_mul)) * 100.0))
-				text += "\n本弹种开镜：散布收紧 %d%%（配件收益 %d%%）" % [
-					ads_pct, int(round(float(ammo.attachment_spread_scale) * 100.0))]
-			var talent := get_node_or_null("/root/Progress")
-			var gun_level := int(talent.talent_2d_level(&"gun")) if talent != null else 0
-			if gun_level > 0:
-				sources.append("· 战术天赋 · 枪械精度 Lv.%d：散布 %+.0f%%" % [
-					gun_level, (pow(0.94, float(gun_level)) - 1.0) * 100.0])
-		if key == "子弹速度":
-			text += "\n现实枪口初速，已包含弹种与枪管长度差异"
-			text += "\n游戏内飞行时间按 0.25 时间压缩"
-		if sources.is_empty():
-			text += "\n无配件加成 · 使用基础数据"
-		else:
-			text += "\n加成来源：\n" + "\n".join(PackedStringArray(sources))
-		_detail_tips[key] = text
+	_tooltip_view.refresh_tooltips(_selected, installed, reload_talent, ammo,
+		_detail_base, _detail_values, get_node_or_null("/root/Progress"))
 
 
-## 护甲子页：当前护甲数据 + 等级表 + 受击结算规则。
+## --- 护甲子页（委托至 ArmoryArmorView）----------------------------------------
+
 func _build_armor_page(parent: Node) -> void:
-	var page := VBoxContainer.new()
-	page.add_theme_constant_override("separation", 10)
-	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	page.visible = false
-	parent.add_child(page)
-	_armor_page = page
-
-	var title := PixelUI.label(page, "DOL-01 // 护甲数据", PixelUI.FS_TITLE, PixelUI.AMBER)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	var divider := HSeparator.new()
-	divider.add_theme_color_override("color", Color(PixelUI.AMBER, 0.5))
-	page.add_child(divider)
-
-	var columns := HBoxContainer.new()
-	columns.add_theme_constant_override("separation", 20)
-	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	page.add_child(columns)
-
-	var stats := PixelUI.panel()
-	stats.custom_minimum_size.x = 520
-	stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	columns.add_child(stats)
-	var stat_rows := VBoxContainer.new()
-	stat_rows.add_theme_constant_override("separation", 8)
-	stats.add_child(stat_rows)
-	for key in ["耐久上限", "防御等级", "基础减伤", "护甲吸收", "穿甲规则", "耐久衰减"]:
-		var line := HBoxContainer.new()
-		stat_rows.add_child(line)
-		var name_label := PixelUI.label(line, key, PixelUI.FS_BODY, PixelUI.DIM)
-		name_label.custom_minimum_size.x = 130
-		var value := PixelUI.label(line, "-", PixelUI.FS_BODY, PixelUI.TEXT)
-		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		_armor_values[key] = value
-
-	var rules := PixelUI.panel()
-	rules.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	columns.add_child(rules)
-	var rule_rows := VBoxContainer.new()
-	rule_rows.add_theme_constant_override("separation", 6)
-	rules.add_child(rule_rows)
-	PixelUI.label(rule_rows, "护甲等级 // RHA TIERS", PixelUI.FS_BODY, PixelUI.AMBER)
-	for i in 4:
-		var tier_rha := DAMAGE_MODEL.player_base_rha(i + 1)
-		PixelUI.label(rule_rows, "Lv.%d    护甲防御 %d（%.1fmm RHA）" % [
-			i + 1, int(round(tier_rha)), tier_rha * 0.1],
-			PixelUI.FS_BODY, PixelUI.TEXT)
-	var rule_divider := HSeparator.new()
-	rule_divider.add_theme_color_override("color", Color(PixelUI.AMBER, 0.35))
-	rule_rows.add_child(rule_divider)
-	var hint := PixelUI.label(rule_rows,
-		"RHA 均质装甲体系：10 点防御 = 1.0mm 均质装甲钢（可在设置切换显示格式）。\n"
-		+ "未击穿（穿深 < 有效防御）：护甲承担主要伤害，仅 5%~20% 极轻钝伤入血。\n"
-		+ "击穿（穿深 >= 有效防御）：25%~50% 穿透入血，同时护甲剧烈碎裂（100%~130% 耐久损耗），常规受击甲先于血碎。\n"
-		+ "耐久越低有效防御越弱（缓降至 50%）；耐久归零后失去护甲防护（除非有组件/天赋最低减伤）。",
-		PixelUI.FS_BODY, PixelUI.DIM)
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_armor_view.build(parent)
 
 
 func _armor_display_mode() -> String:
@@ -571,28 +324,7 @@ func _armor_display_mode() -> String:
 
 
 func _refresh_armor() -> void:
-	if _armor_values.is_empty():
-		return
-	var p := get_node_or_null("/root/Progress")
-	var maximum := 100
-	var level := 1
-	var armor_mods := ModDB.default_modifiers()
-	var mode := _armor_display_mode()
-	if p != null:
-		maximum = int(p.data.get("armor_max", 100))
-		level = int(p.data.get("armor_level", 1))
-		armor_mods = ModDB.modifiers(p.armor_mods_2d(), true)
-	# 与局内 Doll2D 一致：护甲组件直接加在上限 / RHA 防御等级 / 钝伤削减上。
-	maximum += int(armor_mods["armor_max_add"])
-	level += int(armor_mods["armor_level_add"])
-	var rha := DAMAGE_MODEL.player_base_rha(level)
-	var absorb_bonus_pct := int(round(float(armor_mods["absorb_add"]) * 100.0))
-	_armor_values["耐久上限"].text = "%d / %d" % [maximum, maximum]
-	_armor_values["防御等级"].text = "Lv.%d · %s" % [level, DAMAGE_MODEL.format_rha(rha, mode)]
-	_armor_values["基础减伤"].text = "未击穿 5%~20% 钝伤"
-	_armor_values["护甲吸收"].text = "钝伤削减 +%d%%（主扣耐久）" % absorb_bonus_pct
-	_armor_values["穿甲规则"].text = "击穿 25%~50% 穿血 · 剧烈碎甲"
-	_armor_values["耐久衰减"].text = "满 100% → 残 50% · 0 失防"
+	_armor_view.refresh(get_node_or_null("/root/Progress"))
 
 
 func _show_page(page: String) -> void:
