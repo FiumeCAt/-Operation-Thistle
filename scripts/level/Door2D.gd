@@ -45,6 +45,13 @@ func _panel(origin: Vector2) -> Polygon2D:
 	panel.position = origin + Vector2(0, wall_thickness * 0.11)
 	add_child(panel)
 
+	# 门板挂 LightOccluder2D，随门板同步滑动：关门阻挡视野光线，开门时透光自然张开。
+	var occ := LightOccluder2D.new()
+	var poly := OccluderPolygon2D.new()
+	poly.polygon = panel.polygon
+	occ.occluder = poly
+	panel.add_child(occ)
+
 	# 门板上的黄黑警示条，俯视下也能看出这是门
 	for i in 3:
 		var stripe := Line2D.new()
@@ -54,6 +61,15 @@ func _panel(origin: Vector2) -> Polygon2D:
 		stripe.default_color = Color(0.78, 0.59, 0.18, 0.8)
 		panel.add_child(stripe)
 	return panel
+
+
+## 门处于关闭状态且门板已合拢过半时阻断视线（避免隔着紧闭铁门透视房间里的敌人）。
+func blocks_segment(a: Vector2, b: Vector2) -> bool:
+	if open or _slide >= 0.45:
+		return false
+	var p0 := to_global(Vector2(-width * 0.5, 0.0))
+	var p1 := to_global(Vector2(width * 0.5, 0.0))
+	return Geometry2D.segment_intersects_segment(a, b, p0, p1) != null
 
 
 func _process(delta: float) -> void:

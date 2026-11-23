@@ -618,9 +618,23 @@ func _process(delta: float) -> void:
 	var look := Vector2.ZERO
 	if _ads_t > 0.01:
 		var scoped: bool = doll.weapon_rig != null and doll.weapon_rig.has_scope_sight
+		var look_mul := scope_magnification
+		if doll.weapon_rig != null:
+			look_mul = maxf(float(doll.weapon_rig.sight_look_ahead_mul), scope_magnification)
+		var look_ahead := ADS_LOOK_AHEAD * look_mul
 		if scoped:
-			# 高倍镜：主镜头不做任何前探，镜头与腰射完全一致，准心下的世界点不会变。
-			_ads_look = Vector2.ZERO
+			# 高倍镜：主镜头缩放保持 1.0×（角色不放大），但按瞄具前探倍率向瞄准方向延伸更远视野；
+			# 实机鼠标模式按视口相对偏移计算，彻底避免“镜头前探↔鼠标世界坐标”闭环抖动，松动即稳停。
+			if mouse_aim_enabled:
+				var vrect := get_viewport().get_visible_rect().size
+				var rel := (get_viewport().get_mouse_position() - vrect * 0.5) / maxf(minf(vrect.x, vrect.y) * 0.45, 1.0)
+				var mag_ratio := clampf(rel.length(), 0.0, 1.0)
+				var desired := rel.normalized() * mag_ratio if mag_ratio > 0.05 else Vector2.ZERO
+				_ads_look = _ads_look.lerp(desired, clampf(delta * 18.0, 0.0, 1.0))
+			else:
+				var raw_aim := doll.aim_target - doll.global_position
+				_ads_look = raw_aim.normalized() if raw_aim.length_squared() > 1.0 else Vector2.ZERO
+			look = _ads_look * look_ahead * _ads_t
 		else:
 			var aim_dir := Vector2.RIGHT
 			var raw_aim := doll.aim_target - doll.global_position
@@ -630,11 +644,13 @@ func _process(delta: float) -> void:
 				aim_dir = raw_aim.normalized()
 			_ads_look = _ads_look.lerp(
 				aim_dir.normalized(), clampf(delta * ADS_LOOK_SMOOTH, 0.0, 1.0))
-			var look_ahead := ADS_LOOK_AHEAD * scope_magnification
 			look = _ads_look * look_ahead * _ads_t
 	else:
 		_ads_look = Vector2.ZERO
-
+	# 前探不能把角色推出屏幕：每个轴最多到半屏的 88%。
+	var half_view := get_viewport().get_visible_rect().size * 0.5 / maxf(zoom, 0.001)
+	look.x = clampf(look.x, -half_view.x * 0.88, half_view.x * 0.88)
+	look.y = clampf(look.y, -half_view.y * 0.88, half_view.y * 0.88)
 	# 相机跟随按「屏幕像素」取整，避免角色和场景在半像素位置上被重采样而发虚。
 	var snap := 1.0 / maxf(zoom, 0.001)
 	var target := Vector2(

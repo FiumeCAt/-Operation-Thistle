@@ -108,6 +108,27 @@ func _run() -> void:
 		_check(mod_view.stats_strip.stat_values["rate"].text.contains("600")
 			and mod_view.stats_strip.stat_values["mode"].text == "全自动",
 			"ArmoryModStatsStrip renders live full-auto RPM and mode")
+		mod_view.select_item("akm")
+		p.data["weapon_mods_2d"]["akm"] = {"sight": "sight_2_5x"}
+		mod_view.select_slot("sight")
+		var sight_opts := ModDB.options("sight", false, "akm")
+		var dup_free := true
+		for i in sight_opts.size():
+			mod_view.mod_choices["sight"] = i
+			mod_view._refresh_mod_detail(p.weapon_mods_2d(&"akm"))
+			var opt_text := mod_view.mod_detail_option.text
+			var opt_lines := opt_text.split("\n", false)
+			var seen: Dictionary = {}
+			for ln in opt_lines:
+				if seen.has(ln):
+					dup_free = false
+				seen[ln] = true
+			if String(sight_opts[i]["id"]) == "sight_2_5x":
+				if opt_text.contains(String(sight_opts[i]["name"])):
+					dup_free = false
+				if not opt_text.contains("前探"):
+					dup_free = false
+		_check(dup_free, "all 10 sights render unique descriptions without duplicate name or stat lines")
 		mod_view.select_item("armor")
 		_check(mod_view.mod_slots_box.visible and mod_view.mod_slots_box.get_child_count() == 3
 			and not mod_view.mod_gun_view.visible,

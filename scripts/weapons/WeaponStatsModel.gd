@@ -56,14 +56,16 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 	var sight_ads_time_mul := clampf(float(mods.get("ads_time_mul", 1.0)), 1.0, 2.0)
 	var has_laser := bool(mods.get("laser", false))
 
-	# 瞄具元数据（标定倍率/准星样式/是否高倍镜窗）不参与 ModDB 倍率叠乘。
+	# 瞄具元数据（标定倍率/前探倍率/准星样式/是否高倍镜窗）不参与 ModDB 倍率叠乘。
 	var sight_id := String(installed.get("sight", ""))
 	var sight := ModDB.option("sight", sight_id, false, wid)
 	var sight_magnification := 1.0
+	var sight_look_ahead_mul := 1.0
 	var sight_reticle := "iron"
 	var has_scope_sight := false
 	if not sight.is_empty():
 		sight_magnification = clampf(float(sight.get("magnification", 1.0)), 1.0, 8.0)
+		sight_look_ahead_mul = clampf(float(sight.get("look_ahead_mul", 1.0)), 1.0, 4.0)
 		sight_reticle = String(sight.get("reticle", "iron"))
 		has_scope_sight = bool(sight.get("scope", false))
 		if reticle_resolver.is_valid():
@@ -137,6 +139,7 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"sight_ads_time_mul": sight_ads_time_mul,
 		"has_laser": has_laser,
 		"sight_magnification": sight_magnification,
+		"sight_look_ahead_mul": sight_look_ahead_mul,
 		"sight_reticle": sight_reticle,
 		"has_scope_sight": has_scope_sight,
 		"aim_zoom_mul": sight_magnification,

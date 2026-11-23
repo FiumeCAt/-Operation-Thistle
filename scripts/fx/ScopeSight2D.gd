@@ -4,6 +4,7 @@ class_name ScopeSight2D
 ## 使用共享主世界场景的 SubViewport + 副 Camera2D，实现“角色不放大、镜内放大”。
 ## 不同瞄具绘制不同准心：红点 / 全息 / 十字 / PSO-1。
 
+const RETICLES := preload("res://scripts/fx/ScopeReticles2D.gd")
 const LENS_SIZE := 480.0
 const LENS_MARGIN := 28.0
 ## 镜内相机的基础倍率：1.0 表示 1 世界像素 = 1 屏幕像素；4× 镜即 4.0。
@@ -246,73 +247,12 @@ func _draw_overlay() -> void:
 
 
 func _draw_lens_frame() -> void:
-	var c := _center
-	var r := LENS_SIZE * 0.5
-	# 只保留一条极细的镜片边缘线；主要边界交给 shader 的边缘模糊。
-	_overlay.draw_arc(c, r - 0.5, 0.0, TAU, 96,
-		Color(0.02, 0.02, 0.03, 0.32 * _fade), 1.5)
-	_overlay.draw_arc(c, r - 2.0, 0.0, TAU, 96,
-		Color(_reticle_color.r, _reticle_color.g, _reticle_color.b, 0.18 * _fade), 1.0)
+	RETICLES.draw_lens_frame(_overlay, _center, LENS_SIZE * 0.5, _fade)
 
 
 func _draw_reticle(c: Vector2, r: float, kind: String, alpha: float) -> void:
-	match kind:
-		"cross":
-			_draw_cross(c, r, alpha)
-		"pso":
-			_draw_pso(c, r, alpha)
-		"mildot":
-			_draw_mildot(c, r, alpha)
-		"vudu":
-			_draw_vudu(c, r, alpha)
-		"holo":
-			_draw_holo(c, 42.0, alpha)
-		"dot":
-			_overlay.draw_circle(c, 3.0, Color(1.0, 0.22, 0.16, 0.95 * alpha))
-			_overlay.draw_arc(c, 11.0, 0.0, TAU, 32,
-				Color(1.0, 0.3, 0.2, 0.35 * alpha), 1.0)
-		_:
-			pass
-
-
-## 标准十字：带描边的细十字 + 中心点 + 密位刻度。
-func _draw_cross(c: Vector2, r: float, alpha: float) -> void:
-	var col := Color(_reticle_color.r, _reticle_color.g, _reticle_color.b, 0.92 * alpha)
-	var arm := r * 0.60
-	var gap := 9.0
-	_line(c + Vector2(-arm, 0), c + Vector2(-gap, 0), col, 2.0)
-	_line(c + Vector2(gap, 0), c + Vector2(arm, 0), col, 2.0)
-	_line(c + Vector2(0, -arm), c + Vector2(0, -gap), col, 2.0)
-	_line(c + Vector2(0, gap), c + Vector2(0, arm), col, 2.0)
-	_overlay.draw_circle(c, 2.6, col.lightened(0.2))
-	for i in 4:
-		var y := 30.0 + float(i) * 28.0
-		_line(c + Vector2(-7, y), c + Vector2(7, y), col, 1.4)
-	for i in 4:
-		var x := 30.0 + float(i) * 28.0
-		_line(c + Vector2(x, -7), c + Vector2(x, 7), col, 1.4)
-		_line(c + Vector2(-x, -7), c + Vector2(-x, 7), col, 1.4)
-
-
-## PSO-1：使用透明背景准星贴图（assets/ui/reticles/pso_reticle.png），
-## 箭尖严格对准镜心；贴图缺失时退回程序化绘制。
-func _draw_pso(c: Vector2, r: float, alpha: float) -> void:
-	var tex := _pso_texture()
-	if tex != null:
-		var size := Vector2(r, r) * 2.0
-		_overlay.draw_texture_rect(tex, Rect2(c - size * 0.5, size), false,
-			Color(_reticle_color.r, _reticle_color.g, _reticle_color.b, alpha))
-		return
 	var col := Color(_reticle_color.r, _reticle_color.g, _reticle_color.b, 0.95 * alpha)
-	_line(c + Vector2(0, -r * 0.62), c + Vector2(0, r * 0.74), col, 2.0)
-	for i in 4:
-		var y := r * 0.16 + float(i) * 30.0
-		var w := 22.0 + float(i) * 14.0
-		_line(c + Vector2(-w, y), c + Vector2(w, y), col, 1.8)
-	_line(c + Vector2(-14, -r * 0.2), c + Vector2(0, 0), col, 2.0)
-	_line(c + Vector2(14, -r * 0.2), c + Vector2(0, 0), col, 2.0)
-	_overlay.draw_circle(c, 2.4, col.lightened(0.2))
-	_overlay.draw_arc(c, r * 0.56, PI * 0.55, PI * 0.95, 18, col, 1.5)
+	RETICLES.draw_reticle(_overlay, kind, c, r, col, _pso_texture())
 
 
 static func _pso_texture() -> Texture2D:
@@ -321,65 +261,13 @@ static func _pso_texture() -> Texture2D:
 	return _pso_texture_cache
 
 
-## 密位点：细十字 + 右下/左上密位点阵，适合 3× / 8× 狙击镜。
-func _draw_mildot(c: Vector2, r: float, alpha: float) -> void:
-	var col := Color(_reticle_color.r, _reticle_color.g, _reticle_color.b, 0.92 * alpha)
-	var arm := r * 0.62
-	_line(c + Vector2(-arm, 0), c + Vector2(-12, 0), col, 2.0)
-	_line(c + Vector2(12, 0), c + Vector2(arm, 0), col, 2.0)
-	_line(c + Vector2(0, -arm), c + Vector2(0, -12), col, 2.0)
-	_line(c + Vector2(0, 12), c + Vector2(0, arm), col, 2.0)
-	_overlay.draw_circle(c, 2.2, col.lightened(0.2))
-	for i in 5:
-		var y := 26.0 + float(i) * 26.0
-		_overlay.draw_circle(c + Vector2(0, y), 1.5, col)
-		_overlay.draw_circle(c + Vector2(0, -y), 1.5, col)
-		for side in [-1.0, 1.0]:
-			var x: float = (26.0 + float(i) * 26.0) * float(side)
-			_overlay.draw_circle(c + Vector2(x, 0), 1.5, col)
-
-
-## Vudu 速瞄：马蹄形外环 + 中心点 + 下方圣诞树刻度。
-func _draw_vudu(c: Vector2, r: float, alpha: float) -> void:
-	var col := Color(_reticle_color.r, _reticle_color.g, _reticle_color.b, 0.92 * alpha)
-	_overlay.draw_arc(c, r * 0.30, PI * 0.15, PI * 0.85, 28,
-		Color(col.r, col.g, col.b, 0.55 * alpha), 2.0)
-	_overlay.draw_circle(c, 2.4, col.lightened(0.2))
-	for i in 5:
-		var y := r * 0.10 + float(i) * 26.0
-		var w := 8.0 + float(i) * 7.0
-		_line(c + Vector2(-w, y), c + Vector2(w, y), col, 1.6)
-	for i in 4:
-		var x := r * 0.16 + float(i) * 24.0
-		_overlay.draw_circle(c + Vector2(x, 0), 1.5, col)
-		_overlay.draw_circle(c + Vector2(-x, 0), 1.5, col)
-
-
-## 全息准心：圆环 + 中心点 + 四向刻度。
-func _draw_holo(c: Vector2, radius: float, alpha: float) -> void:
-	var col := Color(_reticle_color.r, _reticle_color.g, _reticle_color.b, 0.92 * alpha)
-	_overlay.draw_arc(c, radius, 0.0, TAU, 48, col, 2.0)
-	_overlay.draw_circle(c, 3.0, col.lightened(0.2))
-	for dir in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
-		_overlay.draw_line(c + dir * (radius - 9.0), c + dir * (radius + 5.0), col, 2.0)
-	_overlay.draw_arc(c, radius + 6.0, 0.0, TAU, 48,
-		Color(col.r, col.g, col.b, 0.22 * alpha), 1.0)
-
-
-## 带黑色外描边的准心线：在明亮地面和昏暗阴影里都保持可读。
-func _line(a: Vector2, b: Vector2, color: Color, width: float) -> void:
-	_overlay.draw_line(a, b, Color(0.0, 0.0, 0.0, 0.42 * color.a), width + 2.0)
-	_overlay.draw_line(a, b, color, width)
-
-
 func _draw_mini_reticle() -> void:
 	var a := clampf((_blend - 0.5) / 0.5, 0.0, 1.0)
 	# 准心贴到屏幕边缘时也保持可见，避免鼠标移出画面时红点消失。
 	var screen := get_viewport().get_visible_rect().size
 	var c := _aim_screen.clamp(Vector2(26, 26), screen - Vector2(26, 26))
+	var col := Color(_reticle_color.r, _reticle_color.g, _reticle_color.b, 0.95 * a)
 	if _reticle == "dot":
-		_overlay.draw_circle(c, 3.0, Color(1.0, 0.22, 0.16, 0.95 * a))
-		_overlay.draw_arc(c, 10.0, 0.0, TAU, 28,
-			Color(1.0, 0.3, 0.2, 0.3 * a), 1.0)
+		RETICLES.draw_dot(_overlay, c, _reticle_color, a)
 	elif _reticle == "holo":
-		_draw_holo(c, 26.0, a)
+		RETICLES.draw_holo(_overlay, c, 26.0, col)

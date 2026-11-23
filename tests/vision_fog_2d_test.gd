@@ -135,7 +135,8 @@ func _run() -> void:
 		fog._aim_angle = 0.0
 		await process_frame
 
-	# 敌人可见性：清晰=正常，近身/余光=压暗，迷雾=隐藏。
+	# 敌人可见性：清晰=正常，近身/余光=压暗，迷雾=隐藏（纯几何判定，排除随机障碍）。
+	fog.level = null
 	var front := _spawn(main, &"rifleman", origin + Vector2(4, 0) * tile)
 	var near := _spawn(main, &"rifleman", origin + Vector2(-2, 0) * tile)
 	var far := _spawn(main, &"rifleman", origin + Vector2(-9, 0) * tile)
@@ -148,8 +149,43 @@ func _run() -> void:
 	_check(front.modulate == Color.WHITE, "clear enemy is not tinted")
 	_check(near.modulate != Color.WHITE, "relative-dark enemy uses dim tint")
 
-	# 墙体遮挡：导航网格在墙格上不可行走，视线必须被打断。
+	# 回归：低视野倍率不能截断近身黑暗视野；视野锥拓宽角须符合 atan(tan(a) * mul)。
+	fog.vision_mul = 0.05
+	_check(fog.tier_at(origin + Vector2(-2, 0) * tile) == 1,
+		"low vision multiplier preserves close darkvision radius")
+	fog.vision_mul = 2.0
+	var widened: float = fog.widened_half_angle(fog.CLEAR_HALF_DEG, 2.0)
+	_check(widened > deg_to_rad(55.0) and widened < deg_to_rad(65.0),
+		"widened_half_angle matches Y-scaled PointLight2D cone geometry")
+	fog.vision_mul = 1.0
+
+	# 回归：已死亡敌人不再被视野系统强制压暗/隐藏（避免吞掉死亡淡出和引信红圈）。
+	far._dead = true
+	far.visible = true
+	far.modulate = Color(1.0, 0.5, 0.5, 0.75)
+	fog._tiers[far] = 0
+	fog._update_enemy_fade(0.5)
+	_check(far.visible and is_equal_approx(far.modulate.a, 0.75),
+		"dead enemy is released from vision fog fade control")
+	far._dead = false
+
+	# 墙体遮挡：导航网格在墙格上不可行走，视线必须被打断；紧闭的门也必须挂遮光器并阻断视线。
 	fog.level = saved_level
+	if main.level != null and not main.level.doors.is_empty():
+		var door = main.level.doors[0]["node"]
+		var door_occs: Array = door.find_children("*", "LightOccluder2D", true, false)
+		_check(door_occs.size() >= 2, "Door2D sliding panels carry LightOccluder2D")
+		var normal := Vector2.DOWN.rotated(door.rotation)
+		var side_a: Vector2 = door.global_position - normal * tile
+		var side_b: Vector2 = door.global_position + normal * tile
+		door.set_open(false)
+		door._slide = 0.0
+		_check(door.blocks_segment(side_a, side_b) and fog._blocked_by_door(side_a, side_b),
+			"closed door blocks enemy line of sight")
+		door.set_open(true)
+		_check(not door.blocks_segment(side_a, side_b),
+			"open door clears enemy line of sight")
+		door.set_open(false)
 	var wall_point := _find_wall(main, origin, 24)
 	_check(wall_point != Vector2.INF, "found a wall cell near the test spot")
 	if wall_point != Vector2.INF:

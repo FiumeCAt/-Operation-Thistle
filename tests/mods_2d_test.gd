@@ -305,6 +305,33 @@ func _run() -> void:
 	_check(view_hold.distance_to(
 		main.get_viewport().get_canvas_transform().get_origin()) < 1.0,
 		"scoped view stops as soon as the aim settles")
+	# ---- 高倍镜前探距离必须随倍率增长，且角色缩放仍为 1.0× ----
+	var look_by_sight: Dictionary = {}
+	for sid in ["iron", "sight_2x", "pso", "sniper_8x"]:
+		p.data["weapon_mods_2d"]["m870"]["sight"] = sid
+		main.doll.weapon_rig.setup(&"m870")
+		main.doll.aim_target = main.doll.global_position + Vector2.RIGHT * 600.0
+		main.doll.weapon_rig.ads = true
+		main.doll.ads = true
+		for i in 28:
+			await process_frame
+		look_by_sight[sid] = main.camera.global_position.x - main.doll.global_position.x
+	_check(float(look_by_sight["sight_2x"]) > float(look_by_sight["iron"]) + 20.0
+		and float(look_by_sight["pso"]) > float(look_by_sight["sight_2x"]) + 20.0
+		and float(look_by_sight["sniper_8x"]) > float(look_by_sight["pso"]) + 20.0,
+		"magnified scopes extend ADS camera look-ahead progressively (iron < 2x < 4x < 8x)")
+	# 恢复 PSO 供后续镜头特效检查。
+	p.data["weapon_mods_2d"]["m870"]["sight"] = "pso"
+	main.doll.weapon_rig.setup(&"m870")
+	for i in 8:
+		await process_frame
+	# ---- 激光材质：自发光 + 加法混合 + 线性柔光过滤 ----
+	var laser_mat := main.laser_sight.material as CanvasItemMaterial
+	_check(laser_mat != null
+		and laser_mat.blend_mode == CanvasItemMaterial.BLEND_MODE_ADD
+		and laser_mat.light_mode == CanvasItemMaterial.LIGHT_MODE_UNSHADED
+		and main.laser_sight.texture_filter == CanvasItem.TEXTURE_FILTER_LINEAR,
+		"laser sight uses additive unshaded material with linear glow filtering")
 	# ---- 镜内特效开关 ----
 	var lens_mat: ShaderMaterial = main.scope_sight._lens.material
 	p.data["scope_lens_distortion"] = false
@@ -331,13 +358,18 @@ func _run() -> void:
 	fog.vision_mul = 1.0
 	var eye: Vector2 = fog._eye_position()
 	var reach := 10.0 * fog.PIXELS_PER_METER
-	var at50: Vector2 = eye + Vector2.from_angle(deg_to_rad(50.0)) * reach
+	var at45: Vector2 = eye + Vector2.from_angle(deg_to_rad(45.0)) * reach
+	var at62: Vector2 = eye + Vector2.from_angle(deg_to_rad(62.0)) * reach
 	var at70: Vector2 = eye + Vector2.from_angle(deg_to_rad(70.0)) * reach
+	var at50: Vector2 = eye + Vector2.from_angle(deg_to_rad(50.0)) * reach
 	_check(fog.tier_at(at50) == 1 and fog.tier_at(at70) == 0,
 		"iron sights leave 50deg dim and 70deg fogged")
+	# 灯光锥是 Y 方向拉伸 vision_mul 倍，判定同一几何：1.35× → 清晰半角 48.6°、总半角 66.8°。
 	fog.vision_mul = 1.35
-	_check(fog.tier_at(at50) == 2 and fog.tier_at(at70) == 1,
-		"sight vision bonus widens both the clear and the dim cone")
+	_check(fog.tier_at(at45) == 2 and fog.tier_at(at62) == 1 and fog.tier_at(at70) == 0,
+		"sight vision bonus widens both cones using the light's own stretch geometry")
+	_check(absf(rad_to_deg(VisionFog2D.widened_half_angle(40.0, 1.35)) - 48.6) < 0.2,
+		"widened_half_angle follows atan(tan(base) x mul)")
 	_check(is_equal_approx(fog.CLEAR_RANGE_METERS, 40.0)
 		and is_equal_approx(fog.TOTAL_RANGE_METERS, 40.0),
 		"base vision range reaches 40 meters")
@@ -378,13 +410,15 @@ func _run() -> void:
 		edge_enemy.set_physics_process(false)
 		edge_enemy.global_position = eye + Vector2.from_angle(deg_to_rad(52.0)) * reach
 		fog.refresh_enemies()
-		for i in 20:
+		fog._update_enemy_fade(0.30)
+		for i in 6:
 			await process_frame
 		_check(edge_enemy.visible and absf(edge_enemy.modulate.a - 0.8) < 0.06,
 			"edge-tier enemy uses 80% opacity")
 		edge_enemy.global_position = eye + Vector2.from_angle(deg_to_rad(80.0)) * reach
 		fog.refresh_enemies()
-		for i in 40:
+		fog._update_enemy_fade(0.30)
+		for i in 6:
 			await process_frame
 		_check(not edge_enemy.visible or edge_enemy.modulate.a < 0.05,
 			"enemy fades out instead of popping when leaving the cone")

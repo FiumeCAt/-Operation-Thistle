@@ -449,12 +449,19 @@ func _refresh_mod_detail(installed: Dictionary) -> void:
 	mod_detail_state.text = "当前：%s" % installed_name
 	mod_detail_cost.text = "消耗：%s\n%s" % [
 		MOD_SERVICE.cost_line(entry), MOD_SERVICE.material_line(entry)]
-	var option_text := "%s%s\n%s" % [
-		"预览：" if mod_preview_option != current else "",
-		String(entry["name"]), String(entry["desc"])]
+	# 已装配同款配件时不再重复打印配件名（上方 mod_detail_state 已显示“当前：xxx”）；
+	# 瞄具由 desc（定位说明）+ sight_stats_line（唯一数值摘要）组成，避免两段完全相同的数值重复出现。
+	var lines: Array[String] = []
+	if mod_preview_option != current:
+		lines.append("预览：%s" % String(entry["name"]))
+	var desc := String(entry.get("desc", "")).strip_edges()
+	if desc != "":
+		lines.append(desc)
 	if slot == "sight":
-		option_text += "\n" + MOD_SERVICE.sight_stats_line(entry)
-	mod_detail_option.text = option_text
+		var sight_line := MOD_SERVICE.sight_stats_line(entry)
+		if sight_line != "" and sight_line != desc:
+			lines.append(sight_line)
+	mod_detail_option.text = "\n".join(PackedStringArray(lines))
 	mod_install.text = "已装配" if mod_preview_option == current else "安装"
 	mod_install.disabled = mod_preview_option == current or not MOD_SERVICE.can_pay_mod(_progress(), entry)
 	# 实时数据窗：把当前预览当作已装配，计算与当前配置的差值。

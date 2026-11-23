@@ -174,7 +174,9 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 			tips[key] = text
 			continue
 		if key == "穿甲" and ammo != null:
-			text += "\n穿甲 %d · 每 2 点穿甲抵消 1 级护甲" % int(ammo.ap)
+			var ap_val := int(round(float(ammo.ap)))
+			text += "\n穿甲 %d（%.1f mm RHA）· 穿甲高于目标护甲时击穿并触发余穿增伤" % [
+				ap_val, float(ammo.ap) * 0.1]
 			tips[key] = text
 			continue
 		var effect_key := String(STAT_EFFECT.get(key, ""))
@@ -191,9 +193,10 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 				var effects: Dictionary = entry.get("effects", {})
 				if not effects.has(effect_key):
 					continue
+				var summary := ModInstallService.sight_stats_line(entry) \
+					if slot == "sight" else String(entry["desc"])
 				sources.append("· %s · %s：%s" % [
-					String(slot_def["name"]), String(entry["name"]),
-					String(entry["desc"])])
+					String(slot_def["name"]), String(entry["name"]), summary])
 		if key == "弹匣容量":
 			var mag_entry := ModDB.option(
 				"magazine", String(installed.get("magazine", "")), false, String(selected))
@@ -228,7 +231,8 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 					gun_level, (pow(0.94, float(gun_level)) - 1.0) * 100.0])
 		if key == "子弹速度":
 			text += "\n现实枪口初速，已包含弹种与枪管长度差异"
-			text += "\n游戏内飞行时间按 0.25 时间压缩"
+			var time_scale := float(ammo.bullet_time_scale) if ammo != null else 0.294
+			text += "\n游戏内飞行时间按 %.3f 时间压缩" % time_scale
 		if sources.is_empty():
 			text += "\n无配件加成 · 使用基础数据"
 		else:

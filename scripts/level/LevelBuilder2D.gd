@@ -20,6 +20,31 @@ const WALL_TEX := preload("res://assets/art/env/wall_128.png")
 const WALL_UV_SCALE := 1.0
 const C_WALL_TINT := Color(1.0, 1.0, 1.0)
 
+static var _crisp_lit_mat: ShaderMaterial
+
+
+## 地板与墙面启用 LINEAR 过滤让 PointLight2D 视野光照贴图走硬件双线性插值（彻底消除阶梯锯齿），
+## 同时片段着色器把自身贴图 UV 对齐到纹素中心，保持像素风地砖/墙板 100% 锐利不发虚。
+static func _crisp_pixel_material() -> ShaderMaterial:
+	if _crisp_lit_mat == null:
+		var shader := Shader.new()
+		shader.code = """
+shader_type canvas_item;
+varying vec4 v_color;
+void vertex() {
+	v_color = COLOR;
+}
+void fragment() {
+	vec2 sz = vec2(textureSize(TEXTURE, 0));
+	vec2 uv = (floor(UV * sz) + 0.5) / sz;
+	COLOR = texture(TEXTURE, uv) * v_color;
+}
+"""
+		var mat := ShaderMaterial.new()
+		mat.shader = shader
+		_crisp_lit_mat = mat
+	return _crisp_lit_mat
+
 
 static func build_floor(floor_layer: Node2D) -> void:
 	for rect in LAYOUT.floor_rects():
@@ -37,7 +62,8 @@ static func build_floor_rect(floor_layer: Node2D, rect: Rect2) -> void:
 	var poly := Polygon2D.new()
 	poly.texture = FLOOR_TEX
 	poly.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	poly.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	poly.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	poly.material = _crisp_pixel_material()
 	poly.polygon = PackedVector2Array([
 		Vector2.ZERO, Vector2(rect.size.x, 0), rect.size, Vector2(0, rect.size.y),
 	])
@@ -172,7 +198,8 @@ static func _wall_rect(floor_layer: Node2D, sort_layer: Node2D, rect: Rect2) -> 
 	var slab := Polygon2D.new()
 	slab.texture = WALL_TEX
 	slab.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	slab.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	slab.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	slab.material = _crisp_pixel_material()
 	slab.color = C_WALL_TINT
 	slab.polygon = PackedVector2Array([
 		top_left, top_left + Vector2(rect.size.x, 0), Vector2(rect.size.x, 0), Vector2.ZERO,

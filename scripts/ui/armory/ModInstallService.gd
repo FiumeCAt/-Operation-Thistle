@@ -99,15 +99,27 @@ static func material_line(entry: Dictionary) -> String:
 	return "、".join(PackedStringArray(parts))
 
 
-## 瞄具固定属性摘要：倍率 / 视野 / 射程 / 瞄准时间。
+## 瞄具属性摘要（单一真相源，仅列非零项并含前探加成，避免与 desc 重复）。
 static func sight_stats_line(entry: Dictionary) -> String:
 	var mag := float(entry.get("magnification", 1.0))
+	var look_ahead := (float(entry.get("look_ahead_mul", 1.0)) - 1.0) * 100.0
 	var fx: Dictionary = entry.get("effects", {})
 	var vision := (float(fx.get("vision_mul", 1.0)) - 1.0) * 100.0
+	var spread := (float(fx.get("spread_mul", 1.0)) - 1.0) * 100.0
 	var range_pct := (float(fx.get("range_mul", 1.0)) - 1.0) * 100.0
 	var ads_pct := (float(fx.get("ads_time_mul", 1.0)) - 1.0) * 100.0
-	return "倍率 %.1f× · 视野 +%d%% · 射程 +%d%% · 瞄准时间 +%d%%" % [
-		mag, int(round(vision)), int(round(range_pct)), int(round(ads_pct))]
+	var parts: Array[String] = ["倍率 %.1f×" % mag]
+	if absf(vision) >= 0.5:
+		parts.append("视野 %+d%%" % int(round(vision)))
+	if absf(look_ahead) >= 0.5:
+		parts.append("前探 %+d%%" % int(round(look_ahead)))
+	if absf(spread) >= 0.5:
+		parts.append("散布 %+d%%" % int(round(spread)))
+	if absf(range_pct) >= 0.5:
+		parts.append("射程 %+d%%" % int(round(range_pct)))
+	if absf(ads_pct) >= 0.5:
+		parts.append("瞄准时间 %+d%%" % int(round(ads_pct)))
+	return " · ".join(PackedStringArray(parts))
 
 
 static func can_pay_mod(progress: Node, entry: Dictionary) -> bool:

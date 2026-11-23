@@ -37,8 +37,8 @@ const SELF_ENERGY := 0.18
 const SELF_RADIUS_METERS := 1.1
 const LIGHT_COLOR := Color(1.0, 0.97, 0.92)
 const DARK_COLOR := Color(0.72, 0.82, 1.0)
-## 光照贴图分辨率：384 配合大角度羽化与软阴影，让 40 米视野锥边缘平滑无锯齿。
-const TEX_SIZE := 384
+## 光照贴图分辨率：512 配合线性过滤 + 半浮点格式 + 宽角度羽化，彻底消除 40 米视野锥边缘阶梯锯齿。
+const TEX_SIZE := 512
 ## 敌人可见性刷新间隔：50ms 一次，避免每帧遍历与视线采样。
 const ENEMY_REFRESH := 0.05
 ## 视线采样步长：墙格 64px，24px 已能可靠命中。
@@ -161,10 +161,15 @@ func _update_enemy_fade(delta: float) -> void:
 		if not is_instance_valid(node):
 			_tiers.erase(node)
 			continue
+		# 已死亡的敌人交给自己的死亡动画/引信收尾，视野系统不再改写其透明度与可见性，
+		# 否则尸体在迷雾里会被瞬间隐藏，爆炸引信的红圈也会被吞掉。
+		if bool(node.get("_dead")):
+			_tiers.erase(node)
+			continue
 		var tier := int(_tiers[node])
 		var target_alpha := 1.0 if tier == 2 else (RING_ENEMY_ALPHA if tier == 1 else 0.0)
 		var tint := Color.WHITE if tier == 2 else Color(0.78, 0.84, 0.95)
-		var alpha := move_toward(float(node.modulate.a), target_alpha, delta * 6.0)
+		var alpha := move_toward(float(node.modulate.a), target_alpha, delta * 4.0)
 		node.modulate = Color(tint.r, tint.g, tint.b, alpha)
 		node.visible = alpha > 0.01
 
@@ -193,14 +198,15 @@ func tier_at(world_pos: Vector2) -> int:
 	var origin := _eye_position()
 	var offset: Vector2 = world_pos - origin
 	var dist: float = offset.length()
-	var max_range: float = maxf(CLEAR_RANGE_METERS, TOTAL_RANGE_METERS) * PIXELS_PER_METER * vision_mul
+	var max_range: float = maxf(
+		maxf(CLEAR_RANGE_METERS, TOTAL_RANGE_METERS) * PIXELS_PER_METER * vision_mul,
+		DARK_RADIUS_METERS * PIXELS_PER_METER)
 	if dist > max_range:
 		return 0
 	var angle := 0.0 if dist <= 1.0 else absf(angle_difference(_aim_angle, offset.angle()))
-	# 瞄具的视野倍率同时拓宽清晰锥与余光锥，和灯光锥保持一致。
-	var angle_mul: float = maxf(vision_mul, 1.0)
-	var clear_half := deg_to_rad(CLEAR_HALF_DEG) * angle_mul
-	var total_half := deg_to_rad(TOTAL_HALF_DEG) * angle_mul
+	# 灯光锥是 Y 方向拉伸 vision_mul 倍，判定与之同一条几何：半角 = atan(tan(基础半角) × 倍率)。
+	var clear_half := widened_half_angle(CLEAR_HALF_DEG, vision_mul)
+	var total_half := widened_half_angle(TOTAL_HALF_DEG, vision_mul)
 	var in_clear: bool = dist <= CLEAR_RANGE_METERS * PIXELS_PER_METER * vision_mul \
 		and angle <= clear_half
 	var in_ring: bool = dist <= TOTAL_RANGE_METERS * PIXELS_PER_METER * vision_mul \
@@ -237,6 +243,8 @@ func line_clear(from: Vector2, to: Vector2) -> bool:
 
 
 func _line_clear_one(from: Vector2, to: Vector2) -> bool:
+	if _blocked_by_door(from, to):
+		return false
 	var dist := from.distance_to(to)
 	var steps := maxi(1, int(ceil(dist / LOS_STEP)))
 	for i in range(1, steps):
@@ -244,6 +252,21 @@ func _line_clear_one(from: Vector2, to: Vector2) -> bool:
 		if not level.is_nav_walkable(probe):
 			return false
 	return true
+
+
+## 关卡导航网格把门洞标为可通行，视线判定需额外检查紧闭的滑门，防止隔门透视房间内敌人。
+func _blocked_by_door(from: Vector2, to: Vector2) -> bool:
+	var doors = level.get("doors")
+	if typeof(doors) != TYPE_ARRAY:
+		return false
+	for entry in doors:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var door = entry.get("node", null)
+		if door != null and is_instance_valid(door) and door.has_method("blocks_segment"):
+			if bool(door.blocks_segment(from, to)):
+				return true
+	return false
 
 
 func _make_light(tex: Texture2D, energy: float, light_scale: float,
@@ -255,15 +278,22 @@ func _make_light(tex: Texture2D, energy: float, light_scale: float,
 	light.color = color
 	light.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	# 视野边缘用大范围角度羽化 + 软阴影，避免出现硬切边和阶梯锯齿。
-	# PCF5 + 2px 平滑在视觉与开销之间取平衡；32 米主锥覆盖整屏，PCF13 太贵。
+	# PCF5 + 3px 平滑在视觉与开销之间取平衡；32 米主锥覆盖整屏，PCF13 太贵。
 	light.shadow_enabled = true
 	light.shadow_filter = Light2D.SHADOW_FILTER_PCF5
-	light.shadow_filter_smooth = 2.0
+	light.shadow_filter_smooth = 3.0
 	add_child(light)
 	return light
 
 
-## 清晰视野锥：40° 内满亮，30°..44° 平滑过渡到 40% 亮度的外圈余光，60° 收边。
+## 瞄具视野倍率同时拓宽灯光锥（Y 方向拉伸）：边缘半角 = atan(tan(基础半角) × 倍率)。
+## 层级判定必须使用同一条几何，否则会出现“判定清晰、实际很暗”的错位。
+static func widened_half_angle(base_deg: float, mul: float) -> float:
+	var half := tan(deg_to_rad(clampf(base_deg, 1.0, 89.0))) * maxf(mul, 1.0)
+	return atan(half)
+
+
+## 清晰视野锥：40° 内满亮，过渡到 40% 亮度的外圈余光，60° 收边；各段 smoothstep 连续衔接。
 static func _cone_texture() -> ImageTexture:
 	if _textures.has("cone"):
 		return _textures["cone"] as ImageTexture
@@ -274,17 +304,12 @@ static func _cone_texture() -> ImageTexture:
 			return 0.0
 		# 远处缓慢衰减到迷雾，避免视野边缘出现生硬的圆形切边。
 		var radial := clampf(1.0 - pow(radius, 3.2), 0.0, 1.0)
-		var edge := smoothstep(0.72, 1.0, radius)
-		radial *= lerpf(1.0, 0.55, edge)
-		var angular := RING_DIM
-		if angle <= clear_half - deg_to_rad(14.0):
-			angular = 1.0
-		elif angle < clear_half + deg_to_rad(8.0):
-			var blend := (clear_half + deg_to_rad(8.0) - angle) / deg_to_rad(22.0)
-			angular = lerpf(RING_DIM, 1.0, clampf(blend, 0.0, 1.0))
-		elif angle > total_half - deg_to_rad(18.0):
-			angular = lerpf(0.0, RING_DIM,
-				clampf((total_half - angle) / deg_to_rad(18.0), 0.0, 1.0))
+		var edge := smoothstep(0.62, 1.0, radius)
+		radial *= lerpf(1.0, 0.50, edge)
+		# 角向：中心满亮 → 清晰边缘外 8° 降到余光 → 总视野边缘 22° 内渐隐为 0。
+		var core := 1.0 - smoothstep(clear_half - deg_to_rad(16.0), clear_half + deg_to_rad(8.0), angle)
+		var angular := lerpf(RING_DIM, 1.0, core)
+		angular *= smoothstep(0.0, deg_to_rad(22.0), total_half - angle)
 		return radial * angular)
 	_textures["cone"] = tex
 	return tex
@@ -297,15 +322,16 @@ static func _radial_texture() -> ImageTexture:
 	var tex := _build_texture(func(_angle: float, radius: float) -> float:
 		if radius > 1.0:
 			return 0.0
-		return clampf(1.0 - pow(radius, 2.2), 0.0, 1.0))
+		return clampf(1.0 - smoothstep(0.0, 1.0, radius) * pow(radius, 1.2), 0.0, 1.0))
 	_textures["radial"] = tex
 	return tex
 
 
 ## 把 (角度, 归一化半径) → 亮度 的函数烘焙成以 +X 为中心的贴图。
+## 使用半精度浮点格式：8 位通道在暗部缓坡上会出现一圈圈色带。
 static func _build_texture(shader_fn: Callable) -> ImageTexture:
 	var half := TEX_SIZE * 0.5
-	var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBA8)
+	var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBAH)
 	for y in TEX_SIZE:
 		for x in TEX_SIZE:
 			var v := Vector2(x + 0.5 - half, y + 0.5 - half)
