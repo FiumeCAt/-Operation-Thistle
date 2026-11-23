@@ -18,6 +18,7 @@ $DefaultCoreTests = @(
     "bullet_speed_test",
     "codex_menu_test",
     "combat_system_test",
+    "container_runtime_test",
     "damage_model_test",
     "data_tables_test",
     "deco_containers_test",
