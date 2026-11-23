@@ -22,6 +22,7 @@ const SHELL_TEX := preload("res://assets/art/weapons/fx/mag_shell.png")
 
 const UNITS := preload("res://scripts/core/GameUnits.gd")
 const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
+const FEED_STATE := preload("res://scripts/weapons/WeaponFeedState2D.gd")
 ## 枪械贴图视觉缩放标尺（按参考角色 128px ≈ 1.7m 匹配握持长度，与世界 64 px/m 距离解耦）。
 const SPRITE_PX_PER_METER := UNITS.SPRITE_PX_PER_METER
 ## 像素风里手枪需要适度夸张，否则只有 15px 看不清；长枪按真实比例即可。
@@ -70,12 +71,12 @@ const RELOAD_DIP := 14.0
 const RELOAD_TILT := 0.5
 const MAG_SCALE := 0.7
 ## 切枪：枪沉下去 → 换模型 → 抬起来
-const SWITCH_TIME := 0.36
+const SWITCH_TIME := FEED_STATE.SWITCH_TIME
 const SWITCH_DIP := 24.0
 const SWITCH_TILT := 0.45
 ## 收枪 / 拔枪：枪向下沉并淡出，拔枪时反向抬起。
-const HOLSTER_TIME := 0.22
-const DRAW_TIME := 0.26
+const HOLSTER_TIME := FEED_STATE.HOLSTER_TIME
+const DRAW_TIME := FEED_STATE.DRAW_TIME
 const STOW_DIP := 22.0
 const STOW_TILT := 0.5
 ## 冲刺时枪口压低一点，表现“持枪冲刺”而不是举枪瞄准。
@@ -98,9 +99,15 @@ const SUPPORT_MAX_SEG := 28.0
 const SUPPORT_UPPER_BASE := 13.0
 const SUPPORT_FORE_BASE := 13.5
 
-var weapon_id: StringName = &"g17"
-## 本局携带的武器（1-2 把）；数字键 1/2 与滚轮只在其中循环。
-var loadout: Array[StringName] = [&"m870", &"m1014", &"saiga12k", &"g17"]
+var feed: WeaponFeedState2D = FEED_STATE.new()
+
+## 供弹/换弹/切枪/收拔枪状态（委托至 WeaponFeedState2D，保留既有属性接口）。
+var weapon_id: StringName:
+	get: return feed.weapon_id
+	set(v): feed.weapon_id = v
+var loadout: Array[StringName]:
+	get: return feed.loadout
+	set(v): feed.loadout = v
 var data: WeaponData
 var aim_world := Vector2.ZERO
 var aim_enabled := true
@@ -109,8 +116,12 @@ var aiming := false
 var body_direction := 0
 var aim_angle := 0.0
 var recoil := 0.0
-var cooldown := 0.0
-var shots := 0
+var cooldown: float:
+	get: return feed.cooldown
+	set(v): feed.cooldown = v
+var shots: int:
+	get: return feed.shots
+	set(v): feed.shots = v
 ## 配件汇总后的伤害与散布倍率；由 setup 时读取 Progress 装配表写入。
 var damage_mul := 1.0
 var spread_mul := 1.0
@@ -131,29 +142,53 @@ var has_scope_sight := false
 ## 瞄准时主镜头放大倍率：非高倍镜按瞄具标定倍率放大（1.0 = 不额外放大）。
 var aim_zoom_mul := 1.0
 
-## 供弹状态：每把枪各自保存弹匣数，备弹按通用弹药种类共享。
-var mag := 0
-## category(light/medium/heavy/shotgun/special) → 备弹数量。
-var reserve: Dictionary = {}
-var reload_t := 0.0
-var reload_total := 0.0
-## 2D 天赋「快速换弹」的比例；1.0 为原始换弹时间。
-var reload_time_mul := 1.0
-## 备弹天赋倍率；浪潮补满弹药时沿用，避免回满反而比开局少。
-var reserve_talent_mul := 1.0
-## 「持续装填」天赋：解锁后按住 R 可为管仓武器逐发续装。
-var hold_reload_enabled := false
-var switch_t := 0.0
+var mag: int:
+	get: return feed.mag
+	set(v): feed.mag = v
+var reserve: Dictionary:
+	get: return feed.reserve
+	set(v): feed.reserve = v
+var reload_t: float:
+	get: return feed.reload_t
+	set(v): feed.reload_t = v
+var reload_total: float:
+	get: return feed.reload_total
+	set(v): feed.reload_total = v
+var reload_time_mul: float:
+	get: return feed.reload_time_mul
+	set(v): feed.reload_time_mul = v
+var reserve_talent_mul: float:
+	get: return feed.reserve_talent_mul
+	set(v): feed.reserve_talent_mul = v
+var hold_reload_enabled: bool:
+	get: return feed.hold_reload_enabled
+	set(v): feed.hold_reload_enabled = v
+var switch_t: float:
+	get: return feed.switch_t
+	set(v): feed.switch_t = v
 ## 冲刺时由 Doll2D 写入：枪保持在手，但压低一点。
 var sprinting := false
 ## 右键瞄准（ADS）由 Doll2D 写入；0→1 平滑过渡。
 var ads := false
 var _ads_t := 0.0
-## 收枪状态：holstered 为 true 时武器只显示在背后的挂点上。
-var holstered := false
-var _stow_t := 0.0
-var _stow_total := 0.0
-var _stow_kind := 0  # -1 收枪，1 拔枪
+var holstered: bool:
+	get: return feed.holstered
+	set(v): feed.holstered = v
+var _stow_t: float:
+	get: return feed.stow_t
+	set(v): feed.stow_t = v
+var _stow_total: float:
+	get: return feed.stow_total
+	set(v): feed.stow_total = v
+var _stow_kind: int:
+	get: return feed.stow_kind
+	set(v): feed.stow_kind = v
+var _pending_id: StringName:
+	get: return feed.pending_id
+	set(v): feed.pending_id = v
+var _mag_by_id: Dictionary:
+	get: return feed.mag_by_id
+	set(v): feed.mag_by_id = v
 
 var _pivot: Node2D
 var _gun: Sprite2D
@@ -177,8 +212,6 @@ var _gun_len := 20.0
 var _elbow_sign := 1.0
 var _kick := 0.0
 var _flash_timer := 0.0
-var _pending_id: StringName = &""
-var _mag_by_id := {}
 var _grip_px := Vector2.ZERO
 var _muzzle_px := Vector2.ZERO
 var _tex_size := Vector2.ZERO
@@ -329,9 +362,7 @@ func setup(id: StringName) -> void:
 	_support_root.visible = false
 
 	# 每把枪保留自己的弹匣数，切回来时不会重置
-	if not _mag_by_id.has(id):
-		_mag_by_id[id] = data.mag_capacity
-	mag = int(_mag_by_id[id])
+	feed.on_weapon_equipped(id, data.mag_capacity)
 
 	_update_layer()
 	_apply_pose()
@@ -348,27 +379,15 @@ func _clear_nodes() -> void:
 func _process(delta: float) -> void:
 	if data == null:
 		return
-	if cooldown > 0.0:
-		cooldown = maxf(cooldown - delta, 0.0)
-	if switch_t > 0.0:
-		var before := switch_t
-		switch_t = maxf(switch_t - delta, 0.0)
-		# 在动画最低点换模型，新旧枪交替正好被下沉遮住
-		if before > SWITCH_TIME * 0.5 and switch_t <= SWITCH_TIME * 0.5 and _pending_id != &"":
-			var next_id := _pending_id
-			_pending_id = &""
-			setup(next_id)
-			weapon_switched.emit(next_id)
-	if reload_t > 0.0:
-		reload_t = maxf(reload_t - delta, 0.0)
-		if reload_t <= 0.0:
-			_finish_reload()
-	if _stow_t > 0.0:
-		var was_stowing := _stow_t
-		_stow_t = maxf(_stow_t - delta, 0.0)
-		# 收枪动作结束时才把枪挂到背后，避免手和背后同时出现两把枪
-		if was_stowing > 0.0 and _stow_t <= 0.0 and _stow_kind < 0:
-			holstered_changed.emit(true)
+	var ev := feed.tick(delta, data)
+	var swap_id: StringName = ev["switch_swap"]
+	if swap_id != &"":
+		setup(swap_id)
+		weapon_switched.emit(swap_id)
+	if bool(ev["reload_finished"]):
+		reload_finished.emit()
+	if bool(ev["holster_completed"]):
+		holstered_changed.emit(true)
 	# aim_world 在 Doll2D 的物理帧里写入；首帧还是零向量时不要拿它算角度，
 	# 否则开局第一枪会朝左上角偏一大截。
 	if aim_enabled and aim_world != Vector2.ZERO and not holstered:
@@ -683,180 +702,97 @@ func _update_layer() -> void:
 
 
 func try_fire() -> bool:
-	if data == null or cooldown > 0.0 or reload_t > 0.0 or switch_t > 0.0:
-		return false
-	if holstered:
-		# 收枪状态扣扳机 = 自动拔枪，不直接开火
-		draw()
-		return false
-	if _stow_t > 0.0:
-		return false
-	if mag <= 0:
-		# 空仓扣扳机：直接开始换弹，省得玩家再按一次 R
-		reload()
-		return false
-	mag -= 1
-	_mag_by_id[weapon_id] = mag
-	cooldown = data.fire_interval
-	recoil = recoil_mul
-	_kick = -RECOIL_KICK + randf_range(-0.015, 0.015)
-	_flash_timer = FLASH_TIME
-	_flash.visible = true
-	_flash.frame = 0
-	shots += 1
-	fired.emit(get_muzzle_position(), Vector2.from_angle(aim_angle))
-	return true
+	match feed.try_fire(data):
+		&"need_draw":
+			# 收枪状态扣扳机 = 自动拔枪，不直接开火
+			draw()
+			return false
+		&"need_reload":
+			# 空仓扣扳机：直接开始换弹，省得玩家再按一次 R
+			reload()
+			return false
+		&"fired":
+			recoil = recoil_mul
+			_kick = -RECOIL_KICK + randf_range(-0.015, 0.015)
+			_flash_timer = FLASH_TIME
+			_flash.visible = true
+			_flash.frame = 0
+			fired.emit(get_muzzle_position(), Vector2.from_angle(aim_angle))
+			return true
+		_:
+			return false
 
 
 ## R 换弹：弹匣枪整匣更换，霰弹枪一次压一发。
 func reload() -> bool:
-	if data == null or reload_t > 0.0 or switch_t > 0.0 or holstered or _stow_t > 0.0:
-		return false
-	if mag >= data.mag_capacity or get_reserve() <= 0:
-		return false
-	reload_total = maxf(data.load_time * reload_time_mul, 0.15)
-	reload_t = reload_total
-	return true
+	return feed.reload(data)
 
 
 ## 「持续装填」：按住 R 时，上一发装完后自动续压下一发。
-## 只对管仓 / 逐发装填的武器（M870、M1014、后续栓动步枪）生效。
 func process_hold_reload() -> void:
-	if not hold_reload_enabled or data == null or data.feed_mode != &"shell":
-		return
-	if holstered or _stow_t > 0.0 or switch_t > 0.0:
-		return
-	if reload_t > 0.0:
-		return
-	reload()
+	feed.process_hold_reload(data)
 
 
 func _finish_reload() -> void:
-	if data == null:
-		return
-	if data.feed_mode == &"mag":
-		var take := mini(data.mag_capacity - mag, get_reserve())
-		_set_reserve(get_reserve() - take)
-		mag += take
-	elif get_reserve() > 0:
-		_set_reserve(get_reserve() - 1)
-		mag += 1
-	_mag_by_id[weapon_id] = mag
+	feed.finish_reload(data)
 	reload_finished.emit()
 
 
 ## 切枪：中途换模型，前后各有一段收/举枪动画。
 func switch_to(id: StringName) -> bool:
-	if data == null or switch_t > 0.0 or _stow_t > 0.0 or id == weapon_id:
+	var result := feed.start_switch(id, data)
+	if result == &"rejected":
 		return false
-	if not loadout.has(id):
-		return false
-	# 换弹中切枪直接取消，避免两套动画打架
-	if reload_t > 0.0:
-		reload_t = 0.0
-		reload_total = 0.0
-		if _mag_sprite != null:
-			_mag_sprite.visible = false
-	# 收枪状态直接换背后的模型，不播举枪动画
-	if holstered:
+	if _mag_sprite != null:
+		_mag_sprite.visible = false
+	if result == &"instant_holstered":
 		setup(id)
 		weapon_switched.emit(id)
-		return true
-	_pending_id = id
-	switch_t = SWITCH_TIME
 	return true
 
 
 func _cycle_weapon(step: int) -> void:
-	if loadout.is_empty():
-		return
-	var index := loadout.find(weapon_id)
-	if index < 0:
-		index = 0
-		switch_to(loadout[0])
-		return
-	switch_to(loadout[(index + step + loadout.size()) % loadout.size()])
+	var next_id := feed.cycle_target(step)
+	if next_id != &"":
+		switch_to(next_id)
 
 
 func get_reserve() -> int:
-	if data == null:
-		return 0
-	var category := data.ammo_category
-	if reserve.has(category):
-		return int(reserve[category])
-	var info: Dictionary = WeaponDB.category_table().get(String(category), {})
-	return int(info.get("reserve_max", 0))
+	return feed.get_reserve(data)
 
 
 func _set_reserve(value: int) -> void:
-	if data == null:
-		return
-	reserve[data.ammo_category] = maxi(value, 0)
+	feed.set_reserve(data, value)
 
 
-## 备弹天赋：所有通用弹药种类按倍率给足初始备弹。
 func apply_reserve_talent(mul: float) -> void:
-	reserve_talent_mul = mul
-	var table := WeaponDB.category_table()
-	for category in table:
-		var info: Dictionary = table[category]
-		reserve[category] = int(round(float(info.get("reserve_max", 0)) * mul))
+	feed.apply_reserve_talent(mul)
 
 
-## 浪潮模式波次间整备：弹匣、所有武器弹匣与通用备弹全部回满。
 func refill_all_ammo() -> void:
-	var table := WeaponDB.category_table()
-	for category in table:
-		var info: Dictionary = table[category]
-		reserve[category] = int(round(
-			float(info.get("reserve_max", 0)) * reserve_talent_mul))
-	for id in _mag_by_id:
-		var wd: WeaponData = WeaponDB.get_weapon(StringName(id))
-		if wd != null:
-			_mag_by_id[id] = wd.mag_capacity
-	if data != null:
-		_mag_by_id[data.id] = data.mag_capacity
-		mag = data.mag_capacity
-		reload_t = 0.0
-		reload_total = 0.0
+	feed.refill_all_ammo(data)
 
 
-## 换弹进度 0~1，供 HUD 画进度用。
 func get_reload_progress() -> float:
-	if reload_total <= 0.0:
-		return 1.0
-	return clampf(1.0 - reload_t / reload_total, 0.0, 1.0)
+	return feed.get_reload_progress()
 
 
-## 收枪 / 拔枪进度 0~1，供 HUD 画进度用。
 func get_stow_progress() -> float:
-	if _stow_total <= 0.0:
-		return 1.0
-	return clampf(1.0 - _stow_t / _stow_total, 0.0, 1.0)
+	return feed.get_stow_progress()
 
 
-## 收枪：枪沉下去，背后挂点由 Doll2D 显示武器。
 func holster() -> bool:
-	if holstered or _stow_t > 0.0 or reload_t > 0.0 or switch_t > 0.0:
+	if not feed.holster():
 		return false
-	holstered = true
-	_stow_kind = -1
-	_stow_total = HOLSTER_TIME
-	_stow_t = HOLSTER_TIME
 	if _flash != null:
 		_flash.visible = false
 	_play_stow_sfx()
 	return true
 
 
-## 拔枪：从下方抬起并淡入；扣扳机也会自动触发。
 func draw() -> bool:
-	if not holstered or _stow_t > 0.0:
+	if not feed.draw():
 		return false
-	holstered = false
-	_stow_kind = 1
-	_stow_total = DRAW_TIME
-	_stow_t = DRAW_TIME
 	_play_stow_sfx()
 	holstered_changed.emit(false)
 	return true
@@ -867,15 +803,15 @@ func toggle_holster() -> bool:
 
 
 func is_holstered() -> bool:
-	return holstered
+	return feed.holstered
 
 
 func is_stowing() -> bool:
-	return _stow_t > 0.0 and _stow_kind < 0
+	return feed.is_stowing()
 
 
 func is_drawing() -> bool:
-	return _stow_t > 0.0 and _stow_kind > 0
+	return feed.is_drawing()
 
 
 ## 背后挂点用：当前枪的侧视贴图与同一世界比例。
@@ -897,22 +833,11 @@ func _play_stow_sfx() -> void:
 
 
 func is_busy() -> bool:
-	return reload_t > 0.0 or switch_t > 0.0 or _stow_t > 0.0
+	return feed.is_busy()
 
 
-## HUD 文本：枪名 + 弹匣/备弹，空仓或换弹时附提示。
 func get_ammo_text() -> String:
-	if data == null:
-		return ""
-	var extra := ""
-	if reload_t > 0.0:
-		extra = "装填中"
-	elif switch_t > 0.0:
-		extra = "切枪中"
-	elif mag <= 0:
-		extra = "空仓 · R 换弹" if get_reserve() > 0 else "弹药耗尽"
-	var line := "%s   %d / %d" % [data.display_name, mag, get_reserve()]
-	return line + ("   " + extra if extra != "" else "")
+	return feed.get_ammo_text(data)
 
 
 func get_muzzle_position() -> Vector2:

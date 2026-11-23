@@ -57,6 +57,7 @@ $DefaultCoreTests = @(
     "wall_edge_hit_test",
     "wave_system_test",
     "waves_2d_test",
+    "weapon_feed_state_test",
     "weapon_m2_m4_test",
     "weapon_m3_test",
     "weapon_rig_test",
