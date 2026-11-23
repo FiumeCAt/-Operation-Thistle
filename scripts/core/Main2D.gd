@@ -76,6 +76,7 @@ const SCOPE_SIGHT := preload("res://scripts/fx/ScopeSight2D.gd")
 const HEARING_INDICATOR := preload("res://scripts/fx/HearingIndicator2D.gd")
 const LOOT_SYSTEM := preload("res://scripts/systems/LootSystem2D.gd")
 const WAVE_SYSTEM := preload("res://scripts/systems/WaveSystem2D.gd")
+const INTERACTION_SYSTEM := preload("res://scripts/systems/InteractionSystem2D.gd")
 ## 战利品/掉落常量统一收口至 LootSystem2D，此处保留只读别名供旧测试兼容引用。
 const BASIC_DROP_TABLE := LOOT_SYSTEM.BASIC_DROP_TABLE
 const CONTAINER_LOOT_MIN := LOOT_SYSTEM.CONTAINER_LOOT_MIN
@@ -85,8 +86,8 @@ const CONTAINER_ADVANCED_CHANCE := LOOT_SYSTEM.CONTAINER_ADVANCED_CHANCE
 const ENEMY_SECONDARY_CHANCE := LOOT_SYSTEM.ENEMY_SECONDARY_CHANCE
 ## 全项目统一世界距离标尺：1 格 = 1 米 = 64 px（来自 GameUnits）。
 const WORLD_PER_METER := UNITS.PIXELS_PER_METER
-const INTERACT_RADIUS := 96.0
-const EXIT_RADIUS := 118.0
+const INTERACT_RADIUS := INTERACTION_SYSTEM.INTERACT_RADIUS
+const EXIT_RADIUS := INTERACTION_SYSTEM.EXIT_RADIUS
 const SHOT_ORIGIN_OFFSET := Vector2(0, -8)
 const HINT_DEFAULT := "WASD 移动 · 左键开火 · 右键瞄准 · R 换弹 · X 收/拔枪 · TAB 背包 · Alt+滚轮 缩放 · E 交互"
 
@@ -135,13 +136,7 @@ const WAVES_EXTRACT_RATIO := WAVE_SYSTEM.EXTRACT_RATIO
 const WAVES_LOOT_STEP := WAVE_SYSTEM.LOOT_STEP
 
 var _label_timer := 0.0
-var _near_container: Dictionary = {}
-var _near_exit := false
-var _near_exit_data: Dictionary = {}
-var _near_power := false
-var _near_switch_exit := false
-var _hint_override := ""
-var _hint_timer := 0.0
+var interaction_system: InteractionSystem2D = INTERACTION_SYSTEM.new()
 var _shake := 0.0
 ## 镜头旋转抖动与衰减速度：不同武器（霰弹/狙击/冲锋枪）套不同档位。
 var _shake_peak := 0.0
@@ -243,6 +238,13 @@ func _ready() -> void:
 		_on_enemy_died, _play_sfx)
 	wave_system.wave_changed.connect(func(w: int, state: String) -> void: wave_changed.emit(w, state))
 	wave_system.finish_requested.connect(_finish_run)
+	interaction_system.setup(level, doll, hud,
+		func() -> bool: return run_state == RunState.ACTIVE,
+		func() -> bool: return waves_mode,
+		func() -> int: return resources,
+		_default_hint, _play_sfx)
+	interaction_system.container_search_requested.connect(_search_container)
+	interaction_system.extract_requested.connect(func(via_switch: bool) -> void: _finish_run(true, via_switch))
 	reticle.setup(self)
 	scope_sight = SCOPE_SIGHT.new()
 	scope_sight.name = "ScopeSight2D"
@@ -685,68 +687,7 @@ func _update_hud(delta: float) -> void:
 	hud.set_armor(doll.armor, doll.armor_max)
 	hud.set_objective(_objective_text())
 	hud.update_weapon(doll.weapon_rig)
-
-	if run_state != RunState.ACTIVE:
-		level.set_container_hint(-1)
-		hud.clear_interact_target()
-		return
-	# 交互：补给箱 > 供电台 > 拉闸撤离 > 常开撤离。
-	_near_container = {}
-	var near_index := -1
-	var near_searched := -1
-	for i in level.containers.size():
-		var entry: Dictionary = level.containers[i]
-		var node: Node2D = entry["node"]
-		if node == null or doll.global_position.distance_to(node.global_position) >= INTERACT_RADIUS:
-			continue
-		if bool(entry["searched"]):
-			near_searched = i
-		elif near_index < 0:
-			_near_container = entry
-			near_index = i
-	# 可搜刮箱子优先；否则在已搜刮箱子上显示“已搜索”。
-	if near_index >= 0:
-		level.set_container_hint(near_index)
-		var art_id := StringName(_near_container.get("art", &"material_box"))
-		hud.set_interact_target(level.container_display_name(art_id),
-			level.container_rarity_color(art_id))
-	elif near_searched >= 0:
-		level.set_container_hint(near_searched, true)
-		hud.clear_interact_target()
-	else:
-		level.set_container_hint(-1)
-		hud.clear_interact_target()
-	_near_exit = false
-	_near_exit_data = {}
-	for exit_data in level.exits:
-		var exit_pos: Vector2 = exit_data["position"]
-		if doll.global_position.distance_to(exit_pos) < EXIT_RADIUS:
-			_near_exit = true
-			_near_exit_data = exit_data
-			break
-	_near_power = not level.power_on \
-		and doll.global_position.distance_to(level.power_position) < INTERACT_RADIUS
-	_near_switch_exit = doll.global_position.distance_to(level.switch_exit_position) < EXIT_RADIUS
-
-	if _hint_timer > 0.0:
-		_hint_timer = maxf(_hint_timer - delta, 0.0)
-		hud.set_hint(_hint_override)
-	elif waves_mode and (_near_switch_exit or _near_exit):
-		hud.set_hint("浪潮模式：每 5 波可撤离 · ESC 提前撤离（30%）")
-	elif not _near_container.is_empty():
-		hud.set_hint("E  搜索补给箱")
-	elif _near_power:
-		hud.set_hint("E  恢复供电（解锁拉闸撤离 · 结算 +20%）")
-	elif _near_switch_exit:
-		if level.power_on:
-			hud.set_hint("E  拉闸撤离（任务 +20% · 拉闸 +10%）")
-		else:
-			hud.set_hint("货运电梯未供电 · 先恢复控制室供电")
-	elif _near_exit:
-		var exit_name := String(_near_exit_data.get("name", "撤离点"))
-		hud.set_hint("E  %s（需要至少 1 份战利品）" % exit_name)
-	else:
-		hud.set_hint(_default_hint())
+	interaction_system.update(delta)
 
 
 ## 目标文案跟着局内进度变化；直接撤离始终可用，供电只是可选收益线。
@@ -768,10 +709,7 @@ func _default_hint() -> String:
 
 
 func _flash_hint(text: String) -> void:
-	_hint_override = text
-	_hint_timer = 2.2
-	hud.set_hint(text)
-	hud.flash(text)
+	interaction_system.flash_hint(text)
 
 
 ## 射击原点用视觉枪口：弹道、tracer、枪口闪光和准心才能三点一线。
@@ -1363,39 +1301,18 @@ func _return_to_base() -> void:
 	get_tree().change_scene_to_file("res://scenes/ui/StartMenu2D.tscn")
 
 
+## --- 交互（委托至 InteractionSystem2D）----------------------------------------
+
 func _try_interact() -> void:
-	if run_state != RunState.ACTIVE:
-		return
-	if not _near_container.is_empty():
-		_search_container(_near_container)
-	elif _near_power:
-		_restore_power()
-	elif _near_switch_exit:
-		_try_switch_extract()
-	elif _near_exit:
-		_try_extract()
+	interaction_system.try_interact()
 
 
-## 控制室供电：解锁军械库货运电梯，并给本局结算 +20%。
 func _restore_power() -> void:
-	if level.power_on:
-		return
-	level.set_power_on(true)
-	_play_sfx("switch", -3.0)
-	_flash_hint("供电恢复 · 军械库拉闸撤离已上线（结算 +20%）")
+	interaction_system.restore_power()
 
 
 func _try_switch_extract() -> void:
-	if waves_mode:
-		_flash_hint("浪潮模式：每 5 波可撤离 · ESC 提前撤离（30%）")
-		return
-	if not level.power_on:
-		_flash_hint("货运电梯未供电 · 先恢复控制室供电")
-		return
-	if resources < 1:
-		_flash_hint("需要至少 1 份战利品才能撤离")
-		return
-	_finish_run(true, true)
+	interaction_system.try_switch_extract()
 
 
 func _search_container(entry: Dictionary) -> void:
@@ -1413,13 +1330,7 @@ func _grant_container_gains(gains: Array[Dictionary]) -> void:
 
 
 func _try_extract() -> void:
-	if waves_mode:
-		_flash_hint("浪潮模式：每 5 波可撤离 · ESC 提前撤离（30%）")
-		return
-	if resources < 1:
-		_flash_hint("需要至少 1 份战利品才能撤离")
-		return
-	_finish_run(true)
+	interaction_system.try_extract()
 
 
 ## 收尾结算：常规模式按 100% 入账；浪潮模式按 payout_ratio 回收。
