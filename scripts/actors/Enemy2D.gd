@@ -10,16 +10,16 @@ signal died(enemy)
 const UNITS := preload("res://scripts/core/GameUnits.gd")
 const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
 const ENEMY_DEF := preload("res://scripts/actors/enemy/EnemyDef.gd")
+const ENEMY_VISUAL := preload("res://scripts/actors/enemy/EnemyVisual2D.gd")
 const TILE := UNITS.TILE
 const LOST_SIGHT := 7.0
 const SEARCH_TIME := 12.0
-## 发现玩家时的红色感叹号：8 帧贴图，带发光与 Wi-Fi 式外扩波纹。
-const ALERT_ICON_SHEET: Texture2D = preload("res://assets/art/fx/enemy_alert.png")
-const ALERT_FRAMES := 8
-const ALERT_FPS := 12.0
-const ALERT_LIFE := 1.25
-const ALERT_ICON_SCALE := 0.68
-const ALERT_ICON_LIFT := 38.0
+const ALERT_ICON_SHEET: Texture2D = ENEMY_VISUAL.ALERT_ICON_SHEET
+const ALERT_FRAMES := ENEMY_VISUAL.ALERT_FRAMES
+const ALERT_FPS := ENEMY_VISUAL.ALERT_FPS
+const ALERT_LIFE := ENEMY_VISUAL.ALERT_LIFE
+const ALERT_ICON_SCALE := ENEMY_VISUAL.ALERT_ICON_SCALE
+const ALERT_ICON_LIFT := ENEMY_VISUAL.ALERT_ICON_LIFT
 
 var kind: StringName = &"rifleman"
 var stats: Dictionary = {}
@@ -33,27 +33,40 @@ var home := Vector2.ZERO
 ## 玩家引用保持无类型声明：这里只调用 Duck 类型上的 take_damage / global_position。
 var player = null
 
-var _sprite: Sprite2D
-var _sprite_h := 0.0
-var _bar_bg: Polygon2D
-var _bar_fill: Polygon2D
+var visual: EnemyVisual2D = ENEMY_VISUAL.new()
+
+var _sprite: Sprite2D:
+	get: return visual.sprite
+	set(v): visual.sprite = v
+var _sprite_h: float:
+	get: return visual.sprite_h
+	set(v): visual.sprite_h = v
+var _anim: AnimatedSprite2D:
+	get: return visual.anim
+	set(v): visual.anim = v
+var _alert_icon: Sprite2D:
+	get: return visual.alert_icon
+	set(v): visual.alert_icon = v
+var _alert_t: float:
+	get: return visual.alert_t
+	set(v): visual.alert_t = v
+var _hit_flash: float:
+	get: return visual.hit_flash
+	set(v): visual.hit_flash = v
+var _squash: float:
+	get: return visual.squash
+	set(v): visual.squash = v
+
 var _state_t := 0.0
 var _attack_cd := 0.0
 var _lost_t := 0.0
-var _hit_flash := 0.0
-## 受击形变（压扁/拉伸）与子弹停止力造成的击退速度。
-var _squash := 0.0
+## 子弹停止力造成的击退速度。
 var _knock := Vector2.ZERO
 var _wander := Vector2.ZERO
 var _wander_wait := 0.0
 var _last_known := Vector2.ZERO
 var _dead := false
-var _bob := 0.0
 
-## 新单位动画与行为状态（旧立绘单位不会用到 _anim）。
-var _anim: AnimatedSprite2D
-var _anim_override := ""
-var _anim_override_t := 0.0
 var _burst_left := 0
 var _burst_t := 0.0
 var _charge_t := 0.0
@@ -88,9 +101,7 @@ var _nav_index := 0
 var _nav_goal := Vector2.INF
 var _nav_t := 0.0
 
-## 头顶警觉图标与“上一帧是否看见玩家”的边沿检测。
-var _alert_icon: Sprite2D
-var _alert_t := 0.0
+## “上一帧是否看见玩家”的边沿检测。
 var _saw_player := false
 
 
@@ -136,130 +147,15 @@ func _body_scale() -> float:
 
 
 func _build_visual() -> void:
-	if def.frames_path != "" and ResourceLoader.exists(def.frames_path):
-		_build_animated_visual(load(def.frames_path))
-	else:
-		_build_still_visual()
-	_build_body_nodes()
-	_build_alert_icon()
-
-
-func _build_still_visual() -> void:
-	var tex: Texture2D = load(def.texture_path)
-	var s := _body_scale()
-	_sprite_h = tex.get_height() * s
-	_make_shadow()
-	_sprite = Sprite2D.new()
-	_sprite.texture = tex
-	_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_sprite.centered = false
-	_sprite.scale = Vector2(s, s)
-	_sprite.position = Vector2(-tex.get_width() * s * 0.5, -_sprite_h)
-	add_child(_sprite)
-
-
-## 新单位：16 帧像素图集（640×384 单元格，脚底 y=372）。
-func _build_animated_visual(frames: SpriteFrames) -> void:
-	var s := _body_scale()
-	_sprite_h = 320.0 * s
-	_make_shadow()
-	_anim = AnimatedSprite2D.new()
-	_anim.sprite_frames = frames
-	_anim.animation = "move"
-	_anim.centered = false
-	_anim.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_anim.scale = Vector2(s, s)
-	_anim.position = Vector2(-320.0 * s, -372.0 * s)
-	_anim.play("move")
-	add_child(_anim)
-
-
-func _make_shadow() -> void:
-	var shadow := Sprite2D.new()
-	shadow.texture = preload("res://assets/art/fx/shadow_radial.png")
-	shadow.scale = Vector2(0.4, 0.15)
-	shadow.modulate = Color(0.02, 0.02, 0.02, 0.45)
-	add_child(shadow)
-
-
-func _build_body_nodes() -> void:
-	var shape := CircleShape2D.new()
-	shape.radius = def.collision_radius
-	var collision := CollisionShape2D.new()
-	collision.shape = shape
-	collision.position = Vector2(0, -8)
-	add_child(collision)
-
-	# 受击判定：立绘是竖直画在脚底的，脚底那个小圆只覆盖小腿。
-	# 单独加一个 Area2D 覆盖整个身体高度，射线（collide_with_areas）才能打中看到的部分。
-	var hitbox := Area2D.new()
-	hitbox.name = "Hitbox"
-	hitbox.collision_layer = 2
-	hitbox.collision_mask = 0
-	hitbox.monitoring = false
-	hitbox.input_pickable = false
-	var hit_shape := CollisionShape2D.new()
-	var capsule := CapsuleShape2D.new()
-	capsule.radius = shape.radius
-	capsule.height = maxf(_sprite_h * 0.78, 44.0)
-	hit_shape.shape = capsule
-	hit_shape.position = Vector2(0, -_sprite_h * 0.45)
-	hitbox.add_child(hit_shape)
-	add_child(hitbox)
-
-	_bar_bg = Polygon2D.new()
-	_bar_bg.polygon = PackedVector2Array([
-		Vector2(-22, -_sprite_h - 12), Vector2(22, -_sprite_h - 12),
-		Vector2(22, -_sprite_h - 6), Vector2(-22, -_sprite_h - 6),
-	])
-	_bar_bg.color = Color(0.08, 0.08, 0.09, 0.85)
-	_bar_bg.visible = false
-	add_child(_bar_bg)
-
-	_bar_fill = Polygon2D.new()
-	_bar_fill.color = Color(0.82, 0.26, 0.22)
-	_bar_fill.visible = false
-	add_child(_bar_fill)
-
-
-## 头顶警觉图标：按帧播放，位置随敌人移动，初始隐藏。
-func _build_alert_icon() -> void:
-	_alert_icon = Sprite2D.new()
-	_alert_icon.texture = ALERT_ICON_SHEET
-	_alert_icon.hframes = ALERT_FRAMES
-	_alert_icon.vframes = 1
-	_alert_icon.frame = 0
-	_alert_icon.centered = true
-	_alert_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_alert_icon.scale = Vector2(ALERT_ICON_SCALE, ALERT_ICON_SCALE)
-	_alert_icon.position = Vector2(0.0, -_sprite_h - ALERT_ICON_LIFT)
-	_alert_icon.z_index = 40
-	_alert_icon.visible = false
-	add_child(_alert_icon)
+	visual.build(self, def)
 
 
 func _show_alert_icon() -> void:
-	if _alert_icon == null:
-		return
-	_alert_t = ALERT_LIFE
-	_alert_icon.visible = true
-	_alert_icon.frame = 0
-	_alert_icon.modulate = Color(1, 1, 1, 1)
-	_alert_icon.position = Vector2(0.0, -_sprite_h - ALERT_ICON_LIFT)
+	visual.show_alert_icon()
 
 
 func _tick_alert_icon(delta: float) -> void:
-	if _alert_t <= 0.0 or _alert_icon == null:
-		return
-	_alert_t = maxf(_alert_t - delta, 0.0)
-	var elapsed := ALERT_LIFE - _alert_t
-	_alert_icon.frame = int(elapsed * ALERT_FPS) % ALERT_FRAMES
-	_alert_icon.position.y = -_sprite_h - ALERT_ICON_LIFT + sin(elapsed * 9.0) * 2.0
-	# 尾段 0.28 秒淡出，避免图标突然消失。
-	_alert_icon.modulate.a = clampf(_alert_t / 0.28, 0.0, 1.0)
-	if _alert_t <= 0.0:
-		_alert_icon.visible = false
-		_alert_icon.position.y = -_sprite_h - ALERT_ICON_LIFT
+	visual.tick_alert_icon(delta)
 
 
 func _physics_process(delta: float) -> void:
@@ -387,12 +283,7 @@ func _turn_view_toward(target: Vector2, weight: float) -> Vector2:
 
 ## 受击后的形变回弹与击退位移。
 func _tick_impact(delta: float) -> void:
-	if _squash > 0.0:
-		_squash = maxf(_squash - delta * 5.5, 0.0)
-		var amount := _squash * 0.16
-		scale = Vector2(1.0 + amount, 1.0 - amount)
-	elif scale != Vector2.ONE:
-		scale = Vector2.ONE
+	visual.tick_squash(self, delta)
 	if _knock.length_squared() > 1.0:
 		velocity = _knock
 		move_and_slide()
@@ -613,33 +504,7 @@ func _do_turret(to_target: Vector2, dist: float, can_see: bool, delta: float) ->
 
 
 func _draw() -> void:
-	if _explode_t >= 0.0:
-		_draw_blast_ring()
-	if not _laser_on or player == null or not is_instance_valid(player):
-		return
-	var from := Vector2(0.0, -_sprite_h * 0.62)
-	var to: Vector2 = player.global_position - global_position + Vector2(0.0, -46.0)
-	draw_line(from, to, Color(1.0, 0.04, 0.03, 0.06), 7.0)
-	draw_line(from, to, Color(1.0, 0.10, 0.06, 0.22), 2.5)
-	draw_line(from, to, Color(1.0, 0.30, 0.22, 0.55), 1.0)
-	var pulse := 2.4 + 1.2 * sin(_laser_phase * 22.0)
-	draw_circle(to, pulse, Color(1.0, 0.12, 0.08, 0.45))
-	draw_circle(from, 2.0, Color(1.0, 0.25, 0.18, 0.55))
-
-
-## 哥利亚 2 秒倒计时：半透明红圈 + 从边缘向内填充的进度。
-func _draw_blast_ring() -> void:
-	var total := maxf(def.explode_delay, 0.01)
-	var radius := def.explode_radius * TILE
-	var progress := clampf(1.0 - _explode_t / total, 0.0, 1.0)
-	var center := Vector2(0.0, -6.0)
-	draw_circle(center, radius, Color(1.0, 0.08, 0.06, 0.10))
-	draw_arc(center, radius, 0.0, TAU, 72, Color(1.0, 0.20, 0.12, 0.55), 2.0)
-	var width := maxf(2.0, radius * progress)
-	draw_arc(center, radius - width * 0.5, 0.0, TAU, 72,
-		Color(1.0, 0.25, 0.16, 0.26), width)
-	if progress > 0.98:
-		draw_circle(center, radius, Color(1.0, 0.20, 0.12, 0.22))
+	visual.draw_overlays(self, def, player, _explode_t, _laser_on, _laser_phase)
 
 
 func _sfx(kind: String, volume_db := 0.0, pitch := 1.0) -> void:
@@ -685,41 +550,11 @@ func _explode_damage() -> void:
 
 
 func _spawn_explosion_fx(radius_px: float) -> void:
-	var fx := Node2D.new()
-	fx.global_position = global_position + Vector2(0, -18)
-	fx.z_index = 80
-	get_parent().add_child(fx)
-	var points := PackedVector2Array()
-	for i in 28:
-		points.append(Vector2.from_angle(TAU * float(i) / 28.0) * 20.0)
-	var blast := Polygon2D.new()
-	blast.polygon = points
-	blast.color = Color(1.0, 0.52, 0.16, 0.8)
-	fx.add_child(blast)
-	var core := Polygon2D.new()
-	core.polygon = points
-	core.color = Color(1.0, 0.92, 0.7, 0.95)
-	core.scale = Vector2(0.45, 0.45)
-	fx.add_child(core)
-	var tw := fx.create_tween()
-	tw.set_parallel(true)
-	tw.tween_property(blast, "scale", Vector2.ONE * (radius_px / 20.0), 0.28) \
-		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_property(blast, "modulate:a", 0.0, 0.36)
-	tw.tween_property(core, "scale", Vector2.ONE * (radius_px / 20.0) * 0.6, 0.2)
-	tw.tween_property(core, "modulate:a", 0.0, 0.2)
-	tw.chain().tween_callback(fx.queue_free)
-	for i in 8:
-		var offset := Vector2.from_angle(randf() * TAU) * randf_range(10.0, radius_px * 0.8)
-		Shot2D.impact(get_parent(), global_position + offset + Vector2(0, -20),
-			Color(1.0, 0.55, 0.2))
+	visual.spawn_explosion_fx(self, radius_px)
 
 
 func _play_anim_override(anim_name: String, time: float) -> void:
-	if _anim == null:
-		return
-	_anim_override = anim_name
-	_anim_override_t = maxf(_anim_override_t, time)
+	visual.play_anim_override(anim_name, time)
 
 
 ## 追击方向：优先沿 A* 路径绕过墙体，路径不可用时退回直线。
@@ -840,23 +675,8 @@ func _fire_round() -> void:
 			def.damage * damage_mul, _attack_ap())
 
 
-## 近战挥击：朝玩家的弧形刀光，短暂淡出。
 func _melee_slash(target: Vector2) -> void:
-	var angle := (target - global_position).angle()
-	var arc := Line2D.new()
-	var points := PackedVector2Array()
-	for i in 9:
-		var a := angle - 0.65 + 1.3 * float(i) / 8.0
-		points.append(Vector2.from_angle(a) * 30.0)
-	arc.points = points
-	arc.width = 5.0
-	arc.default_color = Color(1.0, 0.42, 0.28, 0.92)
-	arc.z_index = 60
-	arc.position = Vector2(0, -_sprite_h * 0.45)
-	add_child(arc)
-	var tw := create_tween()
-	tw.tween_property(arc, "modulate:a", 0.0, 0.18)
-	tw.tween_callback(arc.queue_free)
+	visual.spawn_melee_slash(self, target)
 
 
 ## 敌人攻击穿甲值（0.1 mm RHA 体系）：区分普通近战/9mm 与装甲单位高穿火力。
@@ -865,18 +685,7 @@ func _attack_ap() -> float:
 
 
 func _attack_flash(color: Color) -> void:
-	var flash := Polygon2D.new()
-	var points := PackedVector2Array()
-	for i in 10:
-		var a := TAU * i / 10.0
-		points.append(Vector2(cos(a) * 9, sin(a) * 9))
-	flash.polygon = points
-	flash.color = color
-	flash.position = Vector2(0, -_sprite_h * 0.55)
-	add_child(flash)
-	var tween := create_tween()
-	tween.tween_property(flash, "modulate:a", 0.0, 0.14)
-	tween.tween_callback(flash.queue_free)
+	visual.spawn_attack_flash(self, color)
 
 
 func _line_of_sight() -> bool:
@@ -959,76 +768,8 @@ func _enter(new_state: String) -> void:
 		_wander = home
 
 
-func _update_visual(dist: float, delta: float) -> void:
-	_anim_override_t = maxf(_anim_override_t - delta, 0.0)
-	var facing_left: bool = player != null and player.global_position.x < global_position.x
-	if _anim != null:
-		_anim.flip_h = facing_left
-		if _explode_t >= 0.0:
-			# 自爆倒计时：停在坐地帧，红圈负责倒计时，不循环爆炸帧。
-			_set_anim("attack")
-			if _anim.is_playing():
-				if _anim.frame >= 1:
-					_anim.pause()
-					_anim.frame = 1
-			else:
-				_anim.frame = 1
-		else:
-			var anim_name := "move"
-			if _anim_override_t > 0.0 and _anim_override != "":
-				anim_name = _anim_override
-			elif _charge_t > 0.0:
-				anim_name = "attack"
-			_set_anim(anim_name)
-			if anim_name != "move":
-				if not _anim.is_playing():
-					_anim.play(anim_name)
-			elif velocity.length() > 1.0:
-				if not _anim.is_playing():
-					_anim.play("move")
-			else:
-				_anim.pause()
-		if _hit_flash > 0.0:
-			_anim.modulate = _flash_color()
-		else:
-			_anim.modulate = Color.WHITE
-	elif _sprite == null:
-		return
-	else:
-		_sprite.flip_h = facing_left
-		var moving := velocity.length() > 1.0
-		if moving:
-			_bob += delta * 9.0
-			_sprite.position.y = -_sprite_h + absf(sin(_bob)) * -2.0
-		if _hit_flash > 0.0:
-			_sprite.modulate = _flash_color()
-		else:
-			_sprite.modulate = Color.WHITE
-	# 受伤后短暂显示血条（死亡后的引信阶段不再显示空血条）
-	var show_bar := hp < hp_max - 0.5 and not _dead
-	_bar_bg.visible = show_bar
-	_bar_fill.visible = show_bar
-	if show_bar:
-		var ratio := clampf(hp / hp_max, 0.0, 1.0)
-		var left := -22.0
-		var right := left + 44.0 * ratio
-		_bar_fill.polygon = PackedVector2Array([
-			Vector2(left, -_sprite_h - 11), Vector2(right, -_sprite_h - 11),
-			Vector2(right, -_sprite_h - 7), Vector2(left, -_sprite_h - 7),
-		])
-
-
-func _set_anim(anim_name: String) -> void:
-	if _anim == null or _anim.animation == anim_name:
-		return
-	_anim.play(anim_name)
-
-
-## 受击闪白：金属偏冷白，血肉偏暖白，避免所有敌人都是一个颜色。
-func _flash_color() -> Color:
-	if hit_material() == "flesh":
-		return Color(2.2, 1.75, 1.75)
-	return Color(1.85, 2.05, 2.2)
+func _update_visual(_dist: float, delta: float) -> void:
+	visual.update_visual(self, def, player, hp, hp_max, _dead, _explode_t, _charge_t, delta)
 
 
 func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO) -> float:
@@ -1134,19 +875,5 @@ func _tick_death_fuse(delta: float) -> void:
 	_finish_death_visual()
 
 
-## 死亡动画与节点回收；自爆单位在爆炸后播死亡帧。
 func _finish_death_visual() -> void:
-	if _anim != null:
-		if not _exploded or not def.death_explode:
-			_sfx("enemy_death", -9.0, randf_range(0.95, 1.05))
-		_anim.play("death")
-		var anim_tween := create_tween()
-		anim_tween.tween_interval(0.5)
-		anim_tween.tween_property(_anim, "modulate:a", 0.0, 0.2)
-		anim_tween.tween_callback(queue_free)
-		return
-	var tween := create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(_sprite, "modulate:a", 0.0, 0.3)
-	tween.tween_property(_sprite, "scale", Vector2(_sprite.scale.x * 0.8, 0.05), 0.3)
-	tween.chain().tween_callback(queue_free)
+	visual.finish_death_visual(self, def, _exploded, Callable(self, "_sfx"))
