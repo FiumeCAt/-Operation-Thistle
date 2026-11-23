@@ -85,6 +85,12 @@ func _run() -> void:
 
 	var doll = main.doll
 	var base_pos: Vector2 = main.level.player_spawn + Vector2(180, 120)
+	# 清空合成测试墙附近的随机装卸区货箱/货架，避免不同随机种子在斜射射线上刷出障碍导致偶发假失败。
+	for child in main.sort_layer.get_children():
+		if child is StaticBody2D and child.global_position.distance_to(base_pos) < 380.0:
+			child.queue_free()
+	await process_frame
+	await physics_frame
 	doll.global_position = base_pos + Vector2(0, 170)
 
 	var enemy := Enemy2D.new()

@@ -39,7 +39,12 @@ func _run() -> void:
 	for e in _main.enemies.duplicate():
 		e.queue_free()
 	_main.enemies.clear()
+	# 清空测试区附近的随机房间家具碰撞体，避免不同随机种子偶发挡住哨戒炮/冲锋哨兵视线。
+	for child in _main.sort_layer.get_children():
+		if child is StaticBody2D and child.global_position.distance_to(arena) < 520.0:
+			child.queue_free()
 	await process_frame
+	await physics_frame
 
 	# 图集 / 动画
 	for kind in [&"mobile_turret", &"sentry_type1", &"hunter_type1", &"goliath"]:
@@ -73,6 +78,7 @@ func _run() -> void:
 	turret.setup(&"mobile_turret", arena + Vector2(220, 0), 1)
 	_main.sort_layer.add_child(turret)
 	_main.enemies.append(turret)
+	turret.view_dir = (_main.doll.global_position - turret.global_position).normalized()
 	var saw_laser := false
 	for i in 90:
 		await physics_frame
