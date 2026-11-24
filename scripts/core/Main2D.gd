@@ -877,9 +877,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_F8:
 			get_tree().debug_collisions_hint = not get_tree().debug_collisions_hint
 			get_viewport().set_input_as_handled()
-		KEY_F9:
-			get_tree().change_scene_to_file("res://scenes/core/Main.tscn")
-			get_viewport().set_input_as_handled()
 
 
 ## 整体视角缩放：夹在 20%–200% 并对齐 10% 档位。

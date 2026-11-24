@@ -23,7 +23,7 @@ func _run() -> void:
 		ProjectSettings.get_setting("application/run/main_scene") == "res://scenes/ui/StartMenu2D.tscn",
 		"project boots into StartMenu2D.tscn"
 	)
-	_check(load("res://scenes/core/Main.tscn") != null, "3D scene loadable for F9 map switch")
+	_check(not ResourceLoader.exists("res://scenes/core/Main.tscn"), "legacy 3D Main.tscn removed")
 
 	var packed: PackedScene = load("res://scenes/core/Main2D.tscn")
 	_check(packed != null, "Main2D.tscn loads")

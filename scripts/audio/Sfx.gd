@@ -1,6 +1,6 @@
 extends Node
 ## 全局音效协调外壳（Autoload `/root/Sfx`）：
-## 对外保留全部既有 API 与字段契约（play_2d / play_3d / play_hit / play_wall_impact / play_player_hurt / start_ambient），
+## 对外保留全部既有 API 与字段契约（play_2d / play_hit / play_wall_impact / play_player_hurt / start_ambient），
 ## 内部委托给 AudioBusService（总线音量）、SfxSynth（程序化合成）与 SfxSamples（外部 CC0 命中采样）。
 
 const BUS_SERVICE := preload("res://scripts/audio/AudioBusService.gd")
@@ -44,23 +44,6 @@ func apply_music_volume(music: float) -> void:
 
 func apply_saved_volumes() -> void:
 	BUS_SERVICE.apply_saved_volumes(get_node_or_null("/root/Progress"))
-
-
-func play_3d(parent: Node, kind: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
-	if not streams.has(kind) or parent == null or not parent.is_inside_tree():
-		return
-	var p := AudioStreamPlayer3D.new()
-	p.stream = streams[kind]
-	p.volume_db = volume_db
-	p.pitch_scale = pitch
-	p.max_distance = 45.0
-	p.unit_size = 4.0
-	p.bus = SFX_BUS
-	parent.add_child(p)
-	p.global_position = pos
-	p.play()
-	var t := parent.get_tree().create_timer(streams[kind].get_length() + 0.25)
-	t.timeout.connect(p.queue_free)
 
 
 func play_2d(kind: String, volume_db := 0.0, pitch := 1.0) -> void:
