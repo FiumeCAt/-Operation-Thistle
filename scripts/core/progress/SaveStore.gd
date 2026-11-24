@@ -60,6 +60,9 @@ static func defaults() -> Dictionary:
 		"sample_impacts": true,
 		"hit_fx_level": 1,
 		"view_zoom": 100,
+		"minimap_shape": "square",
+		"minimap_scale": 1.0,
+		"minimap_zoom": 1.0,
 		"motion_blur": true,
 		"scope_motion_blur": true,
 		"scope_lens_distortion": true,
@@ -291,6 +294,12 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 	data["hit_fx_level"] = clampi(int(data.get("hit_fx_level", 1)), 0, 2)
 	data["view_zoom"] = clampf(
 		roundf(float(data.get("view_zoom", 100)) / 10.0) * 10.0, 20.0, 200.0)
+	var mm_shape := String(data.get("minimap_shape", "square"))
+	data["minimap_shape"] = mm_shape if ["square", "circle"].has(mm_shape) else "square"
+	data["minimap_scale"] = clampf(
+		roundf(float(data.get("minimap_scale", 1.0)) * 20.0) / 20.0, 0.70, 1.50)
+	data["minimap_zoom"] = clampf(
+		roundf(float(data.get("minimap_zoom", 1.0)) * 10.0) / 10.0, 0.80, 2.50)
 	data["motion_blur"] = bool(data.get("motion_blur", true))
 	data["scope_motion_blur"] = bool(data.get("scope_motion_blur", true))
 	data["scope_lens_distortion"] = bool(data.get("scope_lens_distortion", true))

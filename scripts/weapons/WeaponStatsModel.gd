@@ -65,7 +65,7 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 	var has_scope_sight := false
 	if not sight.is_empty():
 		sight_magnification = clampf(float(sight.get("magnification", 1.0)), 1.0, 8.0)
-		sight_look_ahead_mul = clampf(float(sight.get("look_ahead_mul", 1.0)), 1.0, 4.0)
+		sight_look_ahead_mul = clampf(float(sight.get("look_ahead_mul", 1.0)), 1.0, 8.0)
 		sight_reticle = String(sight.get("reticle", "iron"))
 		has_scope_sight = bool(sight.get("scope", false))
 		if reticle_resolver.is_valid():

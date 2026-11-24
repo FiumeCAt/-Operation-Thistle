@@ -161,6 +161,26 @@ func _run() -> void:
 	pm.queue_free()
 	await process_frame
 
+	# 弹道线条与小地图（形状/比例/缩放）写入磁盘：模拟重启后仍保持玩家选择。
+	sm = SettingsMenu2D.new()
+	root.add_child(sm)
+	await process_frame
+	sm.open()
+	sm._set_minimap_shape("circle")
+	sm._minimap_scale_slider.value = 125.0
+	sm._minimap_zoom_slider.value = 160.0
+	await create_timer(0.5).timeout
+	sm.queue_free()
+	await process_frame
+	p.load_data()
+	_check(p.minimap_shape() == "circle"
+		and _near(p.minimap_scale(), 1.25)
+		and _near(p.minimap_zoom(), 1.6),
+		"minimap shape, scale, and zoom persist across reload")
+	p.set_minimap_shape("square")
+	p.set_minimap_scale(1.0)
+	p.set_minimap_zoom(1.0)
+
 	# 弹道线条开关写入磁盘：模拟重启（重新读盘）后仍保持玩家选择。
 	p.set_bullet_trail_enabled(false)
 	p.load_data()

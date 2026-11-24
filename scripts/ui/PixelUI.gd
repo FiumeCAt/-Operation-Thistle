@@ -5,13 +5,17 @@ extends RefCounted
 const FONT: Font = preload("res://assets/art/ui/Zpix.ttf")
 
 const AMBER := Color(1.0, 0.62, 0.24)
-const AMBER_BRIGHT := Color(1.0, 0.80, 0.48)
-const TEXT := Color(0.87, 0.91, 0.95)
-const DIM := Color(0.56, 0.64, 0.72)
-const DANGER := Color(0.97, 0.36, 0.28)
-const OK := Color(0.40, 0.94, 0.69)
-const BG := Color(0.014, 0.020, 0.028, 0.94)
-const BG_LIGHT := Color(0.055, 0.068, 0.082, 0.98)
+const AMBER_BRIGHT := Color(1.0, 0.82, 0.48)
+const GOLD := Color(1.0, 0.84, 0.34)
+const CYAN := Color(0.34, 0.86, 1.0)
+const PURPLE := Color(0.76, 0.56, 1.0)
+const TEXT := Color(0.90, 0.94, 0.97)
+const DIM := Color(0.58, 0.66, 0.75)
+const DANGER := Color(0.98, 0.36, 0.28)
+const OK := Color(0.38, 0.94, 0.68)
+const BG := Color(0.014, 0.020, 0.028, 0.95)
+const BG_LIGHT := Color(0.055, 0.070, 0.088, 0.98)
+const SLATE := Color(0.085, 0.110, 0.145, 0.96)
 
 ## Zpix 原生 12px 栅格，只用整数倍避免字形被缩放糊掉
 const FS_TITLE := 36
@@ -91,9 +95,72 @@ static func label(parent: Node, text: String, size: int, color: Color) -> Label:
 	l.text = text
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", color)
+	l.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.72))
+	l.add_theme_constant_override("shadow_offset_x", 1)
+	l.add_theme_constant_override("shadow_offset_y", 2)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(l)
 	return l
+
+
+## 强化关键标题/数字可读性：增加深色描边与投影，让字形在亮暗画面下都立体突出。
+static func emphasize(l: Label, outline_size := 3, shadow_offset := 2) -> Label:
+	l.add_theme_constant_override("outline_size", outline_size)
+	l.add_theme_color_override("font_outline_color", Color(0.02, 0.03, 0.05, 0.92))
+	l.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.85))
+	l.add_theme_constant_override("shadow_offset_x", shadow_offset)
+	l.add_theme_constant_override("shadow_offset_y", shadow_offset)
+	return l
+
+
+## BBCode 彩色包裹，便于在单行文案中突出关键数值、增益（绿）、惩罚（红）或按键提示（金）。
+static func bb(text: String, col: Color) -> String:
+	return "[color=#%s]%s[/color]" % [col.to_html(false), text]
+
+
+## 富文本标签（支持 BBCode 局部着色与加重，自动撑开高度，沿用 Zpix 像素字体与投影）。
+static func rich_label(parent: Node, bbcode: String, size: int,
+		default_color: Color = TEXT, outline_size := 2) -> RichTextLabel:
+	var rt := RichTextLabel.new()
+	rt.bbcode_enabled = true
+	rt.fit_content = true
+	rt.scroll_active = false
+	rt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rt.add_theme_font_override("normal_font", FONT)
+	rt.add_theme_font_override("bold_font", FONT)
+	rt.add_theme_font_size_override("normal_font_size", size)
+	rt.add_theme_font_size_override("bold_font_size", size)
+	rt.add_theme_color_override("default_color", default_color)
+	rt.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.80))
+	rt.add_theme_constant_override("shadow_offset_x", 1)
+	rt.add_theme_constant_override("shadow_offset_y", 2)
+	if outline_size > 0:
+		rt.add_theme_constant_override("outline_size", outline_size)
+		rt.add_theme_color_override("font_outline_color", Color(0.02, 0.03, 0.05, 0.90))
+	rt.text = bbcode
+	parent.add_child(rt)
+	return rt
+
+
+## 分组小标题：左侧 4px 彩色竖条 + 主标题 + 英文副标，拉出清晰视觉层级。
+static func section_bar(parent: Node, title: String, tag: String = "",
+		accent: Color = AMBER) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+	var bar_rect := ColorRect.new()
+	bar_rect.color = accent
+	bar_rect.custom_minimum_size = Vector2(4, 22)
+	bar_rect.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(bar_rect)
+	var lbl := emphasize(label(row, title, FS_BODY, accent), 2, 1)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	if tag != "":
+		var sub := label(row, "// " + tag, 18, DIM)
+		sub.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return row
 
 static func style_button(button: Button) -> void:
 	var normal := StyleBoxFlat.new()

@@ -39,6 +39,9 @@ var debrief_stat_labels := {}
 
 var _root: Control
 var _minimap: Minimap2D
+var _hint_bar: PanelContainer
+var _hint_rich: RichTextLabel
+var _interact_bar: PanelContainer
 var _health: SegmentBar
 var _armor_bar: SegmentBar
 var _title: Label
@@ -53,7 +56,7 @@ var _debrief_empty: Label
 var _feed: VBoxContainer
 var _feed_items: Array[Dictionary] = []
 var _flash_t := 0.0
-var _hp_critical := false
+var _hp_tier := -1
 var _armor_broken := false
 
 
@@ -81,11 +84,6 @@ func _ready() -> void:
 func _build_minimap() -> void:
 	_minimap = Minimap2D.new()
 	_root.add_child(_minimap)
-	_minimap.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_minimap.offset_left = -344
-	_minimap.offset_right = -24
-	_minimap.offset_top = 20
-	_minimap.offset_bottom = 244
 
 
 ## 左下：生成式金属板 + 两行信息（生命/资源、目标），不再放头像。
@@ -128,8 +126,8 @@ func _build_status_plate() -> void:
 	_health.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_health.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top_row.add_child(_health)
-	hp_label = PixelUI.label(top_row, "-- / --", PixelUI.FS_BODY, PixelUI.TEXT)
-	hp_label.custom_minimum_size.x = 96
+	hp_label = PixelUI.emphasize(PixelUI.label(top_row, "-- / --", PixelUI.FS_BODY, PixelUI.HP_HIGH), 3, 2)
+	hp_label.custom_minimum_size.x = 104
 	hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	hp_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
@@ -138,47 +136,74 @@ func _build_status_plate() -> void:
 	rows.add_child(armor_row)
 	_armor_bar = SegmentBar.new()
 	_armor_bar.segments = 18
-	_armor_bar.color_low = Color(0.32, 0.52, 0.82)
-	_armor_bar.color_high = Color(0.48, 0.82, 1.0)
+	_armor_bar.color_low = Color(0.28, 0.56, 0.86)
+	_armor_bar.color_high = PixelUI.CYAN
 	_armor_bar.custom_minimum_size.y = 12
 	_armor_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_armor_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	armor_row.add_child(_armor_bar)
-	armor_label = PixelUI.label(armor_row, "护甲 --", PixelUI.FS_BODY, PixelUI.DIM)
-	armor_label.custom_minimum_size.x = 96
+	armor_label = PixelUI.emphasize(PixelUI.label(armor_row, "护甲 --", PixelUI.FS_BODY, PixelUI.CYAN), 3, 2)
+	armor_label.custom_minimum_size.x = 104
 	armor_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	armor_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
-	objective_label = PixelUI.label(rows, "", PixelUI.FS_BODY, PixelUI.TEXT)
+	objective_label = PixelUI.emphasize(PixelUI.label(rows, "", 22, PixelUI.GOLD), 2, 1)
 	objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	objective_label.clip_text = true
 
 
-## 操作提示：贴屏幕左上，只留一行，带描边保证在亮地面也可读。
+## 操作提示：左上角半透明战术胶囊条 + 彩色高亮按键名，亮暗画面均可一眼辨读。
 func _build_hint() -> void:
-	hint_label = PixelUI.label(_root, "", 20, PixelUI.DIM)
-	hint_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	hint_label.offset_left = 28
-	hint_label.offset_right = 1240
-	hint_label.offset_top = 18
-	hint_label.offset_bottom = 50
-	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	hint_label.clip_text = true
-	hint_label.add_theme_constant_override("outline_size", 6)
-	hint_label.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.03, 0.88))
+	_hint_bar = PanelContainer.new()
+	_hint_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var hs := StyleBoxFlat.new()
+	hs.bg_color = Color(0.012, 0.018, 0.026, 0.72)
+	hs.border_color = Color(PixelUI.AMBER, 0.45)
+	hs.border_width_left = 3
+	hs.border_width_bottom = 1
+	hs.content_margin_left = 12
+	hs.content_margin_right = 14
+	hs.content_margin_top = 5
+	hs.content_margin_bottom = 5
+	_hint_bar.add_theme_stylebox_override("panel", hs)
+	_root.add_child(_hint_bar)
+	_hint_bar.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_hint_bar.offset_left = 20
+	_hint_bar.offset_top = 16
+	_hint_bar.offset_right = 920
+	_hint_bar.offset_bottom = 48
 
-	interact_label = PixelUI.label(_root, "", 22, PixelUI.TEXT)
-	interact_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	interact_label.offset_left = 28
-	interact_label.offset_right = 1240
-	interact_label.offset_top = 52
-	interact_label.offset_bottom = 86
+	hint_label = PixelUI.label(_hint_bar, "", 19, PixelUI.DIM)
+	hint_label.visible = false
+	_hint_rich = PixelUI.rich_label(_hint_bar, "", 19, PixelUI.TEXT, 2)
+	_hint_rich.autowrap_mode = TextServer.AUTOWRAP_OFF
+
+	_interact_bar = PanelContainer.new()
+	_interact_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var istyle := StyleBoxFlat.new()
+	istyle.bg_color = Color(0.016, 0.024, 0.036, 0.86)
+	istyle.border_color = PixelUI.AMBER_BRIGHT
+	istyle.border_width_left = 4
+	istyle.border_width_top = 1
+	istyle.border_width_right = 1
+	istyle.border_width_bottom = 1
+	istyle.content_margin_left = 12
+	istyle.content_margin_right = 16
+	istyle.content_margin_top = 6
+	istyle.content_margin_bottom = 6
+	_interact_bar.add_theme_stylebox_override("panel", istyle)
+	_root.add_child(_interact_bar)
+	_interact_bar.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_interact_bar.offset_left = 20
+	_interact_bar.offset_top = 54
+	_interact_bar.offset_right = 560
+	_interact_bar.offset_bottom = 92
+	_interact_bar.hide()
+
+	interact_label = PixelUI.emphasize(PixelUI.label(_interact_bar, "", 22, PixelUI.TEXT), 3, 2)
 	interact_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	interact_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	interact_label.clip_text = true
-	interact_label.add_theme_constant_override("outline_size", 6)
-	interact_label.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.03, 0.88))
 	interact_label.hide()
 
 
@@ -244,19 +269,19 @@ func _build_weapon_panel() -> void:
 	var title_row := HBoxContainer.new()
 	title_row.add_theme_constant_override("separation", 10)
 	rows.add_child(title_row)
-	_title = PixelUI.label(title_row, "G17 // 9MM", PixelUI.FS_BODY, PixelUI.TEXT)
+	_title = PixelUI.emphasize(PixelUI.label(title_row, "G17 // 9MM", PixelUI.FS_BODY, PixelUI.AMBER_BRIGHT), 2, 1)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_state = PixelUI.label(title_row, "就绪", PixelUI.FS_BODY, PixelUI.AMBER)
+	_state = PixelUI.emphasize(PixelUI.label(title_row, "就绪", PixelUI.FS_BODY, PixelUI.OK), 2, 1)
 	_state.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	var count_row := HBoxContainer.new()
 	count_row.add_theme_constant_override("separation", 10)
 	rows.add_child(count_row)
-	_count = PixelUI.label(count_row, "-- / --", PixelUI.FS_TITLE, PixelUI.TEXT)
+	_count = PixelUI.emphasize(PixelUI.label(count_row, "-- / --", PixelUI.FS_TITLE, PixelUI.TEXT), 3, 2)
 	_count.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_count.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	ammo_label = _count
-	_reserve = PixelUI.label(count_row, "备弹 --", PixelUI.FS_BODY, PixelUI.DIM)
+	_reserve = PixelUI.emphasize(PixelUI.label(count_row, "备弹 --", PixelUI.FS_BODY, PixelUI.DIM), 2, 1)
 	_reserve.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_reserve.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
@@ -408,11 +433,11 @@ func set_hp(current: int, maximum: int) -> void:
 	var ratio := clampf(float(current) / maxf(1.0, float(maximum)), 0.0, 1.0)
 	_health.set_ratio(ratio)
 	hp_label.text = "%d / %d" % [current, maximum]
-	var critical := ratio < 0.3
-	if critical != _hp_critical:
-		_hp_critical = critical
-		hp_label.add_theme_color_override(
-			"font_color", PixelUI.DANGER if critical else PixelUI.TEXT)
+	var tier := 0 if ratio < 0.30 else (1 if ratio < 0.65 else 2)
+	if tier != _hp_tier:
+		_hp_tier = tier
+		var col := PixelUI.DANGER if tier == 0 else (PixelUI.GOLD if tier == 1 else PixelUI.HP_HIGH)
+		hp_label.add_theme_color_override("font_color", col)
 
 
 func set_armor(current: int, maximum: int) -> void:
@@ -423,15 +448,30 @@ func set_armor(current: int, maximum: int) -> void:
 	if broken != _armor_broken:
 		_armor_broken = broken
 		armor_label.add_theme_color_override(
-			"font_color", PixelUI.DANGER if broken else PixelUI.TEXT)
+			"font_color", PixelUI.DANGER if broken else PixelUI.CYAN)
 
 
 func set_objective(text: String) -> void:
 	objective_label.text = text
+	var col := PixelUI.OK if (text.contains("已通电") or text.contains("可撤离")) else PixelUI.GOLD
+	objective_label.add_theme_color_override("font_color", col)
 
 
 func set_hint(text: String) -> void:
 	hint_label.text = text
+	if _hint_rich != null:
+		_hint_rich.text = _format_hint_bbcode(text)
+
+
+## 自动将操作提示中的按键（WASD / 左键 / 右键 / R / X / TAB / Alt+滚轮 / E / M）着色加重。
+static func _format_hint_bbcode(text: String) -> String:
+	var out := text
+	for key in ["WASD", "Alt+滚轮", "左键", "右键", "TAB", "ESC", " R ", " X ", " E ", " M "]:
+		var ks := String(key)
+		var trimmed := ks.strip_edges()
+		if out.contains(ks):
+			out = out.replace(ks, ks.replace(trimmed, PixelUI.bb(trimmed, PixelUI.GOLD)))
+	return out
 
 
 ## 左上角交互目标：显示可搜刮容器名字，并按稀有度着色。
@@ -441,17 +481,26 @@ func set_interact_target(text: String, color: Color) -> void:
 	interact_label.text = text
 	interact_label.add_theme_color_override("font_color", color)
 	interact_label.show()
+	if _interact_bar != null:
+		var sb := _interact_bar.get_theme_stylebox("panel") as StyleBoxFlat
+		if sb != null:
+			sb.border_color = color
+		_interact_bar.show()
 
 
 func clear_interact_target() -> void:
 	if interact_label != null:
 		interact_label.hide()
+	if _interact_bar != null:
+		_interact_bar.hide()
 
 
-## 拾取/交互提示：底部提示临时变成绿色，2.2 秒后恢复。
+## 拾取/交互提示：左上提示临时变成亮绿色，2.2 秒后恢复。
 func flash(text: String) -> void:
 	hint_label.text = text
 	hint_label.add_theme_color_override("font_color", PixelUI.OK)
+	if _hint_rich != null:
+		_hint_rich.text = PixelUI.bb(text, PixelUI.OK)
 	_flash_t = 2.2
 
 
@@ -474,18 +523,27 @@ func update_weapon(rig) -> void:
 	if ammo != null:
 		_ammo_name.text = ammo.short_name
 		_ammo_name.add_theme_color_override("font_color", ammo.color)
-	_reserve.text = "备弹 %d" % rig.get_reserve()
+	var reserve_cnt: int = rig.get_reserve()
+	_reserve.text = "备弹 %d" % reserve_cnt
+	_reserve.add_theme_color_override(
+		"font_color", PixelUI.DANGER if reserve_cnt <= 0 else PixelUI.DIM)
 	_count.text = "%d / %d" % [rig.mag, data.mag_capacity]
+	var mag_ratio := float(rig.mag) / maxf(1.0, float(data.mag_capacity))
+	var count_col := PixelUI.DANGER if rig.mag <= 0 \
+		else (PixelUI.GOLD if mag_ratio <= 0.25 else PixelUI.TEXT)
+	_count.add_theme_color_override("font_color", count_col)
 	_strip.cap = data.mag_capacity
 	_strip.mag = rig.mag
 	_strip.queue_redraw()
 	var reloading: bool = rig.reload_t > 0.0
 	var switching: bool = rig.switch_t > 0.0
-	var state_color := PixelUI.AMBER
+	var state_color := PixelUI.OK
 	if rig.is_drawing():
 		_state.text = "拔枪中"
+		state_color = PixelUI.AMBER
 	elif rig.is_stowing():
 		_state.text = "收枪中"
+		state_color = PixelUI.AMBER
 	elif rig.is_holstered():
 		_state.text = "已收枪"
 		state_color = PixelUI.DIM
@@ -494,7 +552,7 @@ func update_weapon(rig) -> void:
 		state_color = PixelUI.DANGER
 	elif switching:
 		_state.text = "切枪中"
-		state_color = PixelUI.DANGER
+		state_color = PixelUI.AMBER
 	elif rig.mag <= 0:
 		_state.text = "空仓"
 		state_color = PixelUI.DANGER
@@ -605,6 +663,8 @@ func _process(delta: float) -> void:
 		_flash_t = maxf(_flash_t - delta, 0.0)
 		if _flash_t <= 0.0:
 			hint_label.add_theme_color_override("font_color", PixelUI.DIM)
+			if _hint_rich != null:
+				_hint_rich.text = _format_hint_bbcode(hint_label.text)
 	var expired: Array[Dictionary] = []
 	for item in _feed_items:
 		item["t"] = float(item["t"]) - delta

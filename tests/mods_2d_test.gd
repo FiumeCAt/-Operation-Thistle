@@ -305,21 +305,30 @@ func _run() -> void:
 	_check(view_hold.distance_to(
 		main.get_viewport().get_canvas_transform().get_origin()) < 1.0,
 		"scoped view stops as soon as the aim settles")
-	# ---- 高倍镜前探距离必须随倍率增长，且角色缩放仍为 1.0× ----
+	# ---- 瞄具前探回归：红点/全息在拉近镜头后前方净视野必须严格大于机械瞄具；高倍镜逐级大幅递增 ----
 	var look_by_sight: Dictionary = {}
-	for sid in ["iron", "sight_2x", "pso", "sniper_8x"]:
+	var reach_by_sight: Dictionary = {}
+	var half_vp_w: float = main.get_viewport().get_visible_rect().size.x * 0.5
+	for sid in ["iron", "red_dot", "holo", "sight_2x", "pso", "sniper_8x"]:
 		p.data["weapon_mods_2d"]["m870"]["sight"] = sid
 		main.doll.weapon_rig.setup(&"m870")
 		main.doll.aim_target = main.doll.global_position + Vector2.RIGHT * 600.0
 		main.doll.weapon_rig.ads = true
 		main.doll.ads = true
-		for i in 28:
-			await process_frame
-		look_by_sight[sid] = main.camera.global_position.x - main.doll.global_position.x
-	_check(float(look_by_sight["sight_2x"]) > float(look_by_sight["iron"]) + 20.0
-		and float(look_by_sight["pso"]) > float(look_by_sight["sight_2x"]) + 20.0
-		and float(look_by_sight["sniper_8x"]) > float(look_by_sight["pso"]) + 20.0,
-		"magnified scopes extend ADS camera look-ahead progressively (iron < 2x < 4x < 8x)")
+		for i in 32:
+			await physics_frame
+		var cam_dx: float = main.camera.global_position.x - main.doll.global_position.x
+		look_by_sight[sid] = cam_dx
+		reach_by_sight[sid] = cam_dx + half_vp_w / maxf(main.camera.zoom.x, 0.01)
+	_check(float(reach_by_sight["red_dot"]) > float(reach_by_sight["iron"]) + 40.0
+		and float(reach_by_sight["holo"]) > float(reach_by_sight["red_dot"]) + 40.0,
+		"red dot and holo extend net forward sightline beyond iron sights despite camera zoom")
+	_check(float(look_by_sight["sight_2x"]) > float(look_by_sight["iron"]) + 200.0
+		and float(look_by_sight["pso"]) > float(look_by_sight["sight_2x"]) + 350.0
+		and float(look_by_sight["sniper_8x"]) > float(look_by_sight["pso"]) + 400.0,
+		"magnified scopes extend ADS camera look-ahead deeply (iron=%.0f < 2x=%.0f < 4x=%.0f < 8x=%.0f)" % [
+			float(look_by_sight["iron"]), float(look_by_sight["sight_2x"]),
+			float(look_by_sight["pso"]), float(look_by_sight["sniper_8x"])])
 	# 恢复 PSO 供后续镜头特效检查。
 	p.data["weapon_mods_2d"]["m870"]["sight"] = "pso"
 	main.doll.weapon_rig.setup(&"m870")
@@ -389,8 +398,9 @@ func _run() -> void:
 		listener.velocity = Vector2(0, 140)
 		for i in 12:
 			await process_frame
-		_check(main.hearing != null and main.hearing._alphas[3] > 0.05,
-			"hearing indicator shows an arc for a moving enemy behind the player")
+		_check(main.hearing != null and main.hearing.HEARING_METERS >= 13.0
+			and main.hearing._alphas[3] > 0.05,
+			"hearing indicator has expanded range and detects a moving enemy behind the player")
 		listener.velocity = Vector2.ZERO
 		for i in 30:
 			await process_frame

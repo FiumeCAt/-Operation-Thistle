@@ -81,6 +81,21 @@ func _run() -> void:
 	var standalone_mini := Minimap2D.new()
 	standalone_mini.set_snapshot_provider(mock_map_provider)
 	root.add_child(standalone_mini)
+	await process_frame
+	_check(Minimap2D.bearing_text(Vector2.UP) == "000° N"
+		and Minimap2D.bearing_text(Vector2.RIGHT) == "090° E"
+		and Minimap2D.bearing_text(Vector2.DOWN) == "180° S"
+		and Minimap2D.bearing_text(Vector2.LEFT) == "270° W"
+		and Minimap2D.bearing_text(Vector2(1, -1)) == "045° NE",
+		"Minimap2D computes accurate 360-degree tactical azimuth bearings")
+	standalone_mini.configure("circle", 1.25, 1.8)
+	_check(standalone_mini.map_shape == "circle"
+		and is_equal_approx(standalone_mini.map_scale, 1.25)
+		and is_equal_approx(standalone_mini.map_zoom, 1.8)
+		and standalone_mini._clip_poly.polygon.size() >= 32,
+		"Minimap2D switches to circular clipped radar with custom scale and zoom")
+	_check(RunHUD2D._format_hint_bbcode("WASD 移动 · E 交互").contains("[color=#"),
+		"RunHUD2D colorizes keybinds in tactical hint bar")
 	var standalone_map := MapOverlay2D.new()
 	standalone_map.set_snapshot_provider(mock_map_provider)
 	root.add_child(standalone_map)

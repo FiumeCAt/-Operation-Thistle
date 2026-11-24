@@ -141,10 +141,10 @@ func _build_menu_column() -> void:
 	rows.add_theme_constant_override("separation", 8)
 	add_child(rows)
 
-	PixelUI.label(rows, "OPERATION THISTLE // RAID CONTROL", PixelUI.FS_BODY, PixelUI.AMBER)
-	var title := PixelUI.label(rows, "蓟花行动", PixelUI.FS_HUGE, PixelUI.TEXT)
+	PixelUI.emphasize(PixelUI.label(rows, "OPERATION THISTLE // RAID CONTROL", PixelUI.FS_BODY, PixelUI.AMBER), 2, 1)
+	var title := PixelUI.emphasize(PixelUI.label(rows, "蓟花行动", PixelUI.FS_HUGE, PixelUI.TEXT), 5, 3)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	var english := PixelUI.label(rows, "D O L L   P R O T O C O L", PixelUI.FS_TITLE, PixelUI.AMBER)
+	var english := PixelUI.emphasize(PixelUI.label(rows, "D O L L   P R O T O C O L", PixelUI.FS_TITLE, PixelUI.GOLD), 3, 2)
 	english.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 	var divider := HSeparator.new()
@@ -236,7 +236,7 @@ func _build_dossier() -> void:
 	rows.add_theme_constant_override("separation", 4)
 	panel.add_child(rows)
 
-	PixelUI.label(rows, "DOLL-01 // 作战档案", PixelUI.FS_TITLE, PixelUI.AMBER)
+	PixelUI.emphasize(PixelUI.label(rows, "DOLL-01 // 作战档案", PixelUI.FS_TITLE, PixelUI.AMBER), 3, 2)
 	var divider := HSeparator.new()
 	divider.add_theme_color_override("color", Color(PixelUI.AMBER, 0.6))
 	rows.add_child(divider)

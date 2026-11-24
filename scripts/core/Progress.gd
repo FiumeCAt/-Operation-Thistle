@@ -394,6 +394,26 @@ func set_view_zoom(value: float) -> bool:
 	SETTINGS_STORE.set_view_zoom(data, value)
 	return save_data()
 
+func minimap_shape() -> String:
+	return SETTINGS_STORE.minimap_shape(data)
+
+func set_minimap_shape(shape: String) -> bool:
+	return save_data() if SETTINGS_STORE.set_minimap_shape(data, shape) else false
+
+func minimap_scale() -> float:
+	return SETTINGS_STORE.minimap_scale(data)
+
+func set_minimap_scale(value: float) -> bool:
+	SETTINGS_STORE.set_minimap_scale(data, value)
+	return save_data()
+
+func minimap_zoom() -> float:
+	return SETTINGS_STORE.minimap_zoom(data)
+
+func set_minimap_zoom(value: float) -> bool:
+	SETTINGS_STORE.set_minimap_zoom(data, value)
+	return save_data()
+
 func set_motion_blur(enabled: bool) -> bool:
 	SETTINGS_STORE.set_motion_blur(data, enabled)
 	return save_data()

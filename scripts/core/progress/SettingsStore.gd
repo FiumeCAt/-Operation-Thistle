@@ -95,6 +95,34 @@ static func set_view_zoom(data: Dictionary, value: float) -> void:
 	data["view_zoom"] = clampf(roundf(value / 10.0) * 10.0, 20.0, 200.0)
 
 
+static func minimap_shape(data: Dictionary) -> String:
+	var shape := String(data.get("minimap_shape", "square"))
+	return shape if ["square", "circle"].has(shape) else "square"
+
+
+static func set_minimap_shape(data: Dictionary, shape: String) -> bool:
+	if not ["square", "circle"].has(shape):
+		return false
+	data["minimap_shape"] = shape
+	return true
+
+
+static func minimap_scale(data: Dictionary) -> float:
+	return clampf(float(data.get("minimap_scale", 1.0)), 0.70, 1.50)
+
+
+static func set_minimap_scale(data: Dictionary, value: float) -> void:
+	data["minimap_scale"] = clampf(roundf(value * 20.0) / 20.0, 0.70, 1.50)
+
+
+static func minimap_zoom(data: Dictionary) -> float:
+	return clampf(float(data.get("minimap_zoom", 1.0)), 0.80, 2.50)
+
+
+static func set_minimap_zoom(data: Dictionary, value: float) -> void:
+	data["minimap_zoom"] = clampf(roundf(value * 10.0) / 10.0, 0.80, 2.50)
+
+
 static func set_motion_blur(data: Dictionary, enabled: bool) -> void:
 	data["motion_blur"] = enabled
 

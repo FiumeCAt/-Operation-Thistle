@@ -28,6 +28,7 @@ var mod_detail: PanelContainer
 var mod_detail_title: Label
 var mod_detail_state: Label
 var mod_detail_option: Label
+var mod_detail_option_rich: RichTextLabel
 var mod_detail_cost: Label
 var mod_install: Button
 var mod_preview_option := ""
@@ -144,13 +145,15 @@ func _build_mod_detail(parent: Node) -> void:
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 6)
 	mod_detail.add_child(rows)
-	mod_detail_title = PixelUI.label(rows, "", 18, PixelUI.AMBER)
-	mod_detail_state = PixelUI.label(rows, "", 18, PixelUI.DIM)
+	mod_detail_title = PixelUI.emphasize(PixelUI.label(rows, "", 19, PixelUI.AMBER_BRIGHT), 2, 1)
+	mod_detail_state = PixelUI.label(rows, "", 18, PixelUI.CYAN)
 	mod_detail_state.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	mod_detail_option = PixelUI.label(rows, "", 18, PixelUI.TEXT)
 	mod_detail_option.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	mod_detail_option.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	mod_detail_cost = PixelUI.label(rows, "", 17, PixelUI.DIM)
+	mod_detail_option.visible = false
+	mod_detail_option_rich = PixelUI.rich_label(rows, "", 18, PixelUI.TEXT, 1)
+	mod_detail_option_rich.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	mod_detail_cost = PixelUI.label(rows, "", 17, PixelUI.GOLD)
 	mod_detail_cost.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 	var buttons := HBoxContainer.new()
@@ -462,12 +465,40 @@ func _refresh_mod_detail(installed: Dictionary) -> void:
 		if sight_line != "" and sight_line != desc:
 			lines.append(sight_line)
 	mod_detail_option.text = "\n".join(PackedStringArray(lines))
+	if mod_detail_option_rich != null:
+		mod_detail_option_rich.text = _format_mod_option_bb(lines)
 	mod_install.text = "已装配" if mod_preview_option == current else "安装"
 	mod_install.disabled = mod_preview_option == current or not MOD_SERVICE.can_pay_mod(_progress(), entry)
 	# 实时数据窗：把当前预览当作已装配，计算与当前配置的差值。
 	var preview := installed.duplicate()
 	preview[slot] = mod_preview_option
 	stats_strip.refresh_stats(StringName(mod_item), installed, preview)
+
+
+func _format_mod_option_bb(lines: Array[String]) -> String:
+	var out: Array[String] = []
+	for line in lines:
+		if line.begins_with("预览："):
+			out.append(PixelUI.bb(line, PixelUI.AMBER_BRIGHT))
+			continue
+		if line.contains(" · ") and (line.contains("%") or line.contains("倍率")):
+			var segs := line.split(" · ")
+			var colored: Array[String] = []
+			for seg in segs:
+				var s := seg.strip_edges()
+				if s.begins_with("倍率"):
+					colored.append(PixelUI.bb(s, PixelUI.GOLD))
+				elif s.contains("瞄准时间 +") or s.contains("散布 +") or s.contains("噪音 +") \
+						or s.contains("换弹 +") or s.contains("伤害 -") or s.contains("射速 -"):
+					colored.append(PixelUI.bb(s, PixelUI.DANGER))
+				elif s.contains("+") or s.contains("-"):
+					colored.append(PixelUI.bb(s, PixelUI.OK))
+				else:
+					colored.append(PixelUI.bb(s, PixelUI.CYAN))
+			out.append(" · ".join(PackedStringArray(colored)))
+		else:
+			out.append(line)
+	return "\n".join(PackedStringArray(out))
 
 
 func cycle_selected(step: int) -> void:

@@ -33,9 +33,9 @@ const SPREAD_MODEL := preload("res://scripts/combat/SpreadModel.gd")
 ## 连发累积：开镜（ADS）时每发增长更慢；换弹/切枪期间回落更快（单一来源：SpreadModel）。
 const BURST_ADS_GROWTH_MUL := SPREAD_MODEL.BURST_ADS_GROWTH_MUL
 const BURST_RECOVERY_BUSY_MUL := SPREAD_MODEL.BURST_RECOVERY_BUSY_MUL
-## 瞄准时镜头向准心方向前探，真正看清瞄准方向（仅非高倍镜使用）。
-const ADS_LOOK_AHEAD := 210.0
-const ADS_LOOK_SMOOTH := 8.0
+## 瞄准基础前探距离（适配 64 px/m 与 0.95 广角缩放，约 5.3 米基础前探；高倍镜按倍率延伸）。
+const ADS_LOOK_AHEAD := 340.0
+const ADS_LOOK_SMOOTH := 10.0
 ## 后坐力/散布/聚合窗口常量统一收口至 CombatSystem2D，保留兼容别名。
 const RECOIL_LIMIT := COMBAT_SYSTEM.RECOIL_LIMIT
 const RECOIL_RECOVER := COMBAT_SYSTEM.RECOIL_RECOVER
@@ -610,31 +610,40 @@ func _process(delta: float) -> void:
 		_update_waves(delta)
 	_view_zoom_visual = move_toward(_view_zoom_visual, view_zoom_pct, VIEW_ZOOM_LERP * delta)
 	# 倍镜接口默认 1.0；接上倍镜后只在 ADS 过渡里生效。
+	var base_zoom := ZOOM * (_view_zoom_visual / 100.0)
 	var scope_mul := lerpf(1.0, scope_magnification, _ads_t)
-	var zoom := ZOOM * (_view_zoom_visual / 100.0) * scope_mul
+	var zoom := base_zoom * scope_mul
 	if absf(camera.zoom.x - zoom) > 0.001:
 		camera.zoom = Vector2(zoom, zoom)
 
+	var vrect := get_viewport().get_visible_rect().size
+	var half_view_base := vrect * 0.5 / maxf(base_zoom, 0.001)
+	var half_view := vrect * 0.5 / maxf(zoom, 0.001)
 	var look := Vector2.ZERO
 	if _ads_t > 0.01:
 		var scoped: bool = doll.weapon_rig != null and doll.weapon_rig.has_scope_sight
-		var look_mul := scope_magnification
+		var look_mul := 1.0
 		if doll.weapon_rig != null:
-			look_mul = maxf(float(doll.weapon_rig.sight_look_ahead_mul), scope_magnification)
+			look_mul = maxf(float(doll.weapon_rig.sight_look_ahead_mul), 1.0)
 		var look_ahead := ADS_LOOK_AHEAD * look_mul
-		if scoped:
-			# 高倍镜：主镜头缩放保持 1.0×（角色不放大），但按瞄具前探倍率向瞄准方向延伸更远视野；
-			# 实机鼠标模式按视口相对偏移计算，彻底避免“镜头前探↔鼠标世界坐标”闭环抖动，松动即稳停。
-			if mouse_aim_enabled:
-				var vrect := get_viewport().get_visible_rect().size
-				var rel := (get_viewport().get_mouse_position() - vrect * 0.5) / maxf(minf(vrect.x, vrect.y) * 0.45, 1.0)
-				var mag_ratio := clampf(rel.length(), 0.0, 1.0)
-				var desired := rel.normalized() * mag_ratio if mag_ratio > 0.05 else Vector2.ZERO
-				_ads_look = _ads_look.lerp(desired, clampf(delta * 18.0, 0.0, 1.0))
-			else:
-				var raw_aim := doll.aim_target - doll.global_position
-				_ads_look = raw_aim.normalized() if raw_aim.length_squared() > 1.0 else Vector2.ZERO
-			look = _ads_look * look_ahead * _ads_t
+		# 反射式低倍镜（红点 1.1× / 全息 1.5×）会拉近主镜头导致半屏视野缩小；
+		# 按轴补偿缩放损失，确保红点/全息的实际前方可见距离严格大于机械瞄具，不再反而变短。
+		var zoom_comp := Vector2(
+			maxf(0.0, half_view_base.x - half_view.x),
+			maxf(0.0, half_view_base.y - half_view.y),
+		) if not scoped else Vector2.ZERO
+		if mouse_aim_enabled:
+			# 实机鼠标模式统一按视口相对偏移计算前探，彻底消除“镜头移动↔鼠标世界坐标”闭环抖动；
+			# 高倍镜 0→1 平滑延伸便于兼顾近身与远距侦察，非高倍镜 0.35→1.0 保持即按即探手感。
+			var rel := (get_viewport().get_mouse_position() - vrect * 0.5) / maxf(minf(vrect.x, vrect.y) * 0.45, 1.0)
+			var raw_ratio := clampf(rel.length(), 0.0, 1.0)
+			var mag_ratio := raw_ratio if scoped else (lerpf(0.35, 1.0, raw_ratio) if raw_ratio > 0.04 else 0.0)
+			var desired := rel.normalized() * mag_ratio if raw_ratio > 0.04 else Vector2.ZERO
+			var smooth := 18.0 if scoped else ADS_LOOK_SMOOTH
+			_ads_look = _ads_look.lerp(desired, clampf(delta * smooth, 0.0, 1.0))
+		elif scoped:
+			var raw_aim := doll.aim_target - doll.global_position
+			_ads_look = raw_aim.normalized() if raw_aim.length_squared() > 1.0 else Vector2.ZERO
 		else:
 			var aim_dir := Vector2.RIGHT
 			var raw_aim := doll.aim_target - doll.global_position
@@ -644,13 +653,19 @@ func _process(delta: float) -> void:
 				aim_dir = raw_aim.normalized()
 			_ads_look = _ads_look.lerp(
 				aim_dir.normalized(), clampf(delta * ADS_LOOK_SMOOTH, 0.0, 1.0))
-			look = _ads_look * look_ahead * _ads_t
+		look = Vector2(
+			_ads_look.x * (look_ahead + zoom_comp.x) * _ads_t,
+			_ads_look.y * (look_ahead + zoom_comp.y) * _ads_t,
+		)
 	else:
 		_ads_look = Vector2.ZERO
-	# 前探不能把角色推出屏幕：每个轴最多到半屏的 88%。
-	var half_view := get_viewport().get_visible_rect().size * 0.5 / maxf(zoom, 0.001)
-	look.x = clampf(look.x, -half_view.x * 0.88, half_view.x * 0.88)
-	look.y = clampf(look.y, -half_view.y * 0.88, half_view.y * 0.88)
+	# 高倍镜允许深度前探（至少保证 2200px 世界前探空间，实际仍受地图 camera.limit_* 边界约束）。
+	var max_look := Vector2(
+		maxf(half_view_base.x * 2.35, 2200.0),
+		maxf(half_view_base.y * 2.35, 1600.0),
+	)
+	look.x = clampf(look.x, -max_look.x, max_look.x)
+	look.y = clampf(look.y, -max_look.y, max_look.y)
 	# 相机跟随按「屏幕像素」取整，避免角色和场景在半像素位置上被重采样而发虚。
 	var snap := 1.0 / maxf(zoom, 0.001)
 	var target := Vector2(

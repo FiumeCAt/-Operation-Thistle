@@ -92,14 +92,14 @@ func _run() -> void:
 		"Doll2D.WORLD_BODY matches GameUnits.DOLL_WORLD_HEIGHT_PX"
 	)
 
-	# 5. 跨系统语义核对（40m 视野 == 40 格 == 2560px；10m 声纹 == 10 格 == 640px）
+	# 5. 跨系统语义核对（40m 视野 == 40 格 == 2560px；13.5m 声纹 == 13.5 格 == 864px）
 	_check(
 		is_equal_approx(VISION_FOG_2D.CLEAR_RANGE_METERS * VISION_FOG_2D.PIXELS_PER_METER, 2560.0),
 		"VisionFog2D clear range == 2560 px (40m * 64)"
 	)
 	_check(
-		is_equal_approx(HEARING_2D.HEARING_METERS * HEARING_2D.TILE, 640.0),
-		"HearingIndicator2D hearing range == 640 px (10m * 64)"
+		is_equal_approx(HEARING_2D.HEARING_METERS * HEARING_2D.TILE, 864.0),
+		"HearingIndicator2D hearing range == 864 px (13.5m * 64)"
 	)
 
 	print("=== game_units_test: %d ok / %d fail ===" % [_ok, _fails])
