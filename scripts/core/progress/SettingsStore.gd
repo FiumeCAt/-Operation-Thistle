@@ -1,0 +1,166 @@
+extends RefCounted
+class_name ProgressSettingsStore
+## 设置项与外观/调试参数存储（纯逻辑，直接读写 Progress.data 字典，无 I/O 副作用）。
+
+const SAVE_STORE := preload("res://scripts/core/progress/SaveStore.gd")
+const DEFAULT_LASER_COLOR := SAVE_STORE.DEFAULT_LASER_COLOR
+const DEFAULT_RETICLE_COLOR := SAVE_STORE.DEFAULT_RETICLE_COLOR
+const AMMO_DISPLAY_MODES := SAVE_STORE.AMMO_DISPLAY_MODES
+
+
+static func laser_color(data: Dictionary) -> Color:
+	return _sight_color(data, "laser_color", DEFAULT_LASER_COLOR)
+
+
+static func reticle_color(data: Dictionary) -> Color:
+	return _sight_color(data, "reticle_color", DEFAULT_RETICLE_COLOR)
+
+
+static func _sight_color(data: Dictionary, key: String, fallback: String) -> Color:
+	var raw := String(data.get(key, fallback))
+	return Color.html(raw) if Color.html_is_valid(raw) else Color.html(fallback)
+
+
+static func set_laser_color(data: Dictionary, color: Color) -> void:
+	data["laser_color"] = "#" + color.to_html(false)
+
+
+static func set_reticle_color(data: Dictionary, color: Color) -> void:
+	data["reticle_color"] = "#" + color.to_html(false)
+
+
+static func set_ammo_display(data: Dictionary, mode: String) -> bool:
+	if not AMMO_DISPLAY_MODES.has(mode):
+		return false
+	data["ammo_display"] = mode
+	return true
+
+
+static func set_fire_rate_display(data: Dictionary, mode: String) -> bool:
+	if not ["interval", "rpm"].has(mode):
+		return false
+	data["fire_rate_display"] = mode
+	return true
+
+
+static func armor_display(data: Dictionary) -> String:
+	var mode := String(data.get("armor_display", "value"))
+	return mode if ["value", "rha_mm"].has(mode) else "value"
+
+
+static func set_armor_display(data: Dictionary, mode: String) -> bool:
+	if not ["value", "rha_mm"].has(mode):
+		return false
+	data["armor_display"] = mode
+	return true
+
+
+static func set_volume(data: Dictionary, value: float) -> void:
+	data["volume"] = clampf(value, 0.0, 1.0)
+
+
+static func set_sfx_volume(data: Dictionary, value: float) -> void:
+	data["sfx_volume"] = clampf(value, 0.0, 1.0)
+
+
+static func set_music_volume(data: Dictionary, value: float) -> void:
+	data["music_volume"] = clampf(value, 0.0, 1.0)
+
+
+static func set_screen_shake(data: Dictionary, enabled: bool) -> void:
+	data["screen_shake"] = enabled
+
+
+static func set_bullet_trail_enabled(data: Dictionary, enabled: bool) -> void:
+	data["bullet_trail_enabled"] = enabled
+
+
+static func set_hitstop_enabled(data: Dictionary, enabled: bool) -> void:
+	data["hitstop_enabled"] = enabled
+
+
+static func set_shake_scale(data: Dictionary, value: float) -> void:
+	data["shake_scale"] = clampf(value, 0.0, 1000.0)
+
+
+static func set_sample_impacts(data: Dictionary, enabled: bool) -> void:
+	data["sample_impacts"] = enabled
+
+
+static func set_hit_fx_level(data: Dictionary, level: int) -> void:
+	data["hit_fx_level"] = clampi(level, 0, 2)
+
+
+static func set_view_zoom(data: Dictionary, value: float) -> void:
+	data["view_zoom"] = clampf(roundf(value / 10.0) * 10.0, 20.0, 200.0)
+
+
+static func set_motion_blur(data: Dictionary, enabled: bool) -> void:
+	data["motion_blur"] = enabled
+
+
+static func scope_motion_blur(data: Dictionary) -> bool:
+	return bool(data.get("scope_motion_blur", true))
+
+
+static func set_scope_motion_blur(data: Dictionary, enabled: bool) -> void:
+	data["scope_motion_blur"] = enabled
+
+
+static func scope_lens_distortion(data: Dictionary) -> bool:
+	return bool(data.get("scope_lens_distortion", true))
+
+
+static func set_scope_lens_distortion(data: Dictionary, enabled: bool) -> void:
+	data["scope_lens_distortion"] = enabled
+
+
+static func reticle_style(data: Dictionary, sight_id: String, fallback: String) -> String:
+	var styles: Dictionary = data.get("reticle_styles", {})
+	return String(styles.get(sight_id, fallback))
+
+
+static func set_reticle_style(data: Dictionary, sight_id: String, style: String) -> void:
+	var styles: Dictionary = data.get("reticle_styles", {})
+	styles[sight_id] = style
+	data["reticle_styles"] = styles
+
+
+static func debug_enabled(data: Dictionary) -> bool:
+	return bool(data.get("debug_enabled", false))
+
+
+static func set_debug_enabled(data: Dictionary, enabled: bool) -> void:
+	data["debug_enabled"] = enabled
+
+
+static func debug_value(data: Dictionary, key: String) -> float:
+	var dbg: Dictionary = data.get("debug", {})
+	return clampf(float(dbg.get(key, 1.0)), 0.0, 100.0)
+
+
+static func debug_mul(data: Dictionary, key: String) -> float:
+	if not debug_enabled(data):
+		return 1.0
+	return debug_value(data, key)
+
+
+static func set_debug_value(data: Dictionary, key: String, value: float) -> void:
+	var dbg: Dictionary = data.get("debug", {})
+	dbg[key] = clampf(value, 0.0, 100.0)
+	data["debug"] = dbg
+
+
+static func reset_debug(data: Dictionary) -> void:
+	data["debug"] = {
+		"recoil_v": 1.0, "recoil_h": 1.0, "recoil_cap": 1.0,
+		"spread": 1.0, "damage": 1.0, "ads": 1.0, "move": 1.0, "vision": 1.0,
+	}
+
+
+static func set_camera_mode(data: Dictionary, mode: int) -> void:
+	data["camera_mode"] = clampi(mode, 0, 2)
+
+
+static func set_bright_test(data: Dictionary, enabled: bool) -> void:
+	data["bright_test"] = enabled
