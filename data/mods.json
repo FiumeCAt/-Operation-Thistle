@@ -196,12 +196,12 @@
       {
         "id": "scope",
         "name": "4× 战术瞄准镜",
-        "desc": "ACOG 风格 4× 镜 · 粗细双线 BDC 分划",
+        "desc": "ACOG 风格 4× 镜 · 发光倒 V 与 BDC 测距分划",
         "credits": 210,
         "cost": {"electronic_core": 3, "military_alloy": 2},
         "magnification": 4.0,
         "look_ahead_mul": 3.10,
-        "reticle": "cross",
+        "reticle": "acog",
         "scope": true,
         "effects": {"vision_mul": 1.75, "spread_mul": 0.86,
           "range_mul": 1.10, "ads_time_mul": 1.20}

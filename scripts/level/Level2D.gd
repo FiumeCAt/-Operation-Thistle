@@ -79,6 +79,8 @@ var _power_lamp: Polygon2D
 ## 敌人寻路网格子系统（委托至 NavGrid2D）。
 var nav_grid: NavGrid2D = NAV_GRID.new()
 var _nav_passable := {}
+## 真正阻挡视线的实心家具矩形（与 LightOccluder2D 一一对应；低矮油桶/木箱/补给箱不阻挡视线）。
+var _sight_rects: Array[Rect2] = []
 ## 歌利亚狂潮竞技场模式：不生成设施房间与墙体。
 var arena_mode := false
 var _nav_w := MAP_W
@@ -98,6 +100,7 @@ func _ready() -> void:
 		BUILDER.build_floor(floor_layer)
 		BUILDER.build_decals(floor_layer, rooms, _rng)
 		_nav_passable = BUILDER.build_walls(floor_layer, sort_layer)
+		_sight_rects.clear()
 		BUILDER.build_doors(sort_layer, rooms, doors)
 		PROPS.build_rooms({
 			"sort_layer": sort_layer,
@@ -105,6 +108,7 @@ func _ready() -> void:
 			"containers": containers,
 			"rng": _rng,
 			"mark_obstacle": Callable(self, "_mark_nav_obstacle"),
+			"mark_sight_obstacle": Callable(self, "_mark_sight_obstacle"),
 			"player_spawn": player_spawn,
 			"exit_position": exit_position,
 			"power_position": power_position,
@@ -314,8 +318,32 @@ func _mark_nav_obstacle(pos: Vector2, size: Vector2) -> void:
 	nav_grid.mark_obstacle(pos, size)
 
 
+func _mark_sight_obstacle(pos: Vector2, size: Vector2) -> void:
+	# 略微内缩 4px，与 LightOccluder2D 柔和阴影边缘一致，避免贴家具边缘时敌人突然消失。
+	var inset := Vector2(minf(size.x * 0.12, 6.0), minf(size.y * 0.12, 6.0))
+	var inner := size - inset * 2.0
+	if inner.x > 2.0 and inner.y > 2.0:
+		_sight_rects.append(Rect2(pos - inner * 0.5, inner))
+
+
 func is_nav_walkable(world_pos: Vector2) -> bool:
 	return nav_grid.is_walkable(world_pos)
+
+
+## 视线判定专用：仅墙体与挂有 LightOccluder2D 的高大家具阻挡视线；
+## 无遮光体的油桶、木箱、货架与补给箱不会在明亮清晰视野里把敌人凭空隐藏。
+func is_sight_clear(world_pos: Vector2) -> bool:
+	if arena_mode:
+		return true
+	if _nav_passable.is_empty():
+		return is_nav_walkable(world_pos)
+	var cell := Vector2i(int(floor(world_pos.x / TILE)), int(floor(world_pos.y / TILE)))
+	if not _nav_passable.has(cell):
+		return false
+	for rect in _sight_rects:
+		if rect.has_point(world_pos):
+			return false
+	return true
 
 
 func find_nav_path(from_world: Vector2, to_world: Vector2) -> PackedVector2Array:

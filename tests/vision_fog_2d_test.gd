@@ -169,6 +169,22 @@ func _run() -> void:
 		"dead enemy is released from vision fog fade control")
 	far._dead = false
 
+	# 回归：仰视/平视特定视角下，敌人躯干/头部位于清晰视野内时不能因脚底 -82px 视差突然消失。
+	fog.level = null
+	var parallax_enemy := _spawn(main, &"rifleman", origin + Vector2(140.0, 0.0))
+	fog._aim_angle = deg_to_rad(-32.0)
+	fog.refresh_enemies()
+	_check(fog.tier_for_enemy(parallax_enemy.global_position) == 2 and parallax_enemy.visible,
+		"enemy with lit torso stays visible at upward/oblique viewing angles despite eye-height parallax")
+	parallax_enemy.queue_free()
+	fog._aim_angle = 0.0
+
+	# 回归：油桶/木箱/补给箱等无遮光体低矮掩体不得在清晰视野里把敌人凭空隐藏（is_sight_clear 保持 true）。
+	fog.level = saved_level
+	var barrel_cell := Vector2(39.0, 17.0) * tile
+	_check(not main.level.is_nav_walkable(barrel_cell) and main.level.is_sight_clear(barrel_cell),
+		"low non-occluding barrel blocks walking nav but keeps clear vision line of sight open")
+
 	# 墙体遮挡：导航网格在墙格上不可行走，视线必须被打断；紧闭的门也必须挂遮光器并阻断视线。
 	fog.level = saved_level
 	if main.level != null and not main.level.doors.is_empty():
@@ -231,7 +247,7 @@ func _spawn(main, kind: StringName, pos: Vector2) -> Enemy2D:
 	return enemy
 
 
-## 从玩家位置向外找一格最近的不可行走格（墙体或家具）。
+## 从玩家位置向外找一格最近的真正阻挡视线的墙格或高大家具。
 func _find_wall(main, origin: Vector2, radius_tiles: int) -> Vector2:
 	var tile: float = main.TILE
 	var base := Vector2i(int(origin.x / tile), int(origin.y / tile))
@@ -241,7 +257,7 @@ func _find_wall(main, origin: Vector2, radius_tiles: int) -> Vector2:
 				if maxi(absi(dx), absi(dy)) != r:
 					continue
 				var probe := Vector2(base.x + dx + 0.5, base.y + dy + 0.5) * tile
-				if not main.level.is_nav_walkable(probe):
+				if not main.level.is_sight_clear(probe):
 					return probe
 	return Vector2.INF
 

@@ -58,9 +58,9 @@ func _run() -> void:
 	var sight_line := SERVICE.sight_stats_line(scope)
 	_check(sight_line.contains("4.0×") and sight_line.contains("视野") and sight_line.contains("射程"),
 		"sight_stats_line summarizes magnification, vision, range, and ads time")
-	_check(SERVICE.reticle_styles_for(scope).size() == 5
+	_check(SERVICE.reticle_styles_for(scope).size() == 6
 		and SERVICE.reticle_styles_for({"scope": false}).size() == 2,
-		"reticle_styles_for distinguishes scope vs reflex styles")
+		"reticle_styles_for distinguishes scope (incl. ACOG) vs reflex styles")
 
 	# 4. 支付校验与安装扣费（不足拒绝 / 充足扣费成功）
 	p.data["resources"] = 0

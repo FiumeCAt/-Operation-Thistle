@@ -14,6 +14,7 @@ const SLOT_ENGLISH := {
 
 const SCOPE_RETICLE_STYLES: Array = [
 	["native", "默认"],
+	["acog", "ACOG"],
 	["cross", "十字"],
 	["pso", "PSO"],
 	["mildot", "密位点"],

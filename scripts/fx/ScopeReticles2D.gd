@@ -5,22 +5,27 @@ class_name ScopeReticles2D
 ## 所有线条开启抗锯齿并带半透明黑描边，明暗地面都保持清晰。
 
 
-## 镜片边缘：由外向内的多层渐隐暗环（柔和暗角），外加极细镜筒黑圈与玻璃高光弧。
+## 镜片边缘：柔和渐变目镜暗环 + 精致金属双层镜筒圈 + 光学镀膜微高光。
 static func draw_lens_frame(cv: CanvasItem, c: Vector2, r: float, fade: float) -> void:
-	for i in 8:
-		var rr := r - 1.0 - float(i) * 2.8
-		var a := (0.34 - float(i) * 0.04) * fade
+	for i in 6:
+		var rr := r - 1.5 - float(i) * 2.4
+		var a := (0.28 - float(i) * 0.045) * fade
 		if a <= 0.0:
 			break
-		cv.draw_arc(c, rr, 0.0, TAU, 112, Color(0.0, 0.0, 0.0, a), 3.2, true)
-	cv.draw_arc(c, r + 0.5, 0.0, TAU, 128, Color(0.01, 0.01, 0.015, 0.88 * fade), 3.0, true)
-	cv.draw_arc(c, r - 10.0, PI * 1.06, PI * 1.40, 28, Color(1.0, 1.0, 1.0, 0.10 * fade), 2.0, true)
-	cv.draw_arc(c, r - 10.0, PI * 0.06, PI * 0.28, 16, Color(1.0, 1.0, 1.0, 0.05 * fade), 1.5, true)
+		cv.draw_arc(c, rr, 0.0, TAU, 128, Color(0.0, 0.0, 0.0, a), 2.8, true)
+	# 双层深金属镜筒外框 + 极细内金属反光边
+	cv.draw_arc(c, r + 2.5, 0.0, TAU, 144, Color(0.02, 0.025, 0.032, 0.94 * fade), 4.5, true)
+	cv.draw_arc(c, r + 0.2, 0.0, TAU, 144, Color(0.24, 0.28, 0.34, 0.42 * fade), 1.4, true)
+	# 光学防反光镀膜高光弧（左上冷青微光 + 右下极淡反射）
+	cv.draw_arc(c, r - 11.0, PI * 1.08, PI * 1.38, 28, Color(0.76, 0.94, 1.0, 0.11 * fade), 2.0, true)
+	cv.draw_arc(c, r - 11.0, PI * 0.08, PI * 0.26, 16, Color(1.0, 0.96, 0.88, 0.06 * fade), 1.4, true)
 
 
 static func draw_reticle(cv: CanvasItem, kind: String, c: Vector2, r: float,
 		col: Color, pso_tex: Texture2D = null) -> void:
 	match kind:
+		"acog":
+			_draw_acog(cv, c, r, col)
 		"cross":
 			_draw_cross(cv, c, r, col)
 		"pso":
@@ -49,7 +54,65 @@ static func _ln(cv: CanvasItem, a: Vector2, b: Vector2, col: Color, width: float
 	cv.draw_line(a, b, col, width, true)
 
 
-## 2×–4× 战术光学镜（ACOG / 写实全镜径蚀刻分划）：
+## Trijicon ACOG TA31 风格分划：
+## 顶部开阔无遮挡 + 中心光纤发光倒 V 箭尖（尖顶严格落于 c）+ 下方 BDC 阶梯测距横杆（4 / 6 / 8）+ 两侧风偏与粗外杆。
+static func _draw_acog(cv: CanvasItem, c: Vector2, r: float, col: Color) -> void:
+	var a := col.a
+	var inner_x := r * 0.54
+	var outer := r * 0.99
+	var chev_w := 12.0
+	var chev_h := 11.0
+	# 左右水平蚀刻细丝 + 外段粗杆（上方保持开阔，快速捕捉目标）。
+	_etch(cv, c + Vector2(-inner_x, 0.0), c + Vector2(-24.0, 0.0), a, 1.1)
+	_etch(cv, c + Vector2(24.0, 0.0), c + Vector2(inner_x, 0.0), a, 1.1)
+	_etch(cv, c + Vector2(-outer, 0.0), c + Vector2(-inner_x, 0.0), a, 3.8)
+	_etch(cv, c + Vector2(inner_x, 0.0), c + Vector2(outer, 0.0), a, 3.8)
+	# 水平风偏短刻度。
+	for i in range(1, 5):
+		var dx := 24.0 + float(i) * 26.0
+		if dx >= inner_x - 6.0:
+			break
+		var h := 4.5 if (i % 2 == 0) else 2.8
+		_etch(cv, c + Vector2(dx, -h), c + Vector2(dx, h), a, 1.0)
+		_etch(cv, c + Vector2(-dx, -h), c + Vector2(-dx, h), a, 1.0)
+	# 下方垂直 BDC 脊柱 + 外段粗杆。
+	var spine_end := r * 0.68
+	_etch(cv, c + Vector2(0.0, chev_h + 2.0), c + Vector2(0.0, spine_end), a, 1.2)
+	_etch(cv, c + Vector2(0.0, spine_end), c + Vector2(0.0, outer), a, 3.8)
+	# ACOG 标志性肩宽测距横杆：随距离递增逐级收窄（300m / 400m [4] / 600m [6] / 800m [8]）。
+	var bdc_bars := [
+		[22.0, 11.0, ""],
+		[44.0, 17.0, "4"],
+		[72.0, 13.0, ""],
+		[104.0, 10.0, "6"],
+		[142.0, 7.5, "8"],
+	]
+	var num_col := Color(0.05, 0.06, 0.08, 0.92 * a)
+	var num_glow := Color(0.95, 0.98, 1.0, 0.22 * a)
+	for bar in bdc_bars:
+		var y := float(bar[0])
+		var half := float(bar[1])
+		var tag := String(bar[2])
+		_etch(cv, c + Vector2(-half, y), c + Vector2(half, y), a, 1.35)
+		if tag != "":
+			var tp := c + Vector2(half + 6.0, y + 4.0)
+			cv.draw_string(PixelUI.FONT, tp + Vector2(1, 1), tag,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 12, num_glow)
+			cv.draw_string(PixelUI.FONT, tp, tag,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 12, num_col)
+	# 发光光纤倒 V 箭尖（尖顶严格对齐正中心 c，内侧带微弱光纤辉光）。
+	var left_pt := c + Vector2(-chev_w, chev_h)
+	var right_pt := c + Vector2(chev_w, chev_h)
+	var glow_col := Color(col.r, col.g, col.b, 0.24 * a)
+	cv.draw_line(left_pt, c, glow_col, 5.2, true)
+	cv.draw_line(right_pt, c, glow_col, 5.2, true)
+	_ln(cv, left_pt, c, col, 2.2)
+	_ln(cv, right_pt, c, col, 2.2)
+	# 尖顶微高光点确保精确归零点清晰可见。
+	cv.draw_circle(c, 1.5, col.lightened(0.32), true, -1.0, true)
+
+
+## 2×–4× 战术光学镜（写实全镜径蚀刻十字分划）：
 ## 贯通全镜面的蚀刻细丝 + 三向粗外杆（duplex）+ 下方 BDC 弹道补偿刻度 + 中心发光瞄准点/短十字。
 static func _draw_cross(cv: CanvasItem, c: Vector2, r: float, col: Color) -> void:
 	var a := col.a

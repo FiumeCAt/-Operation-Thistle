@@ -147,14 +147,11 @@ var interaction_system: InteractionSystem2D = INTERACTION_SYSTEM.new()
 var _ads_t := 0.0
 ## 开镜期间是否由本脚本临时关闭了镜头位置平滑；松开瞄准后只恢复自己关掉的那一次。
 var _ads_smoothing_off := false
-## 高倍镜方案 A 锚点：进入高倍镜 ADS 时锁住初始世界瞄准点并通过 warp_mouse 同步光标，
-## 真实鼠标移动在 _input 里按相对位移采集，过滤掉自身 warp_mouse 触发的合成事件，确保镜心 0 偏移。
-var _scope_ads_locked := false
-var _scope_aim_world := Vector2.ZERO
-var _scope_mouse_delta := Vector2.ZERO
-var _scope_pending_warps: Array[Vector2] = []
+## 高倍镜方案 B（增量外推前探）：记录按下右键瞬间光标的屏幕位置作为前探零点，
+## 不篡改/拉扯系统鼠标；开镜瞬间主镜头平滑拉远，仅在继续向外推鼠标时平滑叠加额外前探。
+var _scope_ads_active := false
+var _scope_entry_mouse := Vector2.ZERO
 var _scope_cam_offset := Vector2.ZERO
-var _prev_doll_pos := Vector2.ZERO
 ## 战斗/散布/后坐力状态转发至 combat_system（保持测试读写字段兼容）。
 var _burst_spread: float:
 	get: return combat_system.burst_spread
@@ -625,7 +622,6 @@ func _process(delta: float) -> void:
 	if waves_mode:
 		_update_waves(delta)
 	_view_zoom_visual = move_toward(_view_zoom_visual, view_zoom_pct, VIEW_ZOOM_LERP * delta)
-	var prev_zoom := maxf(camera.zoom.x, 0.001)
 	var base_zoom := ZOOM * (_view_zoom_visual / 100.0)
 	var scope_mul := lerpf(1.0, scope_magnification, _ads_t)
 	var zoom := base_zoom * scope_mul
@@ -634,28 +630,16 @@ func _process(delta: float) -> void:
 	var half_view_base := vrect * 0.5 / maxf(base_zoom, 0.001)
 	var half_view := vrect * 0.5 / maxf(zoom, 0.001)
 
-	# 方案 A（高倍镜镜心锁定）：按住右键进入高倍镜 ADS 时锚定初始世界瞄准点 W0，
-	# 仅累加 _input 中收到的玩家真实物理鼠标移动与角色位移，避免主镜头缩放/前探把准心下的目标拖偏。
-	var want_scope_lock := mouse_aim_enabled and scoped and doll.ads and _ads_t > 0.001
-	if want_scope_lock:
-		if not _scope_ads_locked:
-			_scope_ads_locked = true
-			_scope_aim_world = doll.aim_target
-			_scope_mouse_delta = Vector2.ZERO
-			_scope_pending_warps.clear()
-			_prev_doll_pos = doll.global_position
-		else:
-			var doll_delta := doll.global_position - _prev_doll_pos
-			_prev_doll_pos = doll.global_position
-			_scope_aim_world += doll_delta
-			if _scope_mouse_delta.length_squared() > 0.0001:
-				_scope_aim_world += _scope_mouse_delta / prev_zoom
-				_scope_mouse_delta = Vector2.ZERO
+	# 方案 B（增量外推前探）：进入高倍镜 ADS 瞬间记录鼠标屏幕位置 M0 为前探零点；
+	# 不调用 warp_mouse，保留 100% 原生顺滑手感，仅在继续向外推鼠标时平滑展开前探。
+	var want_scope_b := mouse_aim_enabled and scoped and doll.ads and _ads_t > 0.001
+	if want_scope_b:
+		if not _scope_ads_active:
+			_scope_ads_active = true
+			_scope_entry_mouse = get_viewport().get_mouse_position()
+			_scope_cam_offset = Vector2.ZERO
 	else:
-		_scope_ads_locked = false
-		_scope_mouse_delta = Vector2.ZERO
-		_scope_pending_warps.clear()
-		_prev_doll_pos = doll.global_position
+		_scope_ads_active = false
 
 	var look := Vector2.ZERO
 	if _ads_t > 0.01:
@@ -669,19 +653,39 @@ func _process(delta: float) -> void:
 			var max_y := minf(look_ahead, half_view.y * SCOPE_KEEP_PLAYER_RATIO_Y)
 			var y_min := -max_y + CAMERA_LIFT
 			var y_max := max_y + CAMERA_LIFT
-			var aim_world := _scope_aim_world if _scope_ads_locked else doll.aim_target
-			var raw_d := aim_world - doll.global_position
 			if mouse_aim_enabled:
-				var desired_offset := Vector2(
-					clampf(raw_d.x * 0.72, -max_x, max_x),
-					clampf(raw_d.y * 0.72, y_min, y_max),
-				)
-				_scope_cam_offset = _scope_cam_offset.lerp(desired_offset, clampf(delta * 16.0, 0.0, 1.0))
-				if _scope_cam_offset.distance_to(desired_offset) < 0.75:
+				var cur_m := get_viewport().get_mouse_position()
+				var dm := cur_m - _scope_entry_mouse
+				var dm_len := dm.length()
+				var desired_offset := Vector2.ZERO
+				if dm_len > 6.0:
+					# 减去 6px 静止防抖死区，并按外推方向剩余屏幕空间归一化，
+					# 即使开镜初始光标靠近屏边，继续轻推也能顺畅拉满 100% 前探。
+					var eff := dm * ((dm_len - 6.0) / dm_len)
+					var room_x := clampf(
+						(vrect.x - 40.0 - _scope_entry_mouse.x) if eff.x >= 0.0 else (_scope_entry_mouse.x - 40.0),
+						120.0, maxf(120.0, vrect.x * 0.40))
+					var room_y := clampf(
+						(vrect.y - 40.0 - _scope_entry_mouse.y) if eff.y >= 0.0 else (_scope_entry_mouse.y - 40.0),
+						90.0, maxf(90.0, vrect.y * 0.38))
+					var norm := Vector2(
+						clampf(eff.x / room_x, -1.0, 1.0),
+						clampf(eff.y / room_y, -1.0, 1.0),
+					)
+					var nlen := norm.length()
+					if nlen > 1.0:
+						norm /= nlen
+					desired_offset = Vector2(
+						clampf(norm.x * max_x, -max_x, max_x),
+						clampf(norm.y * max_y, y_min, y_max),
+					)
+				_scope_cam_offset = _scope_cam_offset.lerp(desired_offset, clampf(delta * 10.0, 0.0, 1.0))
+				if _scope_cam_offset.distance_to(desired_offset) < 0.5:
 					_scope_cam_offset = desired_offset
-				_ads_look = raw_d.normalized() if raw_d.length_squared() > 1.0 else Vector2.ZERO
+				_ads_look = desired_offset.normalized() if desired_offset.length_squared() > 1.0 else Vector2.ZERO
 				look = _scope_cam_offset * _ads_t
 			else:
+				var raw_d := doll.aim_target - doll.global_position
 				var dir := raw_d.normalized() if raw_d.length_squared() > 1.0 else Vector2.ZERO
 				_ads_look = dir
 				var desired_offset := Vector2(
@@ -751,44 +755,13 @@ func _process(delta: float) -> void:
 	camera.force_update_scroll()
 	feedback_system.update_muzzle_fx()
 	if mouse_aim_enabled:
-		if _scope_ads_locked:
-			var xform := get_viewport().get_canvas_transform()
-			var desired_screen := xform * _scope_aim_world
-			var clamped_screen := Vector2(
-				clampf(desired_screen.x, 20.0, maxf(20.0, vrect.x - 20.0)),
-				clampf(desired_screen.y, 20.0, maxf(20.0, vrect.y - 20.0)),
-			)
-			if clamped_screen.distance_squared_to(desired_screen) > 0.25:
-				_scope_aim_world = xform.affine_inverse() * clamped_screen
-				desired_screen = clamped_screen
-			var cur_m := get_viewport().get_mouse_position()
-			if cur_m.distance_to(desired_screen) >= 1.5 and _can_warp_mouse():
-				_scope_pending_warps.append(desired_screen)
-				if _scope_pending_warps.size() > 8:
-					_scope_pending_warps.pop_front()
-				get_viewport().warp_mouse(desired_screen)
-			doll.aim_target = _scope_aim_world
-		else:
-			doll.aim_target = get_global_mouse_position()
+		doll.aim_target = get_global_mouse_position()
 	_update_hud(delta)
 	if debug_visual_mode:
 		_label_timer += delta
 		if _label_timer >= 0.25:
 			_label_timer = 0.0
 			_update_debug_label()
-
-
-func _input(event: InputEvent) -> void:
-	if not _scope_ads_locked or not mouse_aim_enabled:
-		return
-	if event is InputEventMouseMotion:
-		var mm := event as InputEventMouseMotion
-		for i in _scope_pending_warps.size():
-			if mm.position.distance_to(_scope_pending_warps[i]) <= 5.0:
-				# 这是本脚本 warp_mouse 触发的合成鼠标移动事件，过滤掉不计入玩家移动。
-				_scope_pending_warps = _scope_pending_warps.slice(i + 1)
-				return
-		_scope_mouse_delta += mm.relative
 
 
 ## 高倍镜开镜主镜头拉远倍率：2×→0.85 … 4×→0.76 … 8×→0.62，
@@ -798,12 +771,6 @@ static func scope_camera_zoom_mul(sight_mag: float) -> float:
 		return 1.0
 	var t := clampf((sight_mag - 2.0) / 6.0, 0.0, 1.0)
 	return lerpf(0.85, 0.62, pow(t, 0.85))
-
-
-func _can_warp_mouse() -> bool:
-	if DisplayServer.get_name().to_lower().contains("headless"):
-		return false
-	return DisplayServer.window_is_focused()
 
 
 func _update_hud(delta: float) -> void:

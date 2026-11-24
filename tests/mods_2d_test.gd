@@ -129,9 +129,9 @@ func _run() -> void:
 	_check(bool(new_mods["laser"]), "underbarrel laser flag is on")
 	var scope_data := ModDB.option("sight", "scope", false, "m870")
 	_check(is_equal_approx(float(scope_data.get("magnification", 0.0)), 4.0)
-		and String(scope_data.get("reticle", "")) == "cross"
+		and String(scope_data.get("reticle", "")) == "acog"
 		and bool(scope_data.get("scope", false)),
-		"4x scope metadata exposes magnification and cross reticle")
+		"4x scope metadata exposes magnification and acog reticle")
 	var pso_data := ModDB.option("sight", "pso", false, "m870")
 	_check(is_equal_approx(float(pso_data.get("magnification", 0.0)), 4.0)
 		and String(pso_data.get("reticle", "")) == "pso",
@@ -354,23 +354,25 @@ func _run() -> void:
 			float(reach_y_by_sight["sniper_8x"])])
 	_check(player_in_view_ok,
 		"all magnified scopes keep the player strictly inside the screen horizontally and vertically")
-	# 方案 A 镜心锁点回归：开启 mouse_aim_enabled 进入高倍镜 ADS 后，初始瞄准世界点 W0 保持零偏移。
-	p.data["weapon_mods_2d"]["m870"]["sight"] = "sniper_8x"
+	# 方案 B 增量外推前探回归：开启 mouse_aim_enabled 按下右键开镜且不推动鼠标时，
+	# 前探偏移严格保持为 0（绝不突然拉偏目标），同时主镜头平滑拉远且镜片直径扩大至 560px。
+	p.data["weapon_mods_2d"]["m870"]["sight"] = "scope"
 	main.doll.weapon_rig.setup(&"m870")
 	main.doll.weapon_rig.ads = false
 	main.doll.ads = false
 	for i in 16:
 		await physics_frame
-	var anchor_w0: Vector2 = main.doll.global_position + Vector2(360.0, -120.0)
-	main.doll.aim_target = anchor_w0
 	main.mouse_aim_enabled = true
 	main.doll.weapon_rig.ads = true
 	main.doll.ads = true
 	for i in 24:
 		await physics_frame
-	_check(main._scope_ads_locked and main.doll.aim_target.distance_to(anchor_w0) < 2.0
-		and main.scope_sight._cam.global_position.distance_to(anchor_w0) < 2.0,
-		"Plan A scope anchor preserves initial aimed world point W0 across ADS zoom-out and pan")
+	_check(main._scope_ads_active and main._scope_cam_offset.length() < 1.0
+		and main.camera.zoom.x < main.ZOOM * 0.85,
+		"Plan B scoped ADS zooms out smoothly with zero sudden look-ahead tug until mouse pushes outward")
+	_check(is_equal_approx(main.scope_sight.LENS_SIZE, 560.0)
+		and main.doll.weapon_rig.sight_reticle == "acog",
+		"enlarged 560px scope lens and ACOG reticle activate cleanly")
 	main.mouse_aim_enabled = false
 	# 恢复 PSO 供后续镜头特效检查。
 	p.data["weapon_mods_2d"]["m870"]["sight"] = "pso"

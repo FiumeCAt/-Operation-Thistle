@@ -41,8 +41,10 @@ const DARK_COLOR := Color(0.72, 0.82, 1.0)
 const TEX_SIZE := 512
 ## 敌人可见性刷新间隔：50ms 一次，避免每帧遍历与视线采样。
 const ENEMY_REFRESH := 0.05
-## 视线采样步长：墙格 64px，24px 已能可靠命中。
-const LOS_STEP := 24.0
+## 视线采样步长：精细 16px 采样，避免墙角与狭缝漏检或误判。
+const LOS_STEP := 16.0
+## 敌人躯干立绘采样偏移（脚底 / 胸口 / 头顶，匹配 128px 立绘高度）：避免仰视/平视时脚底掉出眼高光锥导致明亮区域内敌人突然消失。
+const ENEMY_BODY_OFFSETS: Array[Vector2] = [Vector2.ZERO, Vector2(0.0, -56.0), Vector2(0.0, -112.0)]
 
 static var _textures: Dictionary = {}
 
@@ -99,12 +101,12 @@ func set_debug(enabled: bool) -> void:
 		refresh_enemies()
 
 
-## 当前瞄准角（弧度）。鼠标瞄准更新 aim_target；未更新时沿用上一帧角度。
+## 当前瞄准角（弧度）。鼠标瞄准更新 aim_target；贴近头部 16px 内保持原角度，避免光标掠过头顶时视野锥突然 180° 翻转。
 func aim_angle() -> float:
 	if player == null:
 		return _aim_angle
 	var offset: Vector2 = player.aim_target - _eye_position()
-	if offset.length_squared() > 16.0:
+	if offset.length_squared() > 256.0:
 		return offset.angle()
 	return _aim_angle
 
@@ -182,7 +184,7 @@ func refresh_enemies() -> void:
 		var node := enemy as Node2D
 		if node == null or not is_instance_valid(node):
 			continue
-		var tier := tier_at(node.global_position)
+		var tier := tier_for_enemy(node.global_position)
 		if not _tiers.has(node):
 			# 初次进入直接到位，避免开局在迷雾里的敌人先闪一下。
 			var alpha := 1.0 if tier == 2 else (RING_ENEMY_ALPHA if tier == 1 else 0.0)
@@ -191,10 +193,42 @@ func refresh_enemies() -> void:
 		_tiers[node] = tier
 
 
+## 敌人全身多点可见性判定：只要脚底/躯干/上身任一部位落在清晰或余光锥内，且地面视线无墙体/高家具遮挡即保持可见。
+## 彻底解决近中距仰视或平视时，因眼高 -82px 视差导致敌人躯干明亮却被脚底单点误判隐身的问题。
+func tier_for_enemy(enemy_feet: Vector2) -> int:
+	if player == null or not is_instance_valid(player):
+		return 2
+	var best_cone := 0
+	for body_off in ENEMY_BODY_OFFSETS:
+		var t := _cone_tier(enemy_feet + body_off)
+		if t > best_cone:
+			best_cone = t
+			if best_cone == 2:
+				break
+	if best_cone == 0:
+		# 近身黑暗视野也核对双脚距离，避免站在角色正下方时被眼高 82px 拉出 4.5m 半径。
+		if enemy_feet.distance_to(_los_position()) <= DARK_RADIUS_METERS * PIXELS_PER_METER:
+			best_cone = 1
+	if best_cone == 0:
+		return 0
+	if not line_clear(_los_position(), enemy_feet):
+		return 0
+	return best_cone
+
+
 ## 0 = 视野迷雾（不可见），1 = 相对暗，2 = 清晰视野。
 func tier_at(world_pos: Vector2) -> int:
 	if player == null or not is_instance_valid(player):
 		return 2
+	var cone := _cone_tier(world_pos)
+	if cone == 0:
+		return 0
+	if not line_clear(_los_position(), world_pos):
+		return 0
+	return cone
+
+
+func _cone_tier(world_pos: Vector2) -> int:
 	var origin := _eye_position()
 	var offset: Vector2 = world_pos - origin
 	var dist: float = offset.length()
@@ -214,14 +248,11 @@ func tier_at(world_pos: Vector2) -> int:
 	var in_dark: bool = dist <= DARK_RADIUS_METERS * PIXELS_PER_METER
 	if not (in_clear or in_ring or in_dark):
 		return 0
-	if not line_clear(_los_position(), world_pos):
-		return 0
 	return 2 if in_clear else 1
 
 
-## 视线采样：三条平行线（中间 + 左右各 12px）任意一条通畅即可。
-## 单线采样在墙角/家具边缘会因为一个点落在不可走格上而误判遮挡，
-## 表现为“敌人明明在视野里却突然消失”。
+## 视线采样：三条平行线（中间 + 左右各 18px 肩宽）任意一条通畅即可。
+## 优先查询 Level2D.is_sight_clear（仅墙体与带遮光体的高大家具阻挡，不因油桶/木箱/补给箱把清晰视野里的敌人藏掉）。
 func line_clear(from: Vector2, to: Vector2) -> bool:
 	if level == null:
 		return true
@@ -231,12 +262,12 @@ func line_clear(from: Vector2, to: Vector2) -> bool:
 		return true
 	var dir := delta / dist
 	var perp := Vector2(-dir.y, dir.x)
-	# 避开玩家眼睛与敌人身体所在的格子，减少贴身误判。
+	# 避开玩家脚底与敌人身体所在边缘，减少贴墙/过门斜视角误判。
 	var start := from + dir * 10.0
 	var end := to - dir * 16.0
 	if start.distance_to(end) <= 1.0:
 		return true
-	for side in [-12.0, 0.0, 12.0]:
+	for side in [-18.0, 0.0, 18.0]:
 		if _line_clear_one(start + perp * side, end + perp * side):
 			return true
 	return false
@@ -245,11 +276,14 @@ func line_clear(from: Vector2, to: Vector2) -> bool:
 func _line_clear_one(from: Vector2, to: Vector2) -> bool:
 	if _blocked_by_door(from, to):
 		return false
+	var use_sight_grid: bool = level.has_method("is_sight_clear")
 	var dist := from.distance_to(to)
 	var steps := maxi(1, int(ceil(dist / LOS_STEP)))
 	for i in range(1, steps):
 		var probe := from.lerp(to, float(i) / float(steps))
-		if not level.is_nav_walkable(probe):
+		var clear: bool = bool(level.is_sight_clear(probe)) if use_sight_grid \
+			else bool(level.is_nav_walkable(probe))
+		if not clear:
 			return false
 	return true
 

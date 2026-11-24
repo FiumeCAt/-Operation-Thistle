@@ -55,10 +55,15 @@ static func shadow(parent: Node, size: Vector2, offset: Vector2, alpha: float) -
 	parent.add_child(spr)
 
 
+static var _sight_obstacle_fn: Callable = Callable()
+
+
 static func prop_body(sort_layer: Node2D, mark_obstacle_fn: Callable,
 		pos: Vector2, size: Vector2, color: Color, accent: Color) -> StaticBody2D:
 	if mark_obstacle_fn.is_valid():
 		mark_obstacle_fn.call(pos, size)
+	if _sight_obstacle_fn.is_valid():
+		_sight_obstacle_fn.call(pos, size)
 	var body := StaticBody2D.new()
 	body.position = pos
 	body.collision_layer = 1
@@ -102,6 +107,7 @@ static func build_rooms(ctx: Dictionary) -> void:
 	var sort_layer: Node2D = ctx["sort_layer"]
 	var rooms: Array[Dictionary] = ctx["rooms"]
 	var mark_obstacle: Callable = ctx["mark_obstacle"]
+	_sight_obstacle_fn = ctx.get("mark_sight_obstacle", Callable())
 	for i in rooms.size():
 		_populate_room(ctx, rooms[i], LAYOUT.ROOM_DEFS[i])
 		_decorate_room(ctx, rooms[i], LAYOUT.ROOM_DEFS[i])
@@ -111,6 +117,7 @@ static func build_rooms(ctx: Dictionary) -> void:
 		_barrel_prop(sort_layer, mark_obstacle, Vector2(corner) * TILE)
 	for spot in [Vector2(48, 36), Vector2(124, 36), Vector2(48, 72), Vector2(124, 72)]:
 		_barrel_prop(sort_layer, mark_obstacle, Vector2(spot) * TILE)
+	_sight_obstacle_fn = Callable()
 
 
 ## 房间名印在地板上，俯视时不用打开地图也能知道自己在哪个区。

@@ -5,7 +5,8 @@ class_name ScopeSight2D
 ## 不同瞄具绘制不同准心：红点 / 全息 / 十字 / PSO-1。
 
 const RETICLES := preload("res://scripts/fx/ScopeReticles2D.gd")
-const LENS_SIZE := 480.0
+## 略微增大镜片直径（480→560，半径 240→280），在额定放大倍数不变的前提下扩大镜内可视范围（面积 +36%）。
+const LENS_SIZE := 560.0
 const LENS_MARGIN := 28.0
 ## 镜内相机的基础倍率：1.0 表示 1 世界像素 = 1 屏幕像素；4× 镜即 4.0。
 const LENS_BASE_ZOOM := 1.0
@@ -206,7 +207,7 @@ void fragment() {
 	vec2 uv = p * 0.5 + 0.5;
 	vec2 lo = vec2(0.001);
 	vec2 hi = vec2(0.999);
-	float vig = smoothstep(0.70, 1.0, d);
+	float vig = smoothstep(0.76, 1.0, d);
 	// 运动拖影：沿瞄准移动方向做 7 次采样。
 	vec3 c = vec3(0.0);
 	float wsum = 0.0;
@@ -217,20 +218,20 @@ void fragment() {
 		wsum += w;
 	}
 	c /= wsum;
-	// 边缘径向模糊 + 压暗：去掉硬镜框，只保留镜片边缘的模糊过渡。
-	vec2 blur = normalize(p + vec2(0.0001)) * (0.020 * vig);
+	// 边缘径向模糊 + 压暗：收窄边缘压暗带宽，放大有效清晰镜面。
+	vec2 blur = normalize(p + vec2(0.0001)) * (0.016 * vig);
 	vec3 edge = texture(TEXTURE, clamp(uv + blur, lo, hi)).rgb * 0.25
 		+ texture(TEXTURE, clamp(uv - blur, lo, hi)).rgb * 0.25
 		+ texture(TEXTURE, clamp(uv + vec2(blur.y, -blur.x), lo, hi)).rgb * 0.25
 		+ texture(TEXTURE, clamp(uv + vec2(-blur.y, blur.x), lo, hi)).rgb * 0.25;
-	c = c * 0.55 + edge * 0.45;
+	c = c * 0.60 + edge * 0.40;
 	// 轻微色散：只在边缘明显，中心保持锐利。
 	if (distort > 0.001) {
-		vec2 ca = (uv - 0.5) * (distort * 0.012);
+		vec2 ca = (uv - 0.5) * (distort * 0.010);
 		c.r = texture(TEXTURE, clamp(uv + ca, lo, hi)).r;
 		c.b = texture(TEXTURE, clamp(uv - ca, lo, hi)).b;
 	}
-	c *= mix(1.0, 0.62, vig);
+	c *= mix(1.0, 0.72, vig);
 	COLOR = vec4(c, 1.0);
 }
 """
