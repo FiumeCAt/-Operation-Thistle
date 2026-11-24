@@ -148,9 +148,12 @@ var _ads_t := 0.0
 ## 开镜期间是否由本脚本临时关闭了镜头位置平滑；松开瞄准后只恢复自己关掉的那一次。
 var _ads_smoothing_off := false
 ## 高倍镜方案 B（增量外推前探）：记录按下右键瞬间光标的屏幕位置作为前探零点，
-## 不篡改/拉扯系统鼠标；开镜瞬间主镜头平滑拉远，仅在继续向外推鼠标时平滑叠加额外前探。
+## 不篡改/拉扯系统鼠标；开镜瞬间主镜头围绕光标位置平滑拉远（zoom-to-cursor 零偏移），
+## 仅在继续向外推鼠标时平滑叠加额外前探。
+var _camera_bounds := Rect2()
 var _scope_ads_active := false
 var _scope_entry_mouse := Vector2.ZERO
+var _scope_entry_cam_bias := Vector2.ZERO
 var _scope_cam_offset := Vector2.ZERO
 ## 战斗/散布/后坐力状态转发至 combat_system（保持测试读写字段兼容）。
 var _burst_spread: float:
@@ -299,11 +302,11 @@ func _ready() -> void:
 	backpack.closed.connect(_on_overlay_visibility_changed.bind(false))
 	result_label = hud.result_label
 	var size: Vector2 = level.map_size()
-	var bounds: Rect2 = level.camera_bounds()
-	camera.limit_left = int(bounds.position.x)
-	camera.limit_top = int(bounds.position.y)
-	camera.limit_right = int(bounds.end.x)
-	camera.limit_bottom = int(bounds.end.y)
+	_camera_bounds = level.camera_bounds()
+	camera.limit_left = int(_camera_bounds.position.x)
+	camera.limit_top = int(_camera_bounds.position.y)
+	camera.limit_right = int(_camera_bounds.end.x)
+	camera.limit_bottom = int(_camera_bounds.end.y)
 	camera.zoom = Vector2(ZOOM, ZOOM)
 	doll.global_position = level.player_spawn
 	camera.global_position = doll.global_position
@@ -627,19 +630,41 @@ func _process(delta: float) -> void:
 	var zoom := base_zoom * scope_mul
 
 	var vrect := get_viewport().get_visible_rect().size
+	var half_view_default := vrect * 0.5 / ZOOM
 	var half_view_base := vrect * 0.5 / maxf(base_zoom, 0.001)
 	var half_view := vrect * 0.5 / maxf(zoom, 0.001)
 
-	# 方案 B（增量外推前探）：进入高倍镜 ADS 瞬间记录鼠标屏幕位置 M0 为前探零点；
-	# 不调用 warp_mouse，保留 100% 原生顺滑手感，仅在继续向外推鼠标时平滑展开前探。
-	var want_scope_b := mouse_aim_enabled and scoped and doll.ads and _ads_t > 0.001
+	# 先读取修改 limit_* 之前的真实相机中心 C0，确保紧贴墙边或低缩放开镜也能 0 偏移接管。
+	var prev_cam_center := camera.get_screen_center_position()
+
+	# 镜头缩放小于 100%（如 50% / 20%）或高倍镜拉远时，对称放宽 camera.limit_* 边界，
+	# 防止左/上墙边界把镜头强行向右下方推挤造成严重开镜偏差。
+	if _camera_bounds.size.x > 0.0 and _camera_bounds.size.y > 0.0:
+		var pad_x := maxf(0.0, half_view.x - half_view_default.x)
+		var pad_y := maxf(0.0, half_view.y - half_view_default.y)
+		if scoped and _ads_t > 0.01:
+			pad_x += half_view.x * 0.65
+			pad_y += half_view.y * 0.65
+		camera.limit_left = int(floor(_camera_bounds.position.x - pad_x))
+		camera.limit_top = int(floor(_camera_bounds.position.y - pad_y))
+		camera.limit_right = int(ceil(_camera_bounds.end.x + pad_x))
+		camera.limit_bottom = int(ceil(_camera_bounds.end.y + pad_y))
+
+	# 方案 B（增量外推前探 + zoom-to-cursor 零偏移）：
+	# 进入高倍镜 ADS 瞬间记录鼠标屏幕位置 M0 与当前镜头贴墙偏置；
+	# 不调用 warp_mouse，靠闭式 zoom_anchor 让主镜头围绕 M0 拉远（任意视角缩放下准心点 0 偏移），
+	# 仅在继续向外推鼠标时平滑展开前探。
+	var want_scope_b := mouse_aim_enabled and scoped and _ads_t > 0.01
 	if want_scope_b:
 		if not _scope_ads_active:
 			_scope_ads_active = true
-			_scope_entry_mouse = get_viewport().get_mouse_position()
+			_scope_entry_mouse = get_viewport().get_mouse_position().clamp(Vector2.ZERO, vrect)
+			var ideal_base := doll.global_position - Vector2(0.0, CAMERA_LIFT)
+			_scope_entry_cam_bias = prev_cam_center - ideal_base
 			_scope_cam_offset = Vector2.ZERO
 	else:
 		_scope_ads_active = false
+		_scope_entry_cam_bias = Vector2.ZERO
 
 	var look := Vector2.ZERO
 	if _ads_t > 0.01:
@@ -658,7 +683,7 @@ func _process(delta: float) -> void:
 				var dm := cur_m - _scope_entry_mouse
 				var dm_len := dm.length()
 				var desired_offset := Vector2.ZERO
-				if dm_len > 6.0:
+				if doll.ads and dm_len > 6.0:
 					# 减去 6px 静止防抖死区，并按外推方向剩余屏幕空间归一化，
 					# 即使开镜初始光标靠近屏边，继续轻推也能顺畅拉满 100% 前探。
 					var eff := dm * ((dm_len - 6.0) / dm_len)
@@ -683,7 +708,10 @@ func _process(delta: float) -> void:
 				if _scope_cam_offset.distance_to(desired_offset) < 0.5:
 					_scope_cam_offset = desired_offset
 				_ads_look = desired_offset.normalized() if desired_offset.length_squared() > 1.0 else Vector2.ZERO
-				look = _scope_cam_offset * _ads_t
+				# 闭式 zoom-to-cursor 补偿：无论 100% / 50% / 20% 镜头缩放，开镜拉远时准心下世界点严格保持不变。
+				var zoom_anchor := (_scope_entry_mouse - vrect * 0.5) \
+					* (1.0 / maxf(base_zoom, 0.001) - 1.0 / maxf(zoom, 0.001))
+				look = _scope_entry_cam_bias + zoom_anchor + _scope_cam_offset * _ads_t
 			else:
 				var raw_d := doll.aim_target - doll.global_position
 				var dir := raw_d.normalized() if raw_d.length_squared() > 1.0 else Vector2.ZERO

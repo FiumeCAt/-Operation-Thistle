@@ -354,25 +354,46 @@ func _run() -> void:
 			float(reach_y_by_sight["sniper_8x"])])
 	_check(player_in_view_ok,
 		"all magnified scopes keep the player strictly inside the screen horizontally and vertically")
-	# 方案 B 增量外推前探回归：开启 mouse_aim_enabled 按下右键开镜且不推动鼠标时，
-	# 前探偏移严格保持为 0（绝不突然拉偏目标），同时主镜头平滑拉远且镜片直径扩大至 560px。
-	p.data["weapon_mods_2d"]["m870"]["sight"] = "scope"
-	main.doll.weapon_rig.setup(&"m870")
-	main.doll.weapon_rig.ads = false
-	main.doll.ads = false
-	for i in 16:
-		await physics_frame
-	main.mouse_aim_enabled = true
-	main.doll.weapon_rig.ads = true
-	main.doll.ads = true
-	for i in 24:
-		await physics_frame
-	_check(main._scope_ads_active and main._scope_cam_offset.length() < 1.0
-		and main.camera.zoom.x < main.ZOOM * 0.85,
-		"Plan B scoped ADS zooms out smoothly with zero sudden look-ahead tug until mouse pushes outward")
+	# 方案 B 增量外推 + zoom-to-cursor 零偏移回归：
+	# 分别在 100%、50%、25% 视角缩放下用 4× ACOG 与 8× 狙击镜开镜且不推动鼠标，
+	# 验证无论视角缩多小、倍率多高，开镜前后光标下的世界点 W0 几乎零偏移（不再向右下方偏飞）。
+	var align_ok := true
+	var align_report := ""
+	for vz in [100.0, 50.0, 25.0]:
+		for sid_check in ["scope", "sniper_8x"]:
+			p.data["weapon_mods_2d"]["m870"]["sight"] = sid_check
+			main.doll.weapon_rig.setup(&"m870")
+			main._set_view_zoom(vz)
+			main._view_zoom_visual = vz
+			main.doll.weapon_rig.ads = false
+			main.doll.ads = false
+			main._ads_t = 0.0
+			main._scope_ads_active = false
+			main.mouse_aim_enabled = true
+			for i in 3:
+				await process_frame
+			main.camera.reset_smoothing()
+			main.camera.force_update_scroll()
+			await process_frame
+			var before_w: Vector2 = main.doll.aim_target
+			main.doll.weapon_rig.ads = true
+			main.doll.ads = true
+			for i in 26:
+				await physics_frame
+			await process_frame
+			var drift: float = main.doll.aim_target.distance_to(before_w)
+			# 允许 1 屏幕像素取整误差（zoom=0.15 时 1px ≈ 6.7 世界像素）
+			var tol: float = maxf(6.0, 2.0 / maxf(main.camera.zoom.x, 0.05))
+			if drift > tol or not main._scope_ads_active or main._scope_cam_offset.length() >= 1.0:
+				align_ok = false
+				align_report += " [%d%% %s drift=%.1f>%.1f]" % [int(vz), sid_check, drift, tol]
+	_check(align_ok,
+		"Plan B zoom-to-cursor keeps scope aim locked at 100/50/25pct view zoom for 4x and 8x%s" % align_report)
 	_check(is_equal_approx(main.scope_sight.LENS_SIZE, 560.0)
-		and main.doll.weapon_rig.sight_reticle == "acog",
+		and String(ModDB.option("sight", "scope", false, "m870").get("reticle", "")) == "acog",
 		"enlarged 560px scope lens and ACOG reticle activate cleanly")
+	main._set_view_zoom(100.0)
+	main._view_zoom_visual = 100.0
 	main.mouse_aim_enabled = false
 	# 恢复 PSO 供后续镜头特效检查。
 	p.data["weapon_mods_2d"]["m870"]["sight"] = "pso"
