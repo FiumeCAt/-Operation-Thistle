@@ -32,6 +32,7 @@ $DefaultCoreTests = @(
     "fx_warmup_test",
     "game_units_test",
     "goliath_arena_test",
+    "impact_audio_test",
     "interaction_system_test",
     "loot_system_test",
     "map_2d_test",

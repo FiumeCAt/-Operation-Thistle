@@ -88,5 +88,20 @@ func _run() -> void:
 	await process_frame
 	_check(true, "unknown material falls back without errors")
 
+	# 6) 独立子模块契约：SfxSynth 确定性 32 条音色库、SfxSamples 独立抽样、AudioBusService 总线静音/音量。
+	var bank := SfxSynth.build_all()
+	_check(bank.size() == 32 and bank.has("shotgun") and bank.has("ambient") and bank.has("enemy_alert"),
+		"SfxSynth builds the full deterministic 32-stream bank")
+	_check((bank["ambient"] as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD,
+		"SfxSynth sets forward loop mode on ambient stream")
+	var samples := SfxSamples.new()
+	_check(samples.pick_for_material("unknown_mat") != null and samples.pick_ricochet() != null,
+		"SfxSamples resolves generic fallback and ricochet stream")
+	var bus_idx := AudioBusService.ensure_bus(AudioBusService.SFX_BUS)
+	AudioBusService.set_bus_volume(bus_idx, 0.0)
+	_check(AudioServer.is_bus_mute(bus_idx), "AudioBusService mutes bus at 0 volume")
+	AudioBusService.set_bus_volume(bus_idx, 0.8)
+	_check(not AudioServer.is_bus_mute(bus_idx), "AudioBusService unmutes bus at positive volume")
+
 	print("\n=== impact audio: %s (%d ok / %d fail) ===" % ["PASS" if _fail == 0 else "FAIL", _pass, _fail])
 	quit()
