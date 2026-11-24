@@ -243,10 +243,10 @@ func _run() -> void:
 	main.doll.ads = true
 	for i in 30:
 		await process_frame
-	# 头部无渲染时 Camera2D 的 canvas_transform 不刷新，因此这里只断言逻辑倍率；
-	# 开镜前后准心下的世界点是否保持不变，由 tests/_capture_scope_align_video.gd 实机验证。
-	_check(is_equal_approx(main.scope_magnification, 1.0),
-		"scope ADS keeps the main camera steady so the aim point cannot shift")
+	# 高倍镜开镜平滑拉远主镜头（4× ≈ 0.76×），在展开双向视野的同时保持角色留在屏内；
+	# 镜内 SubViewport 仍保持额定 4× 放大，且通过方案 A 锚点与 force_update_scroll 锁住初始准心点。
+	_check(main.scope_magnification < 0.85 and main.scope_magnification > 0.65,
+		"4x scope ADS smoothly zooms out the main camera (%.3f) to widen view while keeping player on screen" % main.scope_magnification)
 	# PSO 准星贴图：透明背景，无残留。
 	var pso_tex = main.scope_sight._pso_texture()
 	_check(pso_tex != null, "PSO reticle texture is available")
@@ -305,33 +305,77 @@ func _run() -> void:
 	_check(view_hold.distance_to(
 		main.get_viewport().get_canvas_transform().get_origin()) < 1.0,
 		"scoped view stops as soon as the aim settles")
-	# ---- 瞄具前探回归：红点/全息在拉近镜头后前方净视野必须严格大于机械瞄具；高倍镜逐级大幅递增 ----
-	var look_by_sight: Dictionary = {}
-	var reach_by_sight: Dictionary = {}
-	var half_vp_w: float = main.get_viewport().get_visible_rect().size.x * 0.5
+	# ---- 瞄具前探回归：红点/全息在拉近镜头后净视野严格大于机瞄；高倍镜横纵双轴递增且角色始终留屏内 ----
+	var look_x_by_sight: Dictionary = {}
+	var reach_x_by_sight: Dictionary = {}
+	var reach_y_by_sight: Dictionary = {}
+	var player_in_view_ok := true
+	var vp_half: Vector2 = main.get_viewport().get_visible_rect().size * 0.5
 	for sid in ["iron", "red_dot", "holo", "sight_2x", "pso", "sniper_8x"]:
 		p.data["weapon_mods_2d"]["m870"]["sight"] = sid
 		main.doll.weapon_rig.setup(&"m870")
-		main.doll.aim_target = main.doll.global_position + Vector2.RIGHT * 600.0
+		# 水平向右满前探
+		main.doll.aim_target = main.doll.global_position + Vector2.RIGHT * 900.0
 		main.doll.weapon_rig.ads = true
 		main.doll.ads = true
 		for i in 32:
 			await physics_frame
 		var cam_dx: float = main.camera.global_position.x - main.doll.global_position.x
-		look_by_sight[sid] = cam_dx
-		reach_by_sight[sid] = cam_dx + half_vp_w / maxf(main.camera.zoom.x, 0.01)
-	_check(float(reach_by_sight["red_dot"]) > float(reach_by_sight["iron"]) + 40.0
-		and float(reach_by_sight["holo"]) > float(reach_by_sight["red_dot"]) + 40.0,
-		"red dot and holo extend net forward sightline beyond iron sights despite camera zoom")
-	_check(float(look_by_sight["sight_2x"]) > float(look_by_sight["iron"]) + 200.0
-		and float(look_by_sight["pso"]) > float(look_by_sight["sight_2x"]) + 350.0
-		and float(look_by_sight["sniper_8x"]) > float(look_by_sight["pso"]) + 400.0,
-		"magnified scopes extend ADS camera look-ahead deeply (iron=%.0f < 2x=%.0f < 4x=%.0f < 8x=%.0f)" % [
-			float(look_by_sight["iron"]), float(look_by_sight["sight_2x"]),
-			float(look_by_sight["pso"]), float(look_by_sight["sniper_8x"])])
+		var hv_x: float = vp_half.x / maxf(main.camera.zoom.x, 0.01)
+		look_x_by_sight[sid] = cam_dx
+		reach_x_by_sight[sid] = cam_dx + hv_x
+		if main.doll.weapon_rig.has_scope_sight and absf(cam_dx) > hv_x * 0.90 + 4.0:
+			player_in_view_ok = false
+		# 垂直向下满前探（验证解决旧 417px 上下截死问题）
+		main.doll.aim_target = main.doll.global_position + Vector2.DOWN * 900.0
+		for i in 32:
+			await physics_frame
+		var cam_dy: float = main.camera.global_position.y - main.doll.global_position.y
+		var hv_y: float = vp_half.y / maxf(main.camera.zoom.y, 0.01)
+		reach_y_by_sight[sid] = cam_dy + hv_y
+		if main.doll.weapon_rig.has_scope_sight and absf(cam_dy) > hv_y * 0.90 + 4.0:
+			player_in_view_ok = false
+	_check(float(reach_x_by_sight["red_dot"]) > float(reach_x_by_sight["iron"]) + 40.0
+		and float(reach_x_by_sight["holo"]) > float(reach_x_by_sight["red_dot"]) + 40.0,
+		"red dot and holo extend horizontal sightline beyond iron sights despite camera zoom")
+	_check(float(reach_y_by_sight["red_dot"]) > float(reach_y_by_sight["iron"]) + 40.0
+		and float(reach_y_by_sight["holo"]) > float(reach_y_by_sight["red_dot"]) + 40.0,
+		"red dot and holo extend vertical sightline beyond iron sights despite camera zoom")
+	_check(float(reach_x_by_sight["sight_2x"]) > float(reach_x_by_sight["holo"]) + 150.0
+		and float(reach_x_by_sight["pso"]) > float(reach_x_by_sight["sight_2x"]) + 200.0
+		and float(reach_x_by_sight["sniper_8x"]) > float(reach_x_by_sight["pso"]) + 250.0,
+		"magnified scopes scale horizontal sightline cleanly (holo=%.0f < 2x=%.0f < 4x=%.0f < 8x=%.0f)" % [
+			float(reach_x_by_sight["holo"]), float(reach_x_by_sight["sight_2x"]),
+			float(reach_x_by_sight["pso"]), float(reach_x_by_sight["sniper_8x"])])
+	_check(float(reach_y_by_sight["pso"]) > float(reach_y_by_sight["sight_2x"]) + 80.0
+		and float(reach_y_by_sight["sniper_8x"]) > float(reach_y_by_sight["pso"]) + 150.0,
+		"magnified scopes break vertical cap and scale cleanly (2x=%.0f < 4x=%.0f < 8x=%.0f)" % [
+			float(reach_y_by_sight["sight_2x"]), float(reach_y_by_sight["pso"]),
+			float(reach_y_by_sight["sniper_8x"])])
+	_check(player_in_view_ok,
+		"all magnified scopes keep the player strictly inside the screen horizontally and vertically")
+	# 方案 A 镜心锁点回归：开启 mouse_aim_enabled 进入高倍镜 ADS 后，初始瞄准世界点 W0 保持零偏移。
+	p.data["weapon_mods_2d"]["m870"]["sight"] = "sniper_8x"
+	main.doll.weapon_rig.setup(&"m870")
+	main.doll.weapon_rig.ads = false
+	main.doll.ads = false
+	for i in 16:
+		await physics_frame
+	var anchor_w0: Vector2 = main.doll.global_position + Vector2(360.0, -120.0)
+	main.doll.aim_target = anchor_w0
+	main.mouse_aim_enabled = true
+	main.doll.weapon_rig.ads = true
+	main.doll.ads = true
+	for i in 24:
+		await physics_frame
+	_check(main._scope_ads_locked and main.doll.aim_target.distance_to(anchor_w0) < 2.0
+		and main.scope_sight._cam.global_position.distance_to(anchor_w0) < 2.0,
+		"Plan A scope anchor preserves initial aimed world point W0 across ADS zoom-out and pan")
+	main.mouse_aim_enabled = false
 	# 恢复 PSO 供后续镜头特效检查。
 	p.data["weapon_mods_2d"]["m870"]["sight"] = "pso"
 	main.doll.weapon_rig.setup(&"m870")
+	main.doll.aim_target = main.doll.global_position + Vector2.RIGHT * 420.0
 	for i in 8:
 		await process_frame
 	# ---- 激光材质：自发光 + 加法混合 + 线性柔光过滤 ----

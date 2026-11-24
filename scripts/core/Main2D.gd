@@ -36,6 +36,9 @@ const BURST_RECOVERY_BUSY_MUL := SPREAD_MODEL.BURST_RECOVERY_BUSY_MUL
 ## 瞄准基础前探距离（适配 64 px/m 与 0.95 广角缩放，约 5.3 米基础前探；高倍镜按倍率延伸）。
 const ADS_LOOK_AHEAD := 340.0
 const ADS_LOOK_SMOOTH := 10.0
+## 高倍镜开镜时允许的最大半屏偏移比例：保证横纵双向拉满前探时角色始终留在屏内（纵向留出头顶与顶栏空间）。
+const SCOPE_KEEP_PLAYER_RATIO_X := 0.88
+const SCOPE_KEEP_PLAYER_RATIO_Y := 0.82
 ## 后坐力/散布/聚合窗口常量统一收口至 CombatSystem2D，保留兼容别名。
 const RECOIL_LIMIT := COMBAT_SYSTEM.RECOIL_LIMIT
 const RECOIL_RECOVER := COMBAT_SYSTEM.RECOIL_RECOVER
@@ -144,6 +147,14 @@ var interaction_system: InteractionSystem2D = INTERACTION_SYSTEM.new()
 var _ads_t := 0.0
 ## 开镜期间是否由本脚本临时关闭了镜头位置平滑；松开瞄准后只恢复自己关掉的那一次。
 var _ads_smoothing_off := false
+## 高倍镜方案 A 锚点：进入高倍镜 ADS 时锁住初始世界瞄准点并通过 warp_mouse 同步光标，
+## 真实鼠标移动在 _input 里按相对位移采集，过滤掉自身 warp_mouse 触发的合成事件，确保镜心 0 偏移。
+var _scope_ads_locked := false
+var _scope_aim_world := Vector2.ZERO
+var _scope_mouse_delta := Vector2.ZERO
+var _scope_pending_warps: Array[Vector2] = []
+var _scope_cam_offset := Vector2.ZERO
+var _prev_doll_pos := Vector2.ZERO
 ## 战斗/散布/后坐力状态转发至 combat_system（保持测试读写字段兼容）。
 var _burst_spread: float:
 	get: return combat_system.burst_spread
@@ -598,74 +609,124 @@ func _process(delta: float) -> void:
 		ads_speed *= float(dbg_progress.debug_mul("ads"))
 	_ads_t = move_toward(_ads_t, want_ads, ads_speed * delta)
 	combat_system.update(delta)
-	# 高倍镜开镜时主镜头保持腰射时的缩放与位置：任何拉宽/前探都会在鼠标不动时
-	# 改变准心下的世界点（瞄准箱子却看到旁边的门）。视野收益改由 40 米基础视野、
-	# 瞄具视野锥加宽与 4× 镜窗放大共同提供。
-	scope_magnification = 1.0
-	if doll.weapon_rig != null and not doll.weapon_rig.has_scope_sight:
+	var scoped: bool = doll.weapon_rig != null and doll.weapon_rig.has_scope_sight
+	var sight_mag: float = float(doll.weapon_rig.sight_magnification) if doll.weapon_rig != null else 1.0
+	# 红点/全息保持主镜头轻微放大（1.1×/1.5×）并靠额外前探提升远射能力；
+	# 高倍镜（2×~8×）则随倍率平滑拉远主镜头（0.85×~0.62×），兼顾横纵视野大幅展开与角色不离屏，
+	# 镜内 SubViewport 仍保持额定 2×~8× 放大。
+	if scoped:
+		scope_magnification = scope_camera_zoom_mul(sight_mag)
+	elif doll.weapon_rig != null:
 		scope_magnification = doll.weapon_rig.aim_zoom_mul
+	else:
+		scope_magnification = 1.0
 	if scope_sight != null:
 		reticle.visible = not scope_sight.should_hide_reticle()
 	if waves_mode:
 		_update_waves(delta)
 	_view_zoom_visual = move_toward(_view_zoom_visual, view_zoom_pct, VIEW_ZOOM_LERP * delta)
-	# 倍镜接口默认 1.0；接上倍镜后只在 ADS 过渡里生效。
+	var prev_zoom := maxf(camera.zoom.x, 0.001)
 	var base_zoom := ZOOM * (_view_zoom_visual / 100.0)
 	var scope_mul := lerpf(1.0, scope_magnification, _ads_t)
 	var zoom := base_zoom * scope_mul
-	if absf(camera.zoom.x - zoom) > 0.001:
-		camera.zoom = Vector2(zoom, zoom)
 
 	var vrect := get_viewport().get_visible_rect().size
 	var half_view_base := vrect * 0.5 / maxf(base_zoom, 0.001)
 	var half_view := vrect * 0.5 / maxf(zoom, 0.001)
+
+	# 方案 A（高倍镜镜心锁定）：按住右键进入高倍镜 ADS 时锚定初始世界瞄准点 W0，
+	# 仅累加 _input 中收到的玩家真实物理鼠标移动与角色位移，避免主镜头缩放/前探把准心下的目标拖偏。
+	var want_scope_lock := mouse_aim_enabled and scoped and doll.ads and _ads_t > 0.001
+	if want_scope_lock:
+		if not _scope_ads_locked:
+			_scope_ads_locked = true
+			_scope_aim_world = doll.aim_target
+			_scope_mouse_delta = Vector2.ZERO
+			_scope_pending_warps.clear()
+			_prev_doll_pos = doll.global_position
+		else:
+			var doll_delta := doll.global_position - _prev_doll_pos
+			_prev_doll_pos = doll.global_position
+			_scope_aim_world += doll_delta
+			if _scope_mouse_delta.length_squared() > 0.0001:
+				_scope_aim_world += _scope_mouse_delta / prev_zoom
+				_scope_mouse_delta = Vector2.ZERO
+	else:
+		_scope_ads_locked = false
+		_scope_mouse_delta = Vector2.ZERO
+		_scope_pending_warps.clear()
+		_prev_doll_pos = doll.global_position
+
 	var look := Vector2.ZERO
 	if _ads_t > 0.01:
-		var scoped: bool = doll.weapon_rig != null and doll.weapon_rig.has_scope_sight
 		var look_mul := 1.0
 		if doll.weapon_rig != null:
 			look_mul = maxf(float(doll.weapon_rig.sight_look_ahead_mul), 1.0)
 		var look_ahead := ADS_LOOK_AHEAD * look_mul
-		# 反射式低倍镜（红点 1.1× / 全息 1.5×）会拉近主镜头导致半屏视野缩小；
-		# 按轴补偿缩放损失，确保红点/全息的实际前方可见距离严格大于机械瞄具，不再反而变短。
-		var zoom_comp := Vector2(
-			maxf(0.0, half_view_base.x - half_view.x),
-			maxf(0.0, half_view_base.y - half_view.y),
-		) if not scoped else Vector2.ZERO
-		if mouse_aim_enabled:
-			# 实机鼠标模式统一按视口相对偏移计算前探，彻底消除“镜头移动↔鼠标世界坐标”闭环抖动；
-			# 高倍镜 0→1 平滑延伸便于兼顾近身与远距侦察，非高倍镜 0.35→1.0 保持即按即探手感。
-			var rel := (get_viewport().get_mouse_position() - vrect * 0.5) / maxf(minf(vrect.x, vrect.y) * 0.45, 1.0)
-			var raw_ratio := clampf(rel.length(), 0.0, 1.0)
-			var mag_ratio := raw_ratio if scoped else (lerpf(0.35, 1.0, raw_ratio) if raw_ratio > 0.04 else 0.0)
-			var desired := rel.normalized() * mag_ratio if raw_ratio > 0.04 else Vector2.ZERO
-			var smooth := 18.0 if scoped else ADS_LOOK_SMOOTH
-			_ads_look = _ads_look.lerp(desired, clampf(delta * smooth, 0.0, 1.0))
-		elif scoped:
-			var raw_aim := doll.aim_target - doll.global_position
-			_ads_look = raw_aim.normalized() if raw_aim.length_squared() > 1.0 else Vector2.ZERO
+		if scoped:
+			# 高倍镜前探上限严格约束在半屏比例内（Y 轴计入 CAMERA_LIFT），角色全身始终留在屏内。
+			var max_x := minf(look_ahead, half_view.x * SCOPE_KEEP_PLAYER_RATIO_X)
+			var max_y := minf(look_ahead, half_view.y * SCOPE_KEEP_PLAYER_RATIO_Y)
+			var y_min := -max_y + CAMERA_LIFT
+			var y_max := max_y + CAMERA_LIFT
+			var aim_world := _scope_aim_world if _scope_ads_locked else doll.aim_target
+			var raw_d := aim_world - doll.global_position
+			if mouse_aim_enabled:
+				var desired_offset := Vector2(
+					clampf(raw_d.x * 0.72, -max_x, max_x),
+					clampf(raw_d.y * 0.72, y_min, y_max),
+				)
+				_scope_cam_offset = _scope_cam_offset.lerp(desired_offset, clampf(delta * 16.0, 0.0, 1.0))
+				if _scope_cam_offset.distance_to(desired_offset) < 0.75:
+					_scope_cam_offset = desired_offset
+				_ads_look = raw_d.normalized() if raw_d.length_squared() > 1.0 else Vector2.ZERO
+				look = _scope_cam_offset * _ads_t
+			else:
+				var dir := raw_d.normalized() if raw_d.length_squared() > 1.0 else Vector2.ZERO
+				_ads_look = dir
+				var desired_offset := Vector2(
+					clampf(dir.x * look_ahead, -max_x, max_x),
+					clampf(dir.y * look_ahead, y_min, y_max),
+				)
+				_scope_cam_offset = desired_offset
+				look = desired_offset * _ads_t
 		else:
-			var aim_dir := Vector2.RIGHT
-			var raw_aim := doll.aim_target - doll.global_position
-			if doll.weapon_rig != null:
-				aim_dir = doll.weapon_rig.get_barrel_direction()
-			if aim_dir.length_squared() < 0.0001:
-				aim_dir = raw_aim.normalized()
-			_ads_look = _ads_look.lerp(
-				aim_dir.normalized(), clampf(delta * ADS_LOOK_SMOOTH, 0.0, 1.0))
-		look = Vector2(
-			_ads_look.x * (look_ahead + zoom_comp.x) * _ads_t,
-			_ads_look.y * (look_ahead + zoom_comp.y) * _ads_t,
-		)
+			_scope_cam_offset = Vector2.ZERO
+			# 反射式低倍镜（红点 1.1× / 全息 1.5×）保留主镜头放大，按轴补偿缩放损失并增加额外前探，
+			# 确保实际前方净视野严格递增（机瞄 < 红点 < 全息），强化中远距射击能力。
+			var zoom_comp := Vector2(
+				maxf(0.0, half_view_base.x - half_view.x),
+				maxf(0.0, half_view_base.y - half_view.y),
+			)
+			if mouse_aim_enabled:
+				var rel := (get_viewport().get_mouse_position() - vrect * 0.5) / maxf(minf(vrect.x, vrect.y) * 0.45, 1.0)
+				var raw_ratio := clampf(rel.length(), 0.0, 1.0)
+				var mag_ratio := lerpf(0.35, 1.0, raw_ratio) if raw_ratio > 0.04 else 0.0
+				var desired := rel.normalized() * mag_ratio if raw_ratio > 0.04 else Vector2.ZERO
+				_ads_look = _ads_look.lerp(desired, clampf(delta * ADS_LOOK_SMOOTH, 0.0, 1.0))
+			else:
+				var raw_aim := doll.aim_target - doll.global_position
+				var aim_dir := raw_aim.normalized() if raw_aim.length_squared() > 1.0 else Vector2.RIGHT
+				if raw_aim.length_squared() <= 1.0 and doll.weapon_rig != null:
+					aim_dir = doll.weapon_rig.get_barrel_direction()
+				_ads_look = _ads_look.lerp(
+					aim_dir.normalized(), clampf(delta * ADS_LOOK_SMOOTH, 0.0, 1.0))
+			look = Vector2(
+				_ads_look.x * (look_ahead + zoom_comp.x) * _ads_t,
+				_ads_look.y * (look_ahead + zoom_comp.y) * _ads_t,
+			)
+			var max_non_scope := Vector2(
+				maxf(half_view_base.x * 1.45, 1200.0),
+				maxf(half_view_base.y * 1.65, 860.0),
+			)
+			look.x = clampf(look.x, -max_non_scope.x, max_non_scope.x)
+			look.y = clampf(look.y, -max_non_scope.y, max_non_scope.y)
 	else:
 		_ads_look = Vector2.ZERO
-	# 高倍镜允许深度前探（至少保证 2200px 世界前探空间，实际仍受地图 camera.limit_* 边界约束）。
-	var max_look := Vector2(
-		maxf(half_view_base.x * 2.35, 2200.0),
-		maxf(half_view_base.y * 2.35, 1600.0),
-	)
-	look.x = clampf(look.x, -max_look.x, max_look.x)
-	look.y = clampf(look.y, -max_look.y, max_look.y)
+		_scope_cam_offset = Vector2.ZERO
+
+	if absf(camera.zoom.x - zoom) > 0.0005:
+		camera.zoom = Vector2(zoom, zoom)
 	# 相机跟随按「屏幕像素」取整，避免角色和场景在半像素位置上被重采样而发虚。
 	var snap := 1.0 / maxf(zoom, 0.001)
 	var target := Vector2(
@@ -675,7 +736,7 @@ func _process(delta: float) -> void:
 	var shake_step := feedback_system.step_shake(delta)
 	target += shake_step["offset"]
 	# 瞄准期间关闭镜头位置平滑：平滑会让准心下的世界点持续“滑行”，
-	# 在 4× 镜里被放大成明显的瞄准偏移。腰射时恢复原有平滑，走位手感不变。
+	# 在高倍镜里被放大成明显的瞄准偏移。腰射时恢复原有平滑，走位手感不变。
 	if _ads_t > 0.01 and camera.position_smoothing_enabled:
 		camera.position_smoothing_enabled = false
 		camera.reset_smoothing()
@@ -686,15 +747,63 @@ func _process(delta: float) -> void:
 		_ads_smoothing_off = false
 	camera.global_position = target
 	camera.rotation = float(shake_step["roll"]) + _recoil_roll
+	# 立即刷新 Camera2D 视口矩阵，彻底消除同帧 get_global_mouse_position 与 ScopeSight2D 的 1 帧错位。
+	camera.force_update_scroll()
 	feedback_system.update_muzzle_fx()
 	if mouse_aim_enabled:
-		doll.aim_target = get_global_mouse_position()
+		if _scope_ads_locked:
+			var xform := get_viewport().get_canvas_transform()
+			var desired_screen := xform * _scope_aim_world
+			var clamped_screen := Vector2(
+				clampf(desired_screen.x, 20.0, maxf(20.0, vrect.x - 20.0)),
+				clampf(desired_screen.y, 20.0, maxf(20.0, vrect.y - 20.0)),
+			)
+			if clamped_screen.distance_squared_to(desired_screen) > 0.25:
+				_scope_aim_world = xform.affine_inverse() * clamped_screen
+				desired_screen = clamped_screen
+			var cur_m := get_viewport().get_mouse_position()
+			if cur_m.distance_to(desired_screen) >= 1.5 and _can_warp_mouse():
+				_scope_pending_warps.append(desired_screen)
+				if _scope_pending_warps.size() > 8:
+					_scope_pending_warps.pop_front()
+				get_viewport().warp_mouse(desired_screen)
+			doll.aim_target = _scope_aim_world
+		else:
+			doll.aim_target = get_global_mouse_position()
 	_update_hud(delta)
 	if debug_visual_mode:
 		_label_timer += delta
 		if _label_timer >= 0.25:
 			_label_timer = 0.0
 			_update_debug_label()
+
+
+func _input(event: InputEvent) -> void:
+	if not _scope_ads_locked or not mouse_aim_enabled:
+		return
+	if event is InputEventMouseMotion:
+		var mm := event as InputEventMouseMotion
+		for i in _scope_pending_warps.size():
+			if mm.position.distance_to(_scope_pending_warps[i]) <= 5.0:
+				# 这是本脚本 warp_mouse 触发的合成鼠标移动事件，过滤掉不计入玩家移动。
+				_scope_pending_warps = _scope_pending_warps.slice(i + 1)
+				return
+		_scope_mouse_delta += mm.relative
+
+
+## 高倍镜开镜主镜头拉远倍率：2×→0.85 … 4×→0.76 … 8×→0.62，
+## 在横纵双向大幅展开视野的同时让角色始终留在屏内；镜内 SubViewport 仍保持额定倍率。
+static func scope_camera_zoom_mul(sight_mag: float) -> float:
+	if sight_mag <= 1.5:
+		return 1.0
+	var t := clampf((sight_mag - 2.0) / 6.0, 0.0, 1.0)
+	return lerpf(0.85, 0.62, pow(t, 0.85))
+
+
+func _can_warp_mouse() -> bool:
+	if DisplayServer.get_name().to_lower().contains("headless"):
+		return false
+	return DisplayServer.window_is_focused()
 
 
 func _update_hud(delta: float) -> void:

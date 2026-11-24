@@ -145,6 +145,8 @@ func resolve_hint_text(delta: float) -> String:
 func try_interact() -> void:
 	if not _is_active():
 		return
+	if _level != null and _doll != null:
+		update(0.0)
 	if not near_container.is_empty():
 		container_search_requested.emit(near_container)
 	elif near_power:

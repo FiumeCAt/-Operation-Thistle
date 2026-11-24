@@ -115,9 +115,9 @@ func _process(delta: float) -> void:
 		_sub.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 		# 放大联动：玩家视角缩放越小，镜内实际放大同步降低，镜内与世界缩放保持一致。
 		_cam.zoom = Vector2.ONE * (LENS_BASE_ZOOM * _effective_magnification())
-		# 镜内始终以准心指向的世界点为中心，保证准心与放大区域一致；
-		# 更远距离的视野由主镜头拉宽与镜内倍率共同负责。
+		# 镜内始终以准心指向的世界点为中心，立即 force_update_scroll 确保与主视口同帧同步。
 		_cam.global_position = doll.aim_target
+		_cam.force_update_scroll()
 		_update_lens_effects(delta)
 	else:
 		_lens.visible = false

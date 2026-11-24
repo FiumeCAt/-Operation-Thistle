@@ -120,9 +120,15 @@ func _process(delta: float) -> void:
 	_view.visible = true
 	_set_cursor_hidden(true)
 	_set_vignette(VIGNETTE_ALPHA * _ads_blend(), delta)
-	var screen := get_viewport().get_mouse_position()
-	var to_world := get_viewport().get_canvas_transform().affine_inverse()
-	var world_mouse: Vector2 = to_world * screen
+	var screen: Vector2
+	var world_mouse: Vector2
+	if main.get("mouse_aim_enabled") == false and main.doll != null:
+		world_mouse = main.doll.aim_target
+		screen = get_viewport().get_canvas_transform() * world_mouse
+	else:
+		screen = get_viewport().get_mouse_position()
+		var to_world := get_viewport().get_canvas_transform().affine_inverse()
+		world_mouse = to_world * screen
 	var block: Dictionary = main.get_aim_block()
 	var blocked := bool(block.get("blocked", false))
 	var impact_screen := screen
