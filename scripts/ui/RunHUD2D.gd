@@ -17,8 +17,9 @@ signal return_requested
 signal restart_requested
 
 ## 拾取信息在屏幕左侧滚动显示，不占左下状态板。
-const FEED_LIFE := 3.4
+const FEED_LIFE := 3.6
 const FEED_MAX := 6
+const FEED_MERGE_WINDOW := 1.25
 
 var main: Node2D
 
@@ -207,35 +208,144 @@ func _build_hint() -> void:
 	interact_label.hide()
 
 
-## 左侧拾取信息流：底部对齐，新消息从下方出现，旧消息上移并淡出。
+## 左侧拾取信息流：底部对齐，新消息以半透明战术胶囊条从下方出现，旧消息上移并淡出。
 func _build_pickup_feed() -> void:
 	_feed = VBoxContainer.new()
 	_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_feed.alignment = BoxContainer.ALIGNMENT_END
-	_feed.add_theme_constant_override("separation", 2)
+	_feed.add_theme_constant_override("separation", 5)
 	_feed.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_feed.offset_left = 28
+	_feed.offset_left = 24
 	_feed.offset_right = 560
 	_feed.offset_top = -560
-	_feed.offset_bottom = -166
+	_feed.offset_bottom = -164
 	_root.add_child(_feed)
 
 
-## 拾取反馈：不打断底部操作提示，只往左侧信息流追加一行。
-func push_pickup(text: String, color: Color) -> void:
+## 拾取反馈：带图标/分类标签/稀有高亮的战术胶囊条，短时间内同项拾取自动合并计数。
+func push_pickup(text: String, color: Color, opts: Dictionary = {}) -> void:
 	if _feed == null:
 		return
-	var line := PixelUI.label(_feed, text, PixelUI.FS_BODY, color)
-	line.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	line.add_theme_constant_override("outline_size", 6)
-	line.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.03, 0.9))
-	PixelUI.play_typewriter(line)
-	_feed_items.append({"label": line, "t": FEED_LIFE})
+	var merge_key := String(opts.get("merge_key", ""))
+	var add_amt := int(opts.get("amount", 0))
+	var merge_fmt := String(opts.get("merge_fmt", ""))
+	if merge_key != "" and add_amt > 0 and merge_fmt != "":
+		for i in range(_feed_items.size() - 1, -1, -1):
+			var existing: Dictionary = _feed_items[i]
+			if String(existing.get("merge_key", "")) != merge_key:
+				continue
+			if float(existing.get("age", 99.0)) > FEED_MERGE_WINDOW:
+				continue
+			var total_amt := int(existing.get("amount", 0)) + add_amt
+			existing["amount"] = total_amt
+			existing["t"] = FEED_LIFE
+			existing["pulse"] = 1.0
+			var new_text := merge_fmt % total_amt
+			var rt = existing.get("rich")
+			if rt is RichTextLabel and is_instance_valid(rt):
+				rt.text = _format_pickup_bbcode(new_text, color)
+			return
+
+	var is_rare := bool(opts.get("rare", false))
+	var icon_name := String(opts.get("icon", ""))
+	var badge_text := String(opts.get("badge", ""))
+	if is_rare and badge_text == "":
+		badge_text = "稀有"
+
+	var pill := PanelContainer.new()
+	pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pill.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(
+		lerpf(0.015, color.r, 0.09 if is_rare else 0.04),
+		lerpf(0.022, color.g, 0.09 if is_rare else 0.04),
+		lerpf(0.032, color.b, 0.09 if is_rare else 0.04),
+		0.88 if is_rare else 0.80)
+	style.border_color = color.lightened(0.18) if is_rare else Color(color, 0.55)
+	style.border_width_left = 4
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	style.content_margin_left = 10
+	style.content_margin_right = 14
+	style.content_margin_top = 4
+	style.content_margin_bottom = 4
+	pill.add_theme_stylebox_override("panel", style)
+	_feed.add_child(pill)
+
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_constant_override("separation", 8)
+	pill.add_child(row)
+
+	var icon_path := PixelUI.ICON_ROOT + icon_name + ".png"
+	if icon_name != "" and ResourceLoader.exists(icon_path):
+		var icon := PixelUI.icon(row, icon_name, 20)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	else:
+		var dot := ColorRect.new()
+		dot.color = color.lightened(0.15)
+		dot.custom_minimum_size = Vector2(7, 7)
+		dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(dot)
+
+	if badge_text != "":
+		var badge := PanelContainer.new()
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var bstyle := StyleBoxFlat.new()
+		var bcol := PixelUI.GOLD if is_rare else color
+		bstyle.bg_color = Color(bcol.r, bcol.g, bcol.b, 0.18)
+		bstyle.border_color = Color(bcol.r, bcol.g, bcol.b, 0.72)
+		bstyle.set_border_width_all(1)
+		bstyle.content_margin_left = 5
+		bstyle.content_margin_right = 5
+		bstyle.content_margin_top = 1
+		bstyle.content_margin_bottom = 1
+		badge.add_theme_stylebox_override("panel", bstyle)
+		row.add_child(badge)
+		PixelUI.label(badge, badge_text, 14, bcol.lightened(0.22))
+
+	var rich := PixelUI.rich_label(row, _format_pickup_bbcode(text, color), 21, color, 2)
+	rich.autowrap_mode = TextServer.AUTOWRAP_OFF
+	rich.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	PixelUI.play_typewriter(rich)
+
+	_feed_items.append({
+		"label": pill,
+		"rich": rich,
+		"t": FEED_LIFE,
+		"age": 0.0,
+		"pulse": 0.0,
+		"merge_key": merge_key,
+		"amount": add_amt,
+		"rare": is_rare,
+	})
 	while _feed_items.size() > FEED_MAX:
 		var old: Dictionary = _feed_items.pop_front()
 		var old_label = old["label"]
 		if is_instance_valid(old_label):
 			old_label.queue_free()
+
+
+## 高亮拾取行中的数量字样（+N / ×N），让数量与物品名层次分明。
+static func _format_pickup_bbcode(text: String, color: Color) -> String:
+	var out := ""
+	var i := 0
+	var n := text.length()
+	while i < n:
+		var ch := text[i]
+		if (ch == "+" or ch == "×") and i + 1 < n and text[i + 1].is_valid_int():
+			var j := i + 1
+			while j < n and text[j].is_valid_int():
+				j += 1
+			out += PixelUI.bb(text.substr(i, j - i), PixelUI.GOLD.lerp(Color.WHITE, 0.35))
+			i = j
+		else:
+			out += ch
+			i += 1
+	return PixelUI.bb(out, color.lightened(0.08))
 
 
 ## 右下：枪名 / 弹匣 / 备弹 / 状态 / 换弹进度，共用生成式金属底板。
@@ -671,11 +781,17 @@ func _process(delta: float) -> void:
 	var expired: Array[Dictionary] = []
 	for item in _feed_items:
 		item["t"] = float(item["t"]) - delta
+		item["age"] = float(item.get("age", 0.0)) + delta
+		var pulse := maxf(float(item.get("pulse", 0.0)) - delta * 4.5, 0.0)
+		item["pulse"] = pulse
 		var line = item["label"]
 		if not is_instance_valid(line):
 			expired.append(item)
 			continue
-		line.modulate.a = clampf(float(item["t"]) / 0.7, 0.0, 1.0)
+		var fade_in := clampf(float(item["age"]) / 0.14, 0.0, 1.0)
+		var fade_out := clampf(float(item["t"]) / 0.75, 0.0, 1.0)
+		var boost := 1.0 + pulse * 0.25
+		line.modulate = Color(boost, boost, boost, minf(fade_in, fade_out))
 		if float(item["t"]) <= 0.0:
 			line.queue_free()
 			expired.append(item)

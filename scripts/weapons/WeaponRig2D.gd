@@ -72,6 +72,7 @@ var recoil_mul := 1.0
 var vision_mul := 1.0
 var ads_speed_mul := 1.0
 var has_laser := false
+var has_suppressor := false
 var sight_magnification := 1.0
 var sight_look_ahead_mul := 1.0
 var sight_reticle := "iron"
@@ -149,6 +150,7 @@ func _apply_mods() -> void:
 	vision_mul = 1.0
 	ads_speed_mul = 1.0
 	has_laser = false
+	has_suppressor = false
 	sight_magnification = 1.0
 	sight_look_ahead_mul = 1.0
 	sight_reticle = "iron"
@@ -168,6 +170,7 @@ func _apply_mods() -> void:
 	ads_speed_mul = float(stats["ads_speed_mul"])
 	sight_ads_time_mul = float(stats["sight_ads_time_mul"])
 	has_laser = bool(stats["has_laser"])
+	has_suppressor = bool(stats.get("has_suppressor", false))
 	sight_magnification = float(stats["sight_magnification"])
 	sight_look_ahead_mul = float(stats["sight_look_ahead_mul"])
 	sight_reticle = String(stats["sight_reticle"])

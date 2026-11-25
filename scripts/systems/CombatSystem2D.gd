@@ -281,6 +281,25 @@ func trace_pellet(origin: Vector2, direction: Vector2, length: float) -> Diction
 	return _owner.get_world_2d().direct_space_state.intersect_ray(query)
 
 
+## 按武器口径与弹种计算枪口火光与局部点亮强度：手枪/冲锋枪 0.88~0.96，步枪 1.15，霰弹/大口径狙击 1.38。
+static func calc_muzzle_flash_intensity(data: WeaponData, ammo: AmmoData) -> float:
+	if data == null:
+		return 1.0
+	match data.ammo_category:
+		&"shotgun":
+			return 1.38
+		&"heavy":
+			return 1.34
+		&"medium":
+			return 1.15
+		&"special":
+			return 0.78
+		_:
+			if ammo != null and ammo.pellets > 1:
+				return 1.32
+			return 0.92
+
+
 func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 	if not _is_active() or _doll == null or _doll.weapon_rig == null:
 		return
@@ -318,7 +337,12 @@ func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 		-RECOIL_ROLL_LIMIT, RECOIL_ROLL_LIMIT)
 
 	if _muzzle_fx_fn.is_valid():
-		_muzzle_fx_fn.call(muzzle, base_dir.angle())
+		var suppressed := bool(_doll.weapon_rig.has_suppressor) if _doll.weapon_rig != null else false
+		var flash_intensity := calc_muzzle_flash_intensity(data, ammo)
+		if _muzzle_fx_fn.get_argument_count() >= 4:
+			_muzzle_fx_fn.call(muzzle, base_dir.angle(), flash_intensity, suppressed)
+		else:
+			_muzzle_fx_fn.call(muzzle, base_dir.angle())
 	var spread := get_aim_spread()
 	var first_shot := SPREAD_MODEL.is_first_shot(shot_clock, last_shot_time, FIRST_SHOT_WINDOW)
 	last_shot_time = shot_clock

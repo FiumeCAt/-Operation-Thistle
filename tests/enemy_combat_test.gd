@@ -36,6 +36,7 @@ class StubEnemy extends CharacterBody2D:
 	var sfx_calls: Array[String] = []
 	var die_calls := 0
 	var explode_fx_calls := 0
+	var last_shake := 0.0
 
 	func _enter(s: String) -> void:
 		state = s
@@ -44,8 +45,8 @@ class StubEnemy extends CharacterBody2D:
 	func _sfx(k: String, _v := 0.0, _p := 1.0) -> void:
 		sfx_calls.append(k)
 
-	func _shake(_a: float) -> void:
-		pass
+	func _shake(a: float) -> void:
+		last_shake = a
 
 	func _play_anim_override(_a: String, _t: float) -> void:
 		pass
@@ -200,6 +201,21 @@ func _run() -> void:
 	_check(not near_combat.exploded and is_equal_approx(near_host.hp, 1.0)
 		and is_equal_approx(near_combat.explode_t, base_delay),
 		"199 percent hp_max damage before sit-down still enters sit-down fuse")
+
+	# 6. 爆炸屏幕震动距离衰减：近处适当减弱（<=4.5），中远距离逐步衰减，极远处为 0
+	var r_px := 3.0 * COMBAT.TILE
+	var s_close := COMBAT.calc_explosion_shake(0.5 * COMBAT.TILE, r_px)
+	var s_mid := COMBAT.calc_explosion_shake(11.0 * COMBAT.TILE, r_px)
+	var s_far := COMBAT.calc_explosion_shake(20.0 * COMBAT.TILE, r_px)
+	var s_zero := COMBAT.calc_explosion_shake(28.0 * COMBAT.TILE, r_px)
+	_check(s_close > 3.5 and s_close <= 4.5,
+		"close explosion shake appropriately softened (%.2f)" % s_close)
+	_check(s_mid > 0.8 and s_mid < s_close * 0.5,
+		"mid-range explosion shake attenuated smoothly (%.2f)" % s_mid)
+	_check(s_far > 0.0 and s_far < s_mid * 0.6 and is_zero_approx(s_zero),
+		"far explosion shake tapers to zero beyond 26m (%.2f -> %.2f)" % [s_far, s_zero])
+	_check(instant_host.last_shake > 0.0 and instant_host.last_shake < 4.5,
+		"runtime explosion passes distance-attenuated shake (%.2f)" % instant_host.last_shake)
 
 	turret_host.queue_free()
 	goliath_host.queue_free()

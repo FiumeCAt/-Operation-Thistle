@@ -338,13 +338,42 @@ func explode(host) -> void:
 	host._die()
 
 
+const EXPLOSION_SHAKE_CLOSE := 4.4
+const EXPLOSION_SHAKE_EDGE := 3.8
+const EXPLOSION_SHAKE_MID := 1.35
+const EXPLOSION_SHAKE_MID_DIST := 11.0 * TILE
+const EXPLOSION_SHAKE_MAX_DIST := 26.0 * TILE
+
+
+## 按爆炸点与玩家距离计算衰减后的震屏幅度：
+## 近处（爆心~爆圈）适当减弱至 4.4→3.8（旧版恒定 8.0），中远距离平滑衰减，26m 外不再产生无谓抖动。
+static func calc_explosion_shake(dist_px: float, radius_px: float) -> float:
+	var d := maxf(dist_px, 0.0)
+	var r := maxf(radius_px, TILE)
+	if d <= r:
+		return lerpf(EXPLOSION_SHAKE_CLOSE, EXPLOSION_SHAKE_EDGE, d / r)
+	if d <= EXPLOSION_SHAKE_MID_DIST:
+		var t := clampf((d - r) / maxf(EXPLOSION_SHAKE_MID_DIST - r, 1.0), 0.0, 1.0)
+		return lerpf(EXPLOSION_SHAKE_EDGE, EXPLOSION_SHAKE_MID, pow(t, 0.85))
+	if d < EXPLOSION_SHAKE_MAX_DIST:
+		var t := clampf((d - EXPLOSION_SHAKE_MID_DIST)
+			/ maxf(EXPLOSION_SHAKE_MAX_DIST - EXPLOSION_SHAKE_MID_DIST, 1.0), 0.0, 1.0)
+		return lerpf(EXPLOSION_SHAKE_MID, 0.0, pow(t, 1.15))
+	return 0.0
+
+
 ## 爆炸伤害对玩家和附近敌人同时生效（哥利亚的死亡爆炸也走这里）。
 func explode_damage(host) -> void:
 	var def: EnemyDef = host.def
 	var radius_px := def.explode_radius * TILE
 	var dmg: float = def.explode_damage * float(host.damage_mul)
 	host._sfx("boom", -3.0, randf_range(0.94, 1.02))
-	host._shake(8.0)
+	var dist_to_player := 0.0
+	if host.player != null and is_instance_valid(host.player):
+		dist_to_player = host.player.global_position.distance_to(host.global_position)
+	var shake_amt := calc_explosion_shake(dist_to_player, radius_px)
+	if shake_amt > 0.01:
+		host._shake(shake_amt)
 	if host.player != null and is_instance_valid(host.player) \
 			and host.player.global_position.distance_to(host.global_position) <= radius_px:
 		host.player.take_damage(dmg, 45.0)

@@ -27,16 +27,16 @@ var UPGRADE_MAX := {"hp": 5, "support": 2, "gun": 3, "fov": 4, "sight": 4}
 var CREDIT_COST_MUL := 3.0
 var CREDIT_GAIN_MUL := 0.5
 var TALENT_2D_MAX := {
-	"hp": 5, "gun": 3, "move": 4, "reload": 3, "scavenge": 3, "loading": 1,
-	"armor": 3, "magazine": 3, "reserve": 3, "magnet": 3,
+	"hp": 5, "gun": 5, "move": 5, "reload": 5, "scavenge": 5, "loading": 1,
+	"armor": 5, "magazine": 5, "reserve": 5, "magnet": 5, "hearing": 5,
 }
 var TALENT_2D_PREREQ := {
-	"move": "hp", "reload": "gun", "magazine": "reload",
+	"move": "hp", "hearing": "hp", "reload": "gun", "magazine": "reload",
 	"loading": "magazine", "reserve": "magazine",
 	"armor": "move", "magnet": "scavenge",
 }
 var TALENT_2D_MATERIAL := {
-	"hp": "energy", "move": "energy",
+	"hp": "energy", "move": "energy", "hearing": "energy",
 	"gun": "electronics", "reload": "electronics", "magazine": "electronics",
 	"scavenge": "parts", "loading": "parts", "armor": "parts",
 	"reserve": "parts", "magnet": "electronics",

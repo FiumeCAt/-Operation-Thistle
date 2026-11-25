@@ -10,6 +10,7 @@ const MUZZLE_FX_GROUND := 26.0
 const SHAKE_SCALE_BASE := 5.0
 const HIT_FX := preload("res://scripts/fx/HitFX2D.gd")
 const COMBAT_FX_WARMUP := preload("res://scripts/fx/CombatFxWarmup.gd")
+const MUZZLE_FLASH := preload("res://scripts/fx/MuzzleFlash2D.gd")
 
 ## 玩家设置项
 var screen_shake := true
@@ -27,6 +28,7 @@ var shake_roll := 0.0
 var hitstop_timer: Timer
 var hurt_flash_rect: ColorRect
 var muzzle_fx: PixelFx2D
+var muzzle_flash: Node2D
 var _muzzle_stop_ms := 0
 
 var _owner: Node2D
@@ -156,11 +158,14 @@ func on_player_damaged(armor_damage: int, hp_damage: int, pos: Vector2) -> void:
 		_hud.set_armor(_doll.armor, _doll.armor_max)
 
 
-## 枪口用 BAKED 模式。烘焙已交给主菜单/局内的 CombatFxWarmup 分摊，
-## 这里只创建节点，避免进局瞬间同步烘焙 50 多帧造成半秒级卡顿。
+## 预创建常驻枪口火光与局部点亮节点（以及保留兼容的 PixelFx2D 节点），零运行时分配卡顿。
 func warm_muzzle_fx() -> void:
 	if _fx_layer == null:
 		return
+	if muzzle_flash == null or not is_instance_valid(muzzle_flash):
+		muzzle_flash = MUZZLE_FLASH.new()
+		muzzle_flash.name = "MuzzleFlash2D"
+		_fx_layer.add_child(muzzle_flash)
 	muzzle_fx = Shot2D.pixel_fx(_fx_layer, "projectiles/muzzle-pistol",
 		Vector2.ZERO, 0.0, 60, 1.0, PixelFx2D.Mode.BAKED)
 	if muzzle_fx == null:
@@ -170,29 +175,39 @@ func warm_muzzle_fx() -> void:
 	muzzle_fx.stop()
 
 
-func play_muzzle_fx(pos: Vector2, angle: float) -> void:
-	if muzzle_fx == null or not is_instance_valid(muzzle_fx):
+func play_muzzle_fx(pos: Vector2, angle: float, intensity := 1.0, suppressed := false) -> void:
+	if _fx_layer == null:
+		return
+	if muzzle_flash == null or not is_instance_valid(muzzle_flash):
 		warm_muzzle_fx()
-		if muzzle_fx == null:
-			return
-	muzzle_fx.global_position = pos + Vector2(0.0, MUZZLE_FX_GROUND).rotated(angle)
-	muzzle_fx.rotation = angle
-	muzzle_fx.play()
-	muzzle_fx.modulate.a = 1.0
-	# 保留前 0.45 秒的闪光/烟，之后的烟不再占资源。
-	_muzzle_stop_ms = Time.get_ticks_msec() + 450
+	if muzzle_flash != null and is_instance_valid(muzzle_flash):
+		muzzle_flash.trigger(pos, angle, intensity, suppressed)
+	if muzzle_fx != null and is_instance_valid(muzzle_fx):
+		if suppressed:
+			muzzle_fx.stop()
+			muzzle_fx.modulate.a = 0.0
+		else:
+			muzzle_fx.global_position = pos + Vector2(0.0, MUZZLE_FX_GROUND).rotated(angle)
+			muzzle_fx.rotation = angle
+			muzzle_fx.scale = Vector2.ONE * clampf(intensity * 0.85, 0.65, 1.25)
+			muzzle_fx.play()
+			muzzle_fx.modulate.a = 0.45
+			_muzzle_stop_ms = Time.get_ticks_msec() + 260
 
 
 ## 每帧把活跃中的枪口特效贴回当前枪口位置与枪管朝向，超时自动停止。
 func update_muzzle_fx() -> void:
-	if muzzle_fx == null or not is_instance_valid(muzzle_fx) or not muzzle_fx.is_playing():
-		return
 	if _doll == null:
 		return
 	var barrel_angle := 0.0
 	if _doll.weapon_rig != null:
 		barrel_angle = _doll.weapon_rig.get_barrel_direction().angle()
-	muzzle_fx.global_position = _doll.get_muzzle_position() \
+	var cur_muzzle := _doll.get_muzzle_position()
+	if muzzle_flash != null and is_instance_valid(muzzle_flash) and muzzle_flash.is_active():
+		muzzle_flash.sync_muzzle(cur_muzzle, barrel_angle)
+	if muzzle_fx == null or not is_instance_valid(muzzle_fx) or not muzzle_fx.is_playing():
+		return
+	muzzle_fx.global_position = cur_muzzle \
 		+ Vector2(0.0, MUZZLE_FX_GROUND).rotated(barrel_angle)
 	muzzle_fx.global_rotation = barrel_angle
 	if Time.get_ticks_msec() >= _muzzle_stop_ms:

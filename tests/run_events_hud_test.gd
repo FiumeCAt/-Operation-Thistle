@@ -182,11 +182,21 @@ func _run() -> void:
 		ev["fin_shots"] = int(stats.get("shots", -1))
 	)
 
-	# 触发 loot_gained（基础 + 进阶）
+	# 触发 loot_gained（基础 + 进阶）与拾取流合并/稀有样式
 	main._add_loot(&"electronics", 2)
 	main._add_loot(&"electronic_core", 1)
 	_check(int(ev["loots"]) == 2 and bool(ev["last_adv"]),
 		"loot_gained emits for both basic and advanced items")
+	var feed_start: int = main.hud._feed_items.size()
+	main._on_pickup_collected("resource", &"parts", 1)
+	main._on_pickup_collected("resource", &"parts", 2)
+	_check(main.hud._feed_items.size() == feed_start + 1
+		and int(main.hud._feed_items[feed_start]["amount"]) == 3,
+		"rapid identical pickups merge cleanly into one pill with summed amount")
+	main._on_pickup_collected("resource", &"electronic_core", 1)
+	_check(main.hud._feed_items.size() == feed_start + 2
+		and bool(main.hud._feed_items[feed_start + 1]["rare"]),
+		"advanced resource pickup renders with rare highlight flag")
 
 	# 触发 shot_fired & hit_resolved
 	for e in main.enemies:

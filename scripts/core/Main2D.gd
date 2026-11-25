@@ -329,11 +329,13 @@ func _ready() -> void:
 	laser_sight.name = "LaserSight2D"
 	fx_layer.add_child(laser_sight)
 	laser_sight.setup(self, doll)
-	# 声纹：脚下细环 + 附近移动敌人的方位弧，便于察觉视野外/背后的敌人。
+	# 声纹：Lv.0 保留视觉强化后的脚下方向弧环；解锁生存「声纹感知」天赋后升级为声波涟漪并按级扩大听距。
 	hearing = HEARING_INDICATOR.new()
 	hearing.name = "HearingIndicator2D"
 	add_child(hearing)
 	hearing.setup(self, doll)
+	if progress != null and progress.has_method("talent_2d_level"):
+		hearing.set_hearing_level(int(progress.talent_2d_level(&"hearing")))
 	# 连角色转发信号而不是武器节点：换枪会重建 WeaponRig2D，伤害结算不能跟着断。
 	doll.shot_fired.connect(_on_weapon_fired)
 	doll.died.connect(_on_player_died)
@@ -407,11 +409,11 @@ func _apply_talents() -> void:
 	var hp_level := int(progress.talent_2d_level(&"hp"))
 	doll.hp_max = 100 + hp_level * 15
 	doll.hp = doll.hp_max
-	var move_mul := 1.0 + float(progress.talent_2d_level(&"move")) * 0.04
+	var move_mul := 1.0 + float(progress.talent_2d_level(&"move")) * 0.05
 	doll.walk_speed *= move_mul
 	doll.sprint_speed *= move_mul
-	talent_accuracy = pow(0.94, float(progress.talent_2d_level(&"gun")))
-	talent_scavenge = 1.0 + float(progress.talent_2d_level(&"scavenge")) * 0.1
+	talent_accuracy = WeaponStatsModel.gun_accuracy_mul(int(progress.talent_2d_level(&"gun")))
+	talent_scavenge = 1.0 + float(progress.talent_2d_level(&"scavenge")) * 0.10
 	# 屏幕震动 / 顿帧 / 震动倍率同步至 FeedbackSystem2D。
 	feedback_system.apply_settings(progress)
 	hit_fx_level = clampi(int(progress.data.get("hit_fx_level", 1)), 0, 2)
@@ -434,9 +436,9 @@ func _apply_talents() -> void:
 	doll.walk_speed *= float(armor_mods["move_mul"])
 	doll.sprint_speed *= float(armor_mods["move_mul"])
 	if doll.weapon_rig != null:
-		doll.weapon_rig.reload_time_mul = pow(0.94, float(progress.talent_2d_level(&"reload")))
+		doll.weapon_rig.reload_time_mul = WeaponStatsModel.reload_talent_mul(int(progress.talent_2d_level(&"reload")))
 		doll.weapon_rig.hold_reload_enabled = progress.talent_2d_level(&"loading") > 0
-		var reserve_mul := 1.0 + float(progress.talent_2d_level(&"reserve")) * 0.2
+		var reserve_mul := 1.0 + float(progress.talent_2d_level(&"reserve")) * 0.20
 		doll.weapon_rig.apply_reserve_talent(reserve_mul)
 	hud.set_hp(doll.hp, doll.hp_max)
 	hud.set_armor(doll.armor, doll.armor_max)

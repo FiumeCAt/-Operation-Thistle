@@ -5,9 +5,9 @@ class_name WeaponStatsModel
 ## 统一 WeaponDB + ModDB + 2D 天赋的属性计算，供 WeaponRig2D、ArmoryMenu2D 与测试共用。
 ## 每次计算都读取全新的 WeaponData 实例，绝不修改或污染共享缓存。
 
-const MAG_TALENT_PER_LEVEL := 0.08
-const RELOAD_TALENT_BASE := 0.94
-const GUN_ACCURACY_BASE := 0.94
+const MAG_TALENT_PER_LEVEL := 0.10
+const RELOAD_TALENT_PER_LEVEL := 0.05
+const GUN_ACCURACY_PER_LEVEL := 0.05
 
 
 static func mag_talent_mul(level: int) -> float:
@@ -15,11 +15,11 @@ static func mag_talent_mul(level: int) -> float:
 
 
 static func reload_talent_mul(level: int) -> float:
-	return pow(RELOAD_TALENT_BASE, float(maxi(level, 0)))
+	return maxf(0.25, 1.0 - float(maxi(level, 0)) * RELOAD_TALENT_PER_LEVEL)
 
 
 static func gun_accuracy_mul(level: int) -> float:
-	return pow(GUN_ACCURACY_BASE, float(maxi(level, 0)))
+	return maxf(0.25, 1.0 - float(maxi(level, 0)) * GUN_ACCURACY_PER_LEVEL)
 
 
 ## 从 Progress Autoload 提取与武器属性相关的 2D 天赋等级；缺失时全回退 0。
@@ -55,6 +55,7 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 	var ads_speed_mul := clampf(float(mods["ads_speed_mul"]), 1.0, 2.0)
 	var sight_ads_time_mul := clampf(float(mods.get("ads_time_mul", 1.0)), 1.0, 2.0)
 	var has_laser := bool(mods.get("laser", false))
+	var has_suppressor := String(installed.get("muzzle", "")) == "suppressor" or weapon_id == &"vss"
 
 	# 瞄具元数据（标定倍率/前探倍率/准星样式/是否高倍镜窗）不参与 ModDB 倍率叠乘。
 	var sight_id := String(installed.get("sight", ""))
@@ -138,6 +139,7 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"ads_speed_mul": ads_speed_mul,
 		"sight_ads_time_mul": sight_ads_time_mul,
 		"has_laser": has_laser,
+		"has_suppressor": has_suppressor,
 		"sight_magnification": sight_magnification,
 		"sight_look_ahead_mul": sight_look_ahead_mul,
 		"sight_reticle": sight_reticle,

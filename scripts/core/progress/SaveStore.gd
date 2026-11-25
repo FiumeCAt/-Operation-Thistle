@@ -45,7 +45,7 @@ static func defaults() -> Dictionary:
 		"upgrades": {"hp": 0, "support": 0, "gun": 0, "fov": 0, "sight": 0},
 		"talents_2d": {
 			"hp": 0, "gun": 0, "move": 0, "reload": 0, "scavenge": 0, "loading": 0,
-			"armor": 0, "magazine": 0, "reserve": 0, "magnet": 0,
+			"armor": 0, "magazine": 0, "reserve": 0, "magnet": 0, "hearing": 0,
 		},
 		"loadout": {"weapon": "m870", "ammo": "buckshot"},
 		"loadout_2d": ["g17", "m870"],

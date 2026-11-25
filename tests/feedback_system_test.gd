@@ -111,6 +111,22 @@ func _run() -> void:
 			"apply_settings syncs shake toggle, hitstop, and scaled shake factor")
 		p.reset_for_test()
 
+	# 8. 枪口火光与局部点亮表现：开火点亮动态点光源、叠加局部光晕与火星；消音器明显抑制亮度
+	fb.warm_muzzle_fx()
+	_check(fb.muzzle_flash != null and not fb.muzzle_flash.is_active(),
+		"warm_muzzle_fx creates idle MuzzleFlash2D node")
+	fb.play_muzzle_fx(Vector2(200, 150), 0.0, 1.2, false)
+	var bright_energy: float = fb.muzzle_flash.current_light_energy()
+	var bright_bloom: float = fb.muzzle_flash.current_bloom_alpha()
+	_check(fb.muzzle_flash.is_active() and bright_energy > 1.0
+		and bright_bloom > 0.20 and fb.muzzle_flash.spark_count() >= 6,
+		"unsuppressed shot triggers muzzle light (%.2f), local bloom (%.2f), and sparks" % [bright_energy, bright_bloom])
+	fb.play_muzzle_fx(Vector2(200, 150), 0.0, 1.2, true)
+	var supp_energy: float = fb.muzzle_flash.current_light_energy()
+	var supp_bloom: float = fb.muzzle_flash.current_bloom_alpha()
+	_check(supp_energy < bright_energy * 0.45 and supp_bloom < bright_bloom * 0.45,
+		"suppressor strongly dampens muzzle flash light and bloom")
+
 	owner.queue_free()
 	await process_frame
 	print("\n=== feedback system: %s (%d ok / %d fail) ===" % [

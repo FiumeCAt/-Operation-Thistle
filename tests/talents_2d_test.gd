@@ -36,10 +36,12 @@ func _run() -> void:
 	p.reset_for_test()
 
 	# ---- 数据层：默认值 / 价格 / 前置 / 上限 ----
-	_check(p.talent_2d_level(&"hp") == 0 and p.talent_2d_level(&"scavenge") == 0,
+	_check(p.talent_2d_level(&"hp") == 0 and p.talent_2d_level(&"scavenge") == 0
+		and p.talent_2d_level(&"hearing") == 0,
 		"talents_2d starts empty")
-	_check(p.talent_2d_max(&"hp") == 5 and p.talent_2d_max(&"move") == 4
-		and p.talent_2d_max(&"gun") == 3, "per-node max levels")
+	_check(p.talent_2d_max(&"hp") == 5 and p.talent_2d_max(&"move") == 5
+		and p.talent_2d_max(&"gun") == 5 and p.talent_2d_max(&"hearing") == 5,
+		"stat-boost talents default to max level 5")
 	_check(p.talent_2d_cost(&"hp") == 45 and p.talent_2d_cost(&"bogus") == -1,
 		"talent cost and unknown id")
 	_check(not p.buy_talent_2d(&"hp"), "cannot buy without resources")
@@ -48,6 +50,7 @@ func _run() -> void:
 	p.data["materials_2d"] = {"electronics": 99, "energy": 99, "parts": 99}
 	p.data["xp"] = 0
 	_check(not p.buy_talent_2d(&"move"), "move locked until hp Lv.1")
+	_check(not p.buy_talent_2d(&"hearing"), "hearing locked until hp Lv.1")
 	_check(not p.buy_talent_2d(&"reload"), "reload locked until gun Lv.1")
 	_check(p.buy_talent_2d(&"hp") and p.talent_2d_level(&"hp") == 1,
 		"buy hp level 1")
@@ -58,6 +61,8 @@ func _run() -> void:
 	_check(p.talent_2d_cost(&"hp") == 90, "hp price scales with level")
 	_check(p.buy_talent_2d(&"move") and p.talent_2d_level(&"move") == 1,
 		"move unlocks after hp")
+	_check(p.buy_talent_2d(&"hearing") and p.talent_2d_level(&"hearing") == 1,
+		"hearing unlocks after hp on survival branch")
 	_check(p.buy_talent_2d(&"gun") and p.buy_talent_2d(&"reload"),
 		"gun then reload unlock chain")
 	_check(p.talent_2d_max(&"loading") == 1 and p.talent_2d_material(&"loading") == &"parts",
@@ -65,9 +70,10 @@ func _run() -> void:
 	_check(p.buy_talent_2d(&"magazine") and p.buy_talent_2d(&"loading")
 		and p.talent_2d_level(&"loading") == 1,
 		"loading talent unlocks after magazine")
-	_check(p.talent_2d_max(&"armor") == 3 and p.talent_2d_max(&"magazine") == 3
-		and p.talent_2d_max(&"reserve") == 3 and p.talent_2d_max(&"magnet") == 3,
-		"extended talents have three levels each")
+	_check(p.talent_2d_max(&"armor") == 5 and p.talent_2d_max(&"magazine") == 5
+		and p.talent_2d_max(&"reserve") == 5 and p.talent_2d_max(&"magnet") == 5
+		and p.talent_2d_max(&"scavenge") == 5 and p.talent_2d_max(&"reload") == 5,
+		"all stat talents use unified max level 5")
 
 	p.data["resources"] = 1000
 	while p.talent_2d_level(&"hp") < p.talent_2d_max(&"hp"):
@@ -86,10 +92,10 @@ func _run() -> void:
 		and p.talent_2d_level(&"move") == saved_move,
 		"talent levels persist across reload")
 
-	# ---- Main2D：本局属性应用 ----
+	# ---- Main2D：本局属性应用（5% 倍数 × 等级 + 声纹双模式）----
 	p.data["talents_2d"] = {
 		"hp": 2, "gun": 2, "move": 2, "reload": 2, "scavenge": 3, "loading": 1,
-		"armor": 2, "magazine": 2, "reserve": 2, "magnet": 2,
+		"armor": 2, "magazine": 2, "reserve": 2, "magnet": 2, "hearing": 0,
 	}
 	p.data["resources"] = 0
 	p.data["xp"] = 0
@@ -102,36 +108,43 @@ func _run() -> void:
 	await process_frame
 
 	_check(main.doll.hp_max == 130 and main.doll.hp == 130,
-		"hp talent raises max and current hp")
+		"hp talent raises max and current hp (+30%)")
 	_check(main.hud.hp_label.text.contains("130"), "hud shows upgraded max hp")
-	_check(_near(main.doll.walk_speed, 250.0 * 1.08) and _near(main.doll.sprint_speed, 380.0 * 1.08),
-		"move talent raises walk and sprint speed")
-	_check(_near(main.talent_accuracy, pow(0.94, 2.0)), "gun talent accuracy multiplier")
-	_check(_near(main.talent_scavenge, 1.3), "scavenge talent multiplier")
+	_check(_near(main.doll.walk_speed, 250.0 * 1.10) and _near(main.doll.sprint_speed, 380.0 * 1.10),
+		"move talent raises walk and sprint speed (+10%)")
+	_check(_near(main.talent_accuracy, 0.90), "gun talent accuracy multiplier (-10%)")
+	_check(_near(main.talent_scavenge, 1.30), "scavenge talent multiplier (+30%)")
 	_check(main.doll.weapon_rig != null
-		and _near(main.doll.weapon_rig.reload_time_mul, pow(0.94, 2.0)),
-		"reload talent applied to weapon rig")
+		and _near(main.doll.weapon_rig.reload_time_mul, 0.90),
+		"reload talent applied to weapon rig (-10%)")
 	_check(main.doll.weapon_rig.hold_reload_enabled,
 		"loading talent unlocks hold-to-load on the weapon rig")
-	_check(main.doll.armor_max == 140, "armor talent raises armor durability")
+	_check(main.doll.armor_max == 140, "armor talent raises armor durability (+40%)")
 	_check(main.doll.weapon_rig.data.mag_capacity == 20,
-		"magazine talent raises magazine capacity")
+		"magazine talent raises magazine capacity (17 * 1.20 -> 20)")
 	_check(int(main.doll.weapon_rig.reserve.get(&"light", -1)) == 151
 		and int(main.doll.weapon_rig.reserve.get(&"shotgun", -1)) == 84,
-		"reserve talent raises spare ammo")
+		"reserve talent raises spare ammo (+40%)")
+	_check(main.hearing != null and not main.hearing.is_acoustic_mode()
+		and _near(main.hearing.hearing_range_meters(), 13.5),
+		"hearing Lv.0 stays in classic ring mode at 13.5m")
+	main.hearing.set_hearing_level(3)
+	_check(main.hearing.is_acoustic_mode()
+		and _near(main.hearing.hearing_range_meters(), 13.5 * 1.30),
+		"hearing Lv.3 activates acoustic soundwave mode and +30% range")
 
 	var pickup := LootPickup2D.new()
 	pickup.setup("resource", &"parts", 1, Callable())
 	root.add_child(pickup)
 	await process_frame
 	_check(is_equal_approx(pickup.get_magnet_radius(), 308.0),
-		"magnet talent widens the pickup radius")
+		"magnet talent widens the pickup radius (+40%)")
 	pickup.queue_free()
 
 	var ammo = main.current_ammo()
 	var base_spread: float = maxf(ammo.spread + main.doll.weapon_rig.data.base_spread, 0.004)
-	_check(_near(main.get_aim_spread(), base_spread * pow(0.94, 2.0)),
-		"aim spread includes gun talent")
+	_check(_near(main.get_aim_spread(), base_spread * 0.90),
+		"aim spread includes gun talent (-10%)")
 
 	# ---- 撤离结算：资源与 XP 写回 Progress ----
 	main.resources = 4
@@ -173,6 +186,13 @@ func _run() -> void:
 	menu.talents._buy(&"hp")
 	_check(p.talent_2d_level(&"hp") == 1, "tree purchase writes progress")
 	_check(menu.talents._feedback.text.contains("已强化"), "tree shows purchase feedback")
+	var hp_gauge = menu.talents._cards[&"hp"]["gauge"]
+	var load_gauge = menu.talents._cards[&"loading"]["gauge"]
+	var hear_gauge = menu.talents._cards[&"hearing"]["gauge"]
+	_check(hp_gauge != null and hp_gauge.max_level == 5 and hp_gauge.level == 1
+		and load_gauge != null and load_gauge.max_level == 1
+		and hear_gauge != null and hear_gauge.max_level == 5,
+		"adaptive level gauges match per-node max levels (5 vs 1) and current progress")
 
 	# 点击卡片：底部说明区展示背景与当前效果
 	menu.talents._selected = &"hp"
@@ -181,16 +201,20 @@ func _run() -> void:
 		and menu.talents._detail_body.text.contains("生命上限"),
 		"card selection fills the detail panel")
 
-	# 单个重置：等级归零、依赖节点一起清空、投入全额返还
-	p.data["talents_2d"] = {"hp": 2, "gun": 0, "move": 1, "reload": 0, "scavenge": 0, "loading": 0}
+	# 单个重置：等级归零、依赖节点（含声纹感知）一起清空、投入全额返还
+	p.data["talents_2d"] = {
+		"hp": 2, "gun": 0, "move": 1, "hearing": 1,
+		"reload": 0, "scavenge": 0, "loading": 0,
+	}
 	var credits_before: int = p.credits()
 	var energy_before: int = p.material_count(&"energy")
 	var refund: Dictionary = p.reset_talent_2d(&"hp")
-	_check(p.talent_2d_level(&"hp") == 0 and p.talent_2d_level(&"move") == 0,
-		"resetting a prerequisite clears dependent talents")
-	_check(int(refund["credits"]) == 180 and p.credits() == credits_before + 180,
+	_check(p.talent_2d_level(&"hp") == 0 and p.talent_2d_level(&"move") == 0
+		and p.talent_2d_level(&"hearing") == 0,
+		"resetting a prerequisite clears dependent talents including hearing")
+	_check(int(refund["credits"]) == 225 and p.credits() == credits_before + 225,
 		"single reset refunds credits")
-	_check(p.material_count(&"energy") == energy_before + 12, "single reset refunds materials")
+	_check(p.material_count(&"energy") == energy_before + 15, "single reset refunds materials")
 
 	# 全部重置：二次确认后才清空
 	p.data["talents_2d"]["gun"] = 1

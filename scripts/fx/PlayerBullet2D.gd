@@ -87,10 +87,10 @@ func _create_trail_line(parent: Node, from: Vector2) -> void:
 	parent.add_child(trail_line)
 	trail_line.global_position = Vector2.ZERO
 	trail_line.points = PackedVector2Array([from, from])
-	# 柔光层作为线条子节点：跟随 points / visible / modulate 一起变化。
+	# 柔光层作为线条子节点：跟随 points / visible / modulate 一起变化，增强开火曳光高亮质感。
 	trail_glow = Line2D.new()
-	trail_glow.width = 7.0
-	trail_glow.default_color = Color(line_color.r, line_color.g, line_color.b, 0.10)
+	trail_glow.width = 8.0
+	trail_glow.default_color = Color(line_color.r, line_color.g, line_color.b, 0.18)
 	trail_glow.points = PackedVector2Array([from, from])
 	trail_glow.z_index = -1
 	trail_line.add_child(trail_glow)

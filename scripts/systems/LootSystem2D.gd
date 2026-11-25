@@ -208,13 +208,26 @@ func on_pickup_collected(kind: String, id: StringName, amount: int) -> void:
 		var color := Color.html(String(info.get("color", "#ffd18a")))
 		var label := String(info.get("display_name", String(id)))
 		if hud != null:
-			hud.push_pickup("+%d 发 %s" % [amount, label], color)
+			hud.push_pickup("+%d 发 %s" % [amount, label], color, {
+				"badge": "弹药",
+				"merge_key": "ammo:" + String(id),
+				"amount": amount,
+				"merge_fmt": "+%d 发 " + label,
+			})
 	else:
 		if add_loot_fn.is_valid():
 			add_loot_fn.call(id, amount)
 		if hud != null:
-			hud.push_pickup("+%d %s" % [amount, ResourceDB.display_name(id)],
-				ResourceDB.color_of(id))
+			var disp := ResourceDB.display_name(id)
+			var is_rare := not ResourceDB.is_basic(id)
+			hud.push_pickup("+%d %s" % [amount, disp], ResourceDB.color_of(id), {
+				"icon": "res_" + String(id),
+				"badge": "稀有" if is_rare else "物资",
+				"rare": is_rare,
+				"merge_key": "res:" + String(id),
+				"amount": amount,
+				"merge_fmt": "+%d " + disp,
+			})
 	if sfx_fn.is_valid():
 		sfx_fn.call("pickup", -7.0)
 
@@ -256,7 +269,7 @@ func search_container(entry: Dictionary) -> void:
 				doll.heal(30)
 				doll.repair_armor(30)
 			if hud != null:
-				hud.push_pickup("医疗包：生命 / 护甲 +30", PixelUI.OK)
+				hud.push_pickup("医疗包：生命 / 护甲 +30", PixelUI.OK, {"badge": "医疗"})
 			# 医疗箱同时带少量能量单元，偶尔再出第二种材料。
 			grant_container_gains(roll_container_bundle(&"energy", 1, 2, 0.42, 0.032, scale))
 		&"ammo":
@@ -272,7 +285,7 @@ func search_container(entry: Dictionary) -> void:
 			if hud != null:
 				hud.push_pickup("弹药补给 · 轻型弹 ×%d / %s ×%d" % [
 					light_amount, String(info.get("display_name", "中型弹")), second_amount],
-					Color.html(String(info.get("color", "#ffd18a"))))
+					Color.html(String(info.get("color", "#ffd18a"))), {"badge": "弹药"})
 			# 弹药箱同时带少量电子元件。
 			grant_container_gains(roll_container_bundle(&"electronics", 1, 2, 0.42, 0.032, scale))
 		_:
@@ -292,5 +305,10 @@ func grant_container_gains(gains: Array[Dictionary]) -> void:
 		if add_loot_fn.is_valid():
 			add_loot_fn.call(id, amount)
 		if hud != null:
+			var is_rare := not ResourceDB.is_basic(id)
 			hud.push_pickup("搜刮：%s ×%d" % [ResourceDB.display_name(id), amount],
-				ResourceDB.color_of(id))
+				ResourceDB.color_of(id), {
+					"icon": "res_" + String(id),
+					"badge": "稀有" if is_rare else "搜刮",
+					"rare": is_rare,
+				})

@@ -66,7 +66,7 @@ func _run() -> void:
 	}
 	var talents := {"magazine": 2, "reload": 3, "gun": 2}
 	var akm_mod: Dictionary = STATS_MODEL.compute(&"akm", akm_full_mods, talents)
-	_check(int(akm_mod["mag"]) == int(round(75.0 * 1.16)), "AKM drum + mag lv2 == %d" % int(akm_mod["mag"]))
+	_check(int(akm_mod["mag"]) == int(round(75.0 * 1.20)), "AKM drum + mag lv2 == %d" % int(akm_mod["mag"]))
 	_check(bool(akm_mod["auto"]), "AKM with tuned core preserves default full-auto")
 	_check(is_equal_approx(float(akm_mod["interval"]), 0.09), "AKM tuned interval == 0.09s")
 	_check(is_equal_approx(float(akm_mod["range"]), 44.0), "AKM + 4x scope range == 44.0m")
@@ -76,19 +76,20 @@ func _run() -> void:
 	_check(is_equal_approx(float(akm_mod["vision_mul"]), 1.75), "AKM 4x scope vision_mul == 1.75")
 	_check(is_equal_approx(float(akm_mod["ads_speed_mul"]), 1.30), "AKM laser ads_speed_mul == 1.30")
 	_check(is_equal_approx(float(akm_mod["sight_ads_time_mul"]), 1.20), "AKM 4x scope ads_time_mul == 1.20")
-	_check(bool(akm_mod["has_laser"]) and bool(akm_mod["has_scope_sight"]), "AKM laser & scope flags set")
+	_check(bool(akm_mod["has_laser"]) and bool(akm_mod["has_scope_sight"]) and bool(akm_mod["has_suppressor"]),
+		"AKM laser, scope & suppressor flags set")
 	_check(is_equal_approx(float(akm_mod["sight_magnification"]), 4.0), "AKM 4x scope magnification == 4.0")
 	_check(
 		is_equal_approx(float(akm_mod["load_modded"]), 0.7 * 1.35),
 		"AKM load_modded excludes reload talent (%.4f)" % float(akm_mod["load_modded"])
 	)
 	_check(
-		is_equal_approx(float(akm_mod["load"]), 0.7 * 1.35 * pow(0.94, 3.0)),
-		"AKM effective load includes reload lv3 talent (%.4f)" % float(akm_mod["load"])
+		is_equal_approx(float(akm_mod["load"]), 0.7 * 1.35 * 0.85),
+		"AKM effective load includes reload lv3 talent (-15%%, %.4f)" % float(akm_mod["load"])
 	)
-	# 7.62×39 attachment_spread_scale == 0.80
+	# 7.62×39 attachment_spread_scale == 0.80；gun lv2 = -10% (×0.90)
 	var expect_spread_mul := 0.92 * 0.92 * 0.88 * 0.86
-	var expect_spread := 0.058 * lerpf(1.0, expect_spread_mul, 0.80) * pow(0.94, 2.0)
+	var expect_spread := 0.058 * lerpf(1.0, expect_spread_mul, 0.80) * 0.90
 	_check(
 		absf(float(akm_mod["spread"]) - expect_spread) < 0.0001,
 		"AKM full-mod + gun lv2 spread matches formula (%.5f)" % float(akm_mod["spread"])

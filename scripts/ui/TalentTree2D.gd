@@ -1,76 +1,82 @@
 extends Control
 class_name TalentTree2D
-## 2D 战术天赋树（放射状分叉树视图）：
+## 2D 战术天赋树（大画布放射状分叉树视图）：
 ## 从左侧中央「DOLL-01 神经核心」向三条独立方向自然蔓延——
-##   上枝 · 机体防线（青蓝）：生命强化 → 战术体能 → 护甲强化
-##   中枝 · 火力弹道（琥珀）：枪械精度 → 快速换弹 → 弹匣扩容 ⇄（分叉：弹药储备 / 持续装填）
-##   下枝 · 战地搜刮（翡翠）：搜刮专家 → 磁力拾取
-## 支持画布拖拽平移与滚轮横向浏览，点击节点在底部查看彩色富文本说明与消耗。
+##   上枝 · 机体防线（生存绿）：生命强化 ⇄（战术体能 → 护甲强化 / 声纹感知）
+##   中枝 · 火力弹道（火力橙）：枪械精度 → 快速换弹 → 弹匣扩容 ⇄（弹药储备 / 持续装填）
+##   下枝 · 战地搜刮（搜刮青）：搜刮专家 → 磁力拾取
+## 每张节点卡片内置自适应竖向格栅等级条（自动适配任意等级上限，自下而上充能发光）；
+## 支持大画布自由二维拖拽平移与滚轮浏览，点击节点在底部查看彩色富文本说明与消耗。
 
 signal closed
 
 const ICON_ROOT := "res://assets/art/ui/talents/"
-const CONTENT_SIZE := Vector2(1580, 516)
-const CARD_SIZE := Vector2(252, 114)
-const ROOT_POS := Vector2(24, 192)
-const ROOT_SIZE := Vector2(150, 126)
+const CONTENT_SIZE := Vector2(1980, 800)
+const CARD_SIZE := Vector2(280, 128)
+const ROOT_POS := Vector2(44, 344)
+const ROOT_SIZE := Vector2(168, 152)
+const DRAG_THRESHOLD := 5.0
 
 const BRANCH_COLORS := {
-	"survival": Color(0.32, 0.86, 1.0),
-	"firepower": Color(1.0, 0.66, 0.26),
-	"scavenge": Color(0.36, 0.94, 0.66),
+	"survival": Color(0.32, 0.94, 0.56),
+	"firepower": Color(1.0, 0.64, 0.24),
+	"scavenge": Color(0.28, 0.88, 1.0),
 }
 
 const BRANCH_META := {
-	"survival": {"tag": "▲ 机体防线 // SURVIVAL", "pos": Vector2(248, 8)},
-	"firepower": {"tag": "◆ 火力弹道 // FIREPOWER", "pos": Vector2(270, 174)},
-	"scavenge": {"tag": "▼ 战地搜刮 // SCAVENGE", "pos": Vector2(248, 338)},
+	"survival": {"tag": "▲ 机体防线 // SURVIVAL", "pos": Vector2(330, 14)},
+	"firepower": {"tag": "◆ 火力弹道 // FIREPOWER", "pos": Vector2(354, 326)},
+	"scavenge": {"tag": "▼ 战地搜刮 // SCAVENGE", "pos": Vector2(330, 512)},
 }
 
 const NODES: Array[Dictionary] = [
-	# 上枝 · 机体防线（向上右攀升蔓延）
+	# 上枝 · 机体防线（生存绿，生命强化处分叉出体能防线与声纹感知）
 	{"id": &"hp", "branch": "survival", "title": "生命强化", "icon": "hp_boost",
-		"desc": "生命上限 +15 / 级",
-		"detail": "强化 DOLL 机体的承伤结构。每级提高生命上限 15 点，适合正面交火与长时间搜刮。",
-		"pos": Vector2(248, 42), "prereq": &""},
+		"desc": "生命上限 +15% / 级（+15）",
+		"detail": "强化 DOLL 机体的承伤结构。每级提高生命上限 15%（+15 点，上限 5 级 +75%），适合正面交火与长线作战。",
+		"pos": Vector2(330, 146), "prereq": &""},
 	{"id": &"move", "branch": "survival", "title": "战术体能", "icon": "recon",
-		"desc": "移动速度 +4% / 级",
-		"detail": "优化腿部驱动与转向响应，提高行走与冲刺速度，便于快速穿越火线或撤离。",
-		"pos": Vector2(578, 22), "prereq": &"hp"},
+		"desc": "移动速度 +5% / 级",
+		"detail": "优化腿部驱动与转向响应，每级提高行走与冲刺速度 5%（满级 +25%），便于快速穿越火线或撤离。",
+		"pos": Vector2(746, 44), "prereq": &"hp"},
 	{"id": &"armor", "branch": "survival", "title": "护甲强化", "icon": "armor_up",
-		"desc": "护甲上限 +20 / 级",
-		"detail": "为机体加装承力骨架与缓冲层，提高护甲耐久上限，让护甲能承受更多次命中。",
-		"pos": Vector2(910, 10), "prereq": &"move"},
-	# 中枝 · 火力弹道（主干向右延伸并在弹匣扩容处上下双分叉）
+		"desc": "护甲上限 +20% / 级（+20）",
+		"detail": "为机体加装承力骨架与缓冲层，每级提高护甲耐久上限 20%（+20 点，满级 +100%），承受更多次命中。",
+		"pos": Vector2(1162, 40), "prereq": &"move"},
+	{"id": &"hearing", "branch": "survival", "title": "声纹感知", "icon": "support_protocol",
+		"desc": "声波涟漪 · 听距 +10% / 级",
+		"detail": "Lv.1 将脚下方向环升级为战术声波涟漪（屏内音源扩散波纹 + 屏外边缘来波前锋），且每级提升听声距离 10%（满级 +50%，最远 20.25m）。",
+		"pos": Vector2(746, 196), "prereq": &"hp"},
+	# 中枝 · 火力弹道（火力橙，主干向右延伸并在弹匣扩容处上下双分叉）
 	{"id": &"gun", "branch": "firepower", "title": "枪械精度", "icon": "recoil_control",
-		"desc": "基础散布 -6% / 级",
-		"detail": "校准枪械瞄具与持握姿势，降低基础散布，让中远距离点射更稳定。",
-		"pos": Vector2(270, 200), "prereq": &""},
+		"desc": "基础散布 -5% / 级",
+		"detail": "校准枪械瞄具与持握姿势，每级降低基础散布 5%（满级 -25%），让中远距离点射更稳定。",
+		"pos": Vector2(354, 356), "prereq": &""},
 	{"id": &"reload", "branch": "firepower", "title": "快速换弹", "icon": "pump_speed",
-		"desc": "换弹时间 -6% / 级",
-		"detail": "改进换弹流程与供弹机构，缩短每次换弹所需时间，对高射速武器收益更高。",
-		"pos": Vector2(600, 200), "prereq": &"gun"},
+		"desc": "换弹时间 -5% / 级",
+		"detail": "改进换弹流程与供弹机构，每级缩短换弹时间 5%（满级 -25%），对高射速武器收益更高。",
+		"pos": Vector2(770, 356), "prereq": &"gun"},
 	{"id": &"magazine", "branch": "firepower", "title": "弹匣扩容", "icon": "magazine_up",
-		"desc": "弹匣容量 +8% / 级",
-		"detail": "改造弹匣与供弹坡道，提高所有武器的弹匣容量（管仓武器则增加管仓容量）。",
-		"pos": Vector2(930, 200), "prereq": &"reload"},
+		"desc": "弹匣容量 +10% / 级",
+		"detail": "改造弹匣与供弹坡道，每级提高所有武器的弹匣容量 10%（满级 +50%，管仓武器同步增加管仓容量）。",
+		"pos": Vector2(1186, 356), "prereq": &"reload"},
 	{"id": &"reserve", "branch": "firepower", "title": "弹药储备", "icon": "ammo_reserve",
 		"desc": "备弹上限 +20% / 级",
-		"detail": "扩充弹药携行具与背包挂点，提高各口径备弹上限，显著缓解长局续航压力。",
-		"pos": Vector2(1290, 112), "prereq": &"magazine"},
+		"detail": "扩充弹药携行具与背包挂点，每级提高各口径备弹上限 20%（满级 +100%），显著缓解长局续航压力。",
+		"pos": Vector2(1612, 258), "prereq": &"magazine"},
 	{"id": &"loading", "branch": "firepower", "title": "持续装填", "icon": "ammo_carry",
 		"desc": "长按 R 逐发续装（管仓）",
 		"detail": "解锁管仓武器的连续装填手法：按住 R 会在一发装填完成后自动续压下一发，直到弹仓装满或备弹耗尽。仅对 M870、M1014 等管仓武器生效。",
-		"pos": Vector2(1290, 286), "prereq": &"magazine"},
-	# 下枝 · 战地搜刮（向下右展开蔓延）
+		"pos": Vector2(1612, 444), "prereq": &"magazine"},
+	# 下枝 · 战地搜刮（搜刮青，向下右展开蔓延）
 	{"id": &"scavenge", "branch": "scavenge", "title": "搜刮专家", "icon": "scavenger",
 		"desc": "撤离资源 +10% / 级",
-		"detail": "提高战利品回收与折算效率，每次成功撤离可带回更多信用点。",
-		"pos": Vector2(248, 366), "prereq": &""},
+		"detail": "提高战利品回收与折算效率，每级提高撤离信用点与基础材料收益 10%（满级 +50%）。",
+		"pos": Vector2(330, 542), "prereq": &""},
 	{"id": &"magnet", "branch": "scavenge", "title": "磁力拾取", "icon": "magnet",
 		"desc": "吸附范围 +20% / 级",
-		"detail": "在拾取装置上加装磁力线圈，扩大掉落物自动吸附的范围，混战中更不容易漏捡。",
-		"pos": Vector2(590, 392), "prereq": &"scavenge"},
+		"detail": "在拾取装置上加装磁力线圈，每级扩大掉落物自动吸附范围 20%（满级 +100%），混战中不再漏捡。",
+		"pos": Vector2(746, 634), "prereq": &"scavenge"},
 ]
 
 var _panel: PanelContainer
@@ -89,8 +95,64 @@ var _reset_one: Button
 var _reset_all: Button
 var _confirm_layer: Control
 var _dragging := false
+var _drag_moved := false
 var _drag_start := Vector2.ZERO
 var _drag_origin := Vector2.ZERO
+
+
+## 自适应竖向格栅等级条：外框 + 等分水平能量格，自动适配任意上限（1~N），自下而上点亮。
+class TalentLevelGauge extends Control:
+	var level := 0
+	var max_level := 5
+	var accent := Color(0.32, 0.94, 0.56)
+	var unlocked := true
+
+	func configure(cur_lv: int, max_lv: int, col: Color, is_unlocked: bool) -> void:
+		level = maxi(cur_lv, 0)
+		max_level = maxi(max_lv, 1)
+		accent = col
+		unlocked = is_unlocked
+		queue_redraw()
+
+	func _draw() -> void:
+		var w := size.x
+		var h := size.y
+		if w < 8.0 or h < 10.0:
+			return
+		var maxed := level >= max_level
+		# 深黑底框 + 清晰外描边（满级时边框发亮，前置未解锁时暗化）。
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.018, 0.024, 0.032, 0.96), true)
+		var border_col := accent.lightened(0.22) if maxed \
+			else (Color(0.62, 0.68, 0.74, 0.86) if unlocked else Color(0.34, 0.38, 0.44, 0.55))
+		draw_rect(Rect2(Vector2(0.5, 0.5), size - Vector2(1.0, 1.0)), border_col, false, 1.6)
+
+		var pad := 3.5
+		var gap := 3.0 if max_level <= 6 else 2.0
+		var inner_w := maxf(w - pad * 2.0, 2.0)
+		var inner_h := maxf(h - pad * 2.0, 2.0)
+		var total_gap := gap * float(maxi(max_level - 1, 0))
+		var seg_h := maxf((inner_h - total_gap) / float(max_level), 2.0)
+
+		# 自下而上绘制每一个等级能量块（第 0 格在最底部，满级时整柱点亮）。
+		for i in max_level:
+			var y := h - pad - float(i + 1) * seg_h - float(i) * gap
+			var rect := Rect2(Vector2(pad, y), Vector2(inner_w, seg_h))
+			if i < level:
+				var fill := accent.lightened(0.06) if not maxed else accent.lightened(0.16)
+				draw_rect(rect, fill, true)
+				# 顶部细高光与底部微暗边，增强像素能量块的立体质感。
+				var hi_h := minf(2.0, seg_h * 0.25)
+				draw_rect(Rect2(rect.position, Vector2(rect.size.x, hi_h)),
+					accent.lightened(0.45), true)
+				draw_rect(Rect2(Vector2(rect.position.x, rect.end.y - 1.2), Vector2(rect.size.x, 1.2)),
+					accent.darkened(0.28), true)
+			elif i == level and unlocked:
+				# 下一级待解锁槽：微弱同色空框提示下一步升级进度。
+				draw_rect(rect, Color(accent.r, accent.g, accent.b, 0.08), true)
+				draw_rect(rect, Color(accent.r, accent.g, accent.b, 0.42), false, 1.0)
+			else:
+				draw_rect(rect, Color(0.07, 0.09, 0.12, 0.92), true)
+				draw_rect(rect, Color(0.22, 0.26, 0.32, 0.45), false, 1.0)
 
 
 func _ready() -> void:
@@ -104,16 +166,16 @@ func _ready() -> void:
 
 func _build() -> void:
 	var dim := ColorRect.new()
-	dim.color = Color(0.0, 0.0, 0.0, 0.78)
+	dim.color = Color(0.0, 0.0, 0.0, 0.80)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(dim)
 
 	_panel = PixelUI.panel()
 	_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_panel.offset_left = -590
-	_panel.offset_right = 590
-	_panel.offset_top = -425
-	_panel.offset_bottom = 425
+	_panel.offset_left = -720
+	_panel.offset_right = 720
+	_panel.offset_top = -422
+	_panel.offset_bottom = 422
 	add_child(_panel)
 	var layout := VBoxContainer.new()
 	layout.add_theme_constant_override("separation", 8)
@@ -140,7 +202,7 @@ func _build() -> void:
 	layout.add_child(divider)
 
 	_tree_area = Control.new()
-	_tree_area.custom_minimum_size = Vector2(1080, 520)
+	_tree_area.custom_minimum_size = Vector2(1280, 520)
 	_tree_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tree_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tree_area.clip_contents = true
@@ -185,7 +247,7 @@ func _build_bottom_bar(parent: Node) -> void:
 	_feedback.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_feedback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
-	_pan_hint = PixelUI.label(bar, "按住拖动 / 滚轮探索分支 →", 19, PixelUI.AMBER_BRIGHT)
+	_pan_hint = PixelUI.label(bar, "按住自由拖动 / 滚轮探索完整天赋树 ⇄", 19, PixelUI.AMBER_BRIGHT)
 	_pan_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_pan_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
@@ -259,11 +321,11 @@ func _build_root_card() -> void:
 	card.position = ROOT_POS
 	card.size = ROOT_SIZE
 	card.custom_minimum_size = ROOT_SIZE
-	var style := PixelUI.panel_style(Color(0.06, 0.08, 0.11, 0.98), 2, PixelUI.AMBER_BRIGHT)
+	var style := PixelUI.panel_style(Color(0.055, 0.075, 0.102, 0.98), 2, PixelUI.AMBER_BRIGHT)
 	style.content_margin_left = 12
 	style.content_margin_right = 12
-	style.content_margin_top = 10
-	style.content_margin_bottom = 10
+	style.content_margin_top = 12
+	style.content_margin_bottom = 12
 	card.add_theme_stylebox_override("panel", style)
 	_content.add_child(card)
 	var rows := VBoxContainer.new()
@@ -272,9 +334,9 @@ func _build_root_card() -> void:
 	card.add_child(rows)
 	var tag := PixelUI.emphasize(PixelUI.label(rows, "DOLL-01", PixelUI.FS_BODY, PixelUI.AMBER_BRIGHT), 2, 1)
 	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var sub := PixelUI.label(rows, "神经核心", 18, PixelUI.CYAN)
+	var sub := PixelUI.label(rows, "神经核心", 19, BRANCH_COLORS["scavenge"])
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var hint := PixelUI.label(rows, "三向分支\n自由强化", 17, PixelUI.DIM)
+	var hint := PixelUI.label(rows, "生存 · 火力 · 搜刮\n三向分支蔓延", 16, PixelUI.DIM)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 
@@ -291,38 +353,48 @@ func _build_node(def: Dictionary) -> void:
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	card.gui_input.connect(_on_card_input.bind(id))
 
-	var style := PixelUI.panel_style(Color(0.045, 0.060, 0.080, 0.97), 1, Color(accent, 0.45))
+	var style := PixelUI.panel_style(Color(0.042, 0.058, 0.078, 0.97), 1, Color(accent, 0.45))
 	style.border_width_top = 3
 	style.content_margin_left = 10
 	style.content_margin_right = 10
-	style.content_margin_top = 6
-	style.content_margin_bottom = 6
+	style.content_margin_top = 7
+	style.content_margin_bottom = 7
 	var unlocked_style := style.duplicate() as StyleBoxFlat
 	unlocked_style.bg_color = Color(
-		lerpf(0.05, accent.r, 0.10),
-		lerpf(0.065, accent.g, 0.10),
-		lerpf(0.085, accent.b, 0.10),
+		lerpf(0.048, accent.r, 0.10),
+		lerpf(0.064, accent.g, 0.10),
+		lerpf(0.084, accent.b, 0.10),
 		0.98)
 	unlocked_style.border_color = Color(accent, 0.85)
 	var selected := unlocked_style.duplicate() as StyleBoxFlat
-	selected.border_color = accent.lightened(0.28)
+	selected.border_color = accent.lightened(0.30)
 	selected.set_border_width_all(2)
 	selected.border_width_top = 4
 	card.add_theme_stylebox_override("panel", style)
 	_content.add_child(card)
 
-	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 3)
-	card.add_child(rows)
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 5)
+	card.add_child(outer)
+
+	var main_row := HBoxContainer.new()
+	main_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	main_row.add_theme_constant_override("separation", 8)
+	outer.add_child(main_row)
+
+	var left_col := VBoxContainer.new()
+	left_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_col.add_theme_constant_override("separation", 4)
+	main_row.add_child(left_col)
 
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 8)
-	rows.add_child(top)
+	left_col.add_child(top)
 	var icon := TextureRect.new()
 	var path := ICON_ROOT + String(def["icon"]) + ".png"
 	if ResourceLoader.exists(path):
 		icon.texture = load(path)
-	icon.custom_minimum_size = Vector2(32, 32)
+	icon.custom_minimum_size = Vector2(36, 36)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -337,19 +409,26 @@ func _build_node(def: Dictionary) -> void:
 	var level := PixelUI.label(names, "Lv.0 / 0", 15, PixelUI.DIM)
 	level.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
-	var desc := PixelUI.label(rows, String(def["desc"]), 16, PixelUI.TEXT)
+	var desc := PixelUI.label(left_col, String(def["desc"]), 15, PixelUI.TEXT)
 	desc.autowrap_mode = TextServer.AUTOWRAP_OFF
 	desc.clip_text = true
 	desc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	var buy := PixelUI.button("强化", 28)
+	# 右侧自适应竖向格栅等级条（参考图样式：外框 + 等分水平能量格，自动适配 1~N 级上限）。
+	var gauge := TalentLevelGauge.new()
+	gauge.custom_minimum_size = Vector2(30, 74)
+	gauge.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	gauge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	main_row.add_child(gauge)
+
+	var buy := PixelUI.button("强化", 29)
 	buy.custom_minimum_size.x = CARD_SIZE.x - 22.0
 	buy.add_theme_font_size_override("font_size", 16)
 	buy.pressed.connect(_buy.bind(id))
-	rows.add_child(buy)
+	outer.add_child(buy)
 
 	_cards[id] = {
-		"card": card, "level": level, "buy": buy, "accent": accent,
+		"card": card, "level": level, "gauge": gauge, "buy": buy, "accent": accent,
 		"style": style, "style_unlocked": unlocked_style, "style_selected": selected,
 	}
 
@@ -360,7 +439,8 @@ func open() -> void:
 	_feedback.text = ""
 	_selected = &""
 	_confirm_layer.hide()
-	_set_pan(0.0)
+	var view_h := _tree_area.size.y if (_tree_area != null and _tree_area.size.y > 10.0) else 520.0
+	_set_pan(0.0, (view_h - CONTENT_SIZE.y) * 0.5)
 	_refresh()
 	_refresh_pan_hint()
 
@@ -414,17 +494,16 @@ func _refresh() -> void:
 		var prereq: StringName = def["prereq"]
 		var prereq_ok := prereq == &"" or int(p.talent_2d_level(prereq)) > 0
 		var level_label: Label = entry["level"]
+		var gauge: TalentLevelGauge = entry["gauge"]
 		var buy: Button = entry["buy"]
 		var card: PanelContainer = entry["card"]
 		var accent: Color = entry["accent"]
 		total_levels += level
 
-		var pips := ""
-		for k in maximum:
-			pips += "■" if k < level else "□"
-		level_label.text = "%s  Lv.%d/%d" % [pips, level, maximum]
+		level_label.text = "Lv.%d / %d" % [level, maximum]
 		level_label.add_theme_color_override(
-			"font_color", accent if level > 0 else PixelUI.DIM)
+			"font_color", accent.lightened(0.15) if level > 0 else PixelUI.DIM)
+		gauge.configure(level, maximum, accent, prereq_ok)
 
 		buy.disabled = cost < 0 or not prereq_ok \
 			or credits < cost or p.material_count(material) < material_cost
@@ -435,7 +514,7 @@ func _refresh() -> void:
 		else:
 			buy.text = "强化 · %d 点 + %s×%d" % [
 				cost, ResourceDB.display_name(material).substr(0, 2), material_cost]
-		card.modulate = Color(1, 1, 1, 1) if prereq_ok else Color(0.82, 0.85, 0.90, 0.55)
+		card.modulate = Color(1, 1, 1, 1) if prereq_ok else Color(0.82, 0.85, 0.90, 0.58)
 		var box: StyleBoxFlat = entry["style_selected"] if id == _selected \
 			else (entry["style_unlocked"] if level > 0 else entry["style"])
 		card.add_theme_stylebox_override("panel", box)
@@ -450,7 +529,7 @@ func _refresh_detail(p: Node) -> void:
 	if _selected == &"":
 		_detail_title.text = "天赋说明 // 点击任意枝干节点查看详情"
 		_detail_title.add_theme_color_override("font_color", PixelUI.AMBER_BRIGHT)
-		_detail_body.text = "从左侧 DOLL-01 核心沿青蓝（机体防线）、琥珀（火力弹道）、翡翠（战地搜刮）三条技能方向蔓延。购买后下局生效，重置全额返还。"
+		_detail_body.text = "从左侧 DOLL-01 神经核心沿翡翠绿（机体防线）、琥珀橙（火力弹道）、战术青（战地搜刮）三条技能方向蔓延。按住画布可自由拖拽探索，购买后下局生效，重置全额返还。"
 		_detail_meta.text = ""
 		return
 	var def := _def(_selected)
@@ -484,21 +563,26 @@ func _refresh_detail(p: Node) -> void:
 func _effect_text(id: StringName, level: int) -> String:
 	match id:
 		&"hp":
-			return "生命上限 %d（基础 100）" % (100 + level * 15)
+			return "生命上限 +%d%%（%d，基础 100）" % [level * 15, 100 + level * 15]
 		&"move":
-			return "移动速度 +%d%%" % (level * 4)
-		&"gun":
-			return "基础散布 -%d%%" % (level * 6)
-		&"reload":
-			return "换弹时间 -%d%%" % (level * 6)
-		&"scavenge":
-			return "撤离资源 +%d%%" % (level * 10)
+			return "移动速度 +%d%%" % (level * 5)
 		&"armor":
-			return "护甲上限 +%d" % (level * 20)
+			return "护甲上限 +%d%%（+%d 耐久）" % [level * 20, level * 20]
+		&"hearing":
+			if level <= 0:
+				return "默认方向声纹环 · 听声距离 %.1f m（Lv.1 解锁声波涟漪）" % HearingIndicator2D.HEARING_METERS
+			var meters := HearingIndicator2D.HEARING_METERS * (1.0 + float(level) * HearingIndicator2D.HEARING_TALENT_STEP)
+			return "声波涟漪模式已激活 · 听声距离 +%d%%（%.2f m）" % [level * 10, meters]
+		&"gun":
+			return "基础散布 -%d%%" % (level * 5)
+		&"reload":
+			return "换弹时间 -%d%%" % (level * 5)
 		&"magazine":
-			return "弹匣容量 +%d%%" % (level * 8)
+			return "弹匣容量 +%d%%" % (level * 10)
 		&"reserve":
 			return "备弹上限 +%d%%" % (level * 20)
+		&"scavenge":
+			return "撤离资源 +%d%%" % (level * 10)
 		&"magnet":
 			return "掉落吸附范围 +%d%%" % (level * 20)
 		&"loading":
@@ -583,36 +667,45 @@ func _title(id: StringName) -> String:
 	return String(_def(id).get("title", String(id)))
 
 
-## 绘制背景神经网格、核心光晕、三条分支名称与有机贝塞尔技能树枝干。
+## 绘制背景神经网格、三条分支色域氛围带、核心光晕、分支标题与有机贝塞尔枝干。
 func _draw_tree_canvas() -> void:
 	var c := _content
 	var sz := CONTENT_SIZE
-	c.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.014, 0.020, 0.030, 0.96), true)
-	# 细微战术坐标网格，增强空间延展感。
-	var grid := Color(0.28, 0.42, 0.56, 0.08)
+	c.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.012, 0.018, 0.026, 0.97), true)
+
+	# 三条分支柔和色域背景带，清晰区分生存绿 / 火力橙 / 搜刮青区域。
+	c.draw_rect(Rect2(0.0, 0.0, sz.x, 322.0), Color(BRANCH_COLORS["survival"], 0.024), true)
+	c.draw_rect(Rect2(0.0, 322.0, sz.x, 186.0), Color(BRANCH_COLORS["firepower"], 0.022), true)
+	c.draw_rect(Rect2(0.0, 508.0, sz.x, sz.y - 508.0), Color(BRANCH_COLORS["scavenge"], 0.024), true)
+	c.draw_line(Vector2(240.0, 322.0), Vector2(sz.x - 40.0, 322.0), Color(0.35, 0.45, 0.55, 0.14), 1.0)
+	c.draw_line(Vector2(240.0, 508.0), Vector2(sz.x - 40.0, 508.0), Color(0.35, 0.45, 0.55, 0.14), 1.0)
+
+	# 细微战术坐标网格，增强大画布空间延展感。
+	var grid := Color(0.28, 0.42, 0.56, 0.075)
 	var x := 48.0
 	while x < sz.x:
 		c.draw_line(Vector2(x, 0), Vector2(x, sz.y), grid, 1.0)
-		x += 64.0
+		x += 72.0
 	var y := 48.0
 	while y < sz.y:
 		c.draw_line(Vector2(0, y), Vector2(sz.x, y), grid, 1.0)
-		y += 64.0
+		y += 72.0
 
 	# 核心右侧发散光晕。
 	var root_out := ROOT_POS + Vector2(ROOT_SIZE.x, ROOT_SIZE.y * 0.5)
-	c.draw_circle(root_out, 58.0, Color(PixelUI.AMBER, 0.06), true, -1.0, true)
-	c.draw_circle(root_out, 28.0, Color(PixelUI.AMBER, 0.12), true, -1.0, true)
+	c.draw_circle(root_out, 74.0, Color(PixelUI.AMBER, 0.05), true, -1.0, true)
+	c.draw_circle(root_out, 36.0, Color(PixelUI.AMBER, 0.12), true, -1.0, true)
 
-	# 分支方向标题标签。
+	# 分支方向标题标签（左侧加短色条）。
 	for branch_key in BRANCH_META:
 		var meta: Dictionary = BRANCH_META[branch_key]
 		var col: Color = BRANCH_COLORS[branch_key]
 		var pos: Vector2 = meta["pos"]
-		c.draw_string(PixelUI.FONT, pos + Vector2(0, 16), String(meta["tag"]),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(col, 0.85))
+		c.draw_rect(Rect2(pos + Vector2(-10.0, 3.0), Vector2(4.0, 16.0)), col, true)
+		c.draw_string(PixelUI.FONT, pos + Vector2(0, 17), String(meta["tag"]),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color(col, 0.90))
 
-	# 从核心引出的三条主枝干（平滑三次贝塞尔曲线，呈现放射蔓延感）。
+	# 从核心引出的三条主枝干与节点分叉（平滑三次贝塞尔曲线）。
 	var p := get_node_or_null("/root/Progress")
 	for def in NODES:
 		var id: StringName = def["id"]
@@ -628,10 +721,10 @@ func _draw_tree_canvas() -> void:
 
 func _draw_branch_curve(from: Vector2, to: Vector2, accent: Color,
 		unlocked: bool, active: bool) -> void:
-	var dx := maxf((to.x - from.x) * 0.52, 48.0)
+	var dx := maxf((to.x - from.x) * 0.52, 56.0)
 	var c1 := from + Vector2(dx, 0.0)
 	var c2 := to - Vector2(dx, 0.0)
-	const STEPS := 24
+	const STEPS := 28
 	var pts := PackedVector2Array()
 	pts.resize(STEPS + 1)
 	for i in STEPS + 1:
@@ -642,20 +735,19 @@ func _draw_branch_curve(from: Vector2, to: Vector2, accent: Color,
 			+ 3.0 * omt * t * t * c2 \
 			+ t * t * t * to
 	if active:
-		_content.draw_polyline(pts, Color(accent, 0.24), 9.0, true)
-		_content.draw_polyline(pts, accent.lightened(0.12), 3.0, true)
+		_content.draw_polyline(pts, Color(accent, 0.24), 10.0, true)
+		_content.draw_polyline(pts, accent.lightened(0.14), 3.2, true)
 	elif unlocked:
-		_content.draw_polyline(pts, Color(accent, 0.14), 6.0, true)
-		_content.draw_polyline(pts, Color(accent, 0.65), 2.2, true)
+		_content.draw_polyline(pts, Color(accent, 0.14), 6.5, true)
+		_content.draw_polyline(pts, Color(accent, 0.68), 2.3, true)
 	else:
 		_content.draw_polyline(pts, Color(PixelUI.DIM, 0.30), 1.8, true)
-	# 节点端连接点 + 方向小箭头。
-	var dot_col := accent.lightened(0.15) if active else (Color(accent, 0.72) if unlocked else Color(PixelUI.DIM, 0.4))
-	_content.draw_circle(from, 4.0, dot_col, true, -1.0, true)
+	var dot_col := accent.lightened(0.18) if active else (Color(accent, 0.75) if unlocked else Color(PixelUI.DIM, 0.42))
+	_content.draw_circle(from, 4.5, dot_col, true, -1.0, true)
 	var arrow := PackedVector2Array([
 		to,
-		to + Vector2(-9.0, -4.5),
-		to + Vector2(-9.0, 4.5),
+		to + Vector2(-10.0, -5.0),
+		to + Vector2(-10.0, 5.0),
 	])
 	_content.draw_colored_polygon(arrow, dot_col)
 
@@ -679,21 +771,29 @@ func _on_tree_gui_input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			_begin_drag()
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_set_pan(_content.position.x + 88.0)
+			if event.shift_pressed:
+				_set_pan(_content.position.x + 96.0)
+			else:
+				_set_pan(_content.position.x + 72.0, _content.position.y + 72.0)
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_set_pan(_content.position.x - 88.0)
+			if event.shift_pressed:
+				_set_pan(_content.position.x - 96.0)
+			else:
+				_set_pan(_content.position.x - 72.0, _content.position.y - 72.0)
 
 
 func _begin_drag() -> void:
 	if _content == null:
 		return
 	_dragging = true
+	_drag_moved = false
 	_drag_start = get_global_mouse_position()
 	_drag_origin = _content.position
 
 
 func _end_drag() -> void:
 	_dragging = false
+	_drag_moved = false
 
 
 func _set_pan(value: float, value_y := NAN) -> void:
@@ -701,11 +801,10 @@ func _set_pan(value: float, value_y := NAN) -> void:
 		return
 	var min_x := minf(0.0, _tree_area.size.x - _content.size.x)
 	_content.position.x = clampf(value, min_x, 0.0)
+	var min_y := minf(0.0, _tree_area.size.y - _content.size.y)
 	if not is_nan(value_y):
-		var min_y := minf(0.0, _tree_area.size.y - _content.size.y)
 		_content.position.y = clampf(value_y, min_y, 0.0)
 	else:
-		var min_y := minf(0.0, _tree_area.size.y - _content.size.y)
 		_content.position.y = clampf(_content.position.y, min_y, 0.0)
 	_refresh_pan_hint()
 
@@ -713,7 +812,8 @@ func _set_pan(value: float, value_y := NAN) -> void:
 func _refresh_pan_hint() -> void:
 	if _pan_hint == null or _content == null or _tree_area == null:
 		return
-	_pan_hint.visible = _content.size.x > _tree_area.size.x + 1.0
+	_pan_hint.visible = _content.size.x > _tree_area.size.x + 1.0 \
+		or _content.size.y > _tree_area.size.y + 1.0
 
 
 func _input(event: InputEvent) -> void:
@@ -721,6 +821,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion:
 		var delta := get_global_mouse_position() - _drag_start
+		if not _drag_moved and delta.length() < DRAG_THRESHOLD:
+			return
+		_drag_moved = true
 		_set_pan(_drag_origin.x + delta.x, _drag_origin.y + delta.y)
 	elif event is InputEventMouseButton \
 			and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:

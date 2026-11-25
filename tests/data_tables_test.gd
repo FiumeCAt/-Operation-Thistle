@@ -127,7 +127,9 @@ func _run() -> void:
 	_check(progress != null, "Progress autoload 存在")
 	if progress != null:
 		_check(int(progress.UPGRADE_MAX.get("hp", 0)) == 5, "强化上限来自表")
-		_check(int(progress.TALENT_2D_MAX.get("magnet", 0)) == 3, "磁力天赋上限来自表")
+		_check(int(progress.TALENT_2D_MAX.get("magnet", 0)) == 5, "磁力天赋上限来自表（默认 5 级）")
+		_check(int(progress.TALENT_2D_MAX.get("hearing", 0)) == 5, "声纹感知天赋上限来自表（5 级）")
+		_check(String(progress.TALENT_2D_PREREQ.get("hearing", "")) == "hp", "声纹感知挂在生存分支生命强化下")
 		_check(String(progress.TALENT_2D_PREREQ.get("loading", "")) == "magazine", "装填天赋前置来自表")
 		_check(progress.WEAPON_IDS.size() == 18, "存档武器白名单来自表")
 		_check(is_equal_approx(float(progress.CREDIT_COST_MUL), 3.0), "信用点花费倍率 ×3")
