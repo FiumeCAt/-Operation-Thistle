@@ -29,6 +29,26 @@ static func set_reticle_color(data: Dictionary, color: Color) -> void:
 	data["reticle_color"] = "#" + color.to_html(false)
 
 
+static func ui_theme(data: Dictionary) -> String:
+	var id := String(data.get("ui_theme", SAVE_STORE.DEFAULT_UI_THEME))
+	return id if SAVE_STORE.UI_THEME_IDS.has(id) else SAVE_STORE.DEFAULT_UI_THEME
+
+
+static func set_ui_theme(data: Dictionary, theme_id: String) -> bool:
+	if not SAVE_STORE.UI_THEME_IDS.has(theme_id):
+		return false
+	data["ui_theme"] = theme_id
+	return true
+
+
+static func ui_theme_color(data: Dictionary) -> Color:
+	return _sight_color(data, "ui_theme_color", SAVE_STORE.DEFAULT_UI_THEME_COLOR)
+
+
+static func set_ui_theme_color(data: Dictionary, color: Color) -> void:
+	data["ui_theme_color"] = "#" + color.to_html(false)
+
+
 static func set_ammo_display(data: Dictionary, mode: String) -> bool:
 	if not AMMO_DISPLAY_MODES.has(mode):
 		return false

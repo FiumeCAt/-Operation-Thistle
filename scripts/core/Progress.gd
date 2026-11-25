@@ -4,6 +4,8 @@ class_name ProgressService
 ## 对外保留全部既有字段、常量与公开 API 契约（含旧存档键名 100% 兼容），
 ## 内部职责分别委托给 SaveStore / SettingsStore / MetaProgress / LoadoutStore / TalentStore。
 
+signal ui_theme_changed(theme_id: String, accent: Color)
+
 const SAVE_STORE := preload("res://scripts/core/progress/SaveStore.gd")
 const SETTINGS_STORE := preload("res://scripts/core/progress/SettingsStore.gd")
 const META_STORE := preload("res://scripts/core/progress/MetaProgress.gd")
@@ -129,6 +131,7 @@ func load_data() -> bool:
 			push_warning("存档已从备份恢复：%s -> %s" % [source, save_path])
 	elif bool(res["migrated"]):
 		save_data()
+	_sync_ui_theme()
 	return loaded
 
 
@@ -146,6 +149,7 @@ func reset_for_test() -> bool:
 		return false
 	data = SAVE_STORE.defaults()
 	_last_saved_text = ""
+	_sync_ui_theme()
 	return save_data()
 
 
@@ -341,6 +345,29 @@ func set_laser_color(color: Color) -> void:
 func set_reticle_color(color: Color) -> void:
 	SETTINGS_STORE.set_reticle_color(data, color)
 	save_data()
+
+func ui_theme() -> String:
+	return SETTINGS_STORE.ui_theme(data)
+
+func ui_theme_color() -> Color:
+	return SETTINGS_STORE.ui_theme_color(data)
+
+func set_ui_theme(theme_id: String) -> bool:
+	if not SETTINGS_STORE.set_ui_theme(data, theme_id):
+		return false
+	_sync_ui_theme()
+	ui_theme_changed.emit(ui_theme(), PixelUI.theme_accent())
+	return save_data()
+
+func set_ui_theme_color(color: Color) -> bool:
+	SETTINGS_STORE.set_ui_theme_color(data, color)
+	SETTINGS_STORE.set_ui_theme(data, "custom")
+	_sync_ui_theme()
+	ui_theme_changed.emit(ui_theme(), PixelUI.theme_accent())
+	return save_data()
+
+func _sync_ui_theme() -> void:
+	PixelUI.set_theme_palette(ui_theme(), ui_theme_color())
 
 func set_ammo_display(mode: String) -> bool:
 	return save_data() if SETTINGS_STORE.set_ammo_display(data, mode) else false

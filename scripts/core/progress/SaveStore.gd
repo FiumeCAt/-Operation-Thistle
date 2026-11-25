@@ -9,6 +9,9 @@ const DEFAULT_PATH := "user://save_v1.json"
 const SLOT_COUNT := 5
 const DEFAULT_LASER_COLOR := "#39ff88"
 const DEFAULT_RETICLE_COLOR := "#ff7a3c"
+const DEFAULT_UI_THEME := "amber"
+const DEFAULT_UI_THEME_COLOR := "#ff9e3d"
+const UI_THEME_IDS := ["amber", "terminal", "cyan", "mono", "custom"]
 
 const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
 const WEAPON_IDS := [
@@ -69,6 +72,8 @@ static func defaults() -> Dictionary:
 		"reticle_styles": {},
 		"laser_color": DEFAULT_LASER_COLOR,
 		"reticle_color": DEFAULT_RETICLE_COLOR,
+		"ui_theme": DEFAULT_UI_THEME,
+		"ui_theme_color": DEFAULT_UI_THEME_COLOR,
 		"debug_enabled": false,
 		"debug": {
 			"recoil_v": 1.0, "recoil_h": 1.0, "recoil_cap": 1.0,
@@ -309,6 +314,10 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 	data["laser_color"] = raw_laser if Color.html_is_valid(raw_laser) else DEFAULT_LASER_COLOR
 	var raw_reticle := String(data.get("reticle_color", DEFAULT_RETICLE_COLOR))
 	data["reticle_color"] = raw_reticle if Color.html_is_valid(raw_reticle) else DEFAULT_RETICLE_COLOR
+	var raw_theme := String(data.get("ui_theme", DEFAULT_UI_THEME))
+	data["ui_theme"] = raw_theme if UI_THEME_IDS.has(raw_theme) else DEFAULT_UI_THEME
+	var raw_theme_col := String(data.get("ui_theme_color", DEFAULT_UI_THEME_COLOR))
+	data["ui_theme_color"] = raw_theme_col if Color.html_is_valid(raw_theme_col) else DEFAULT_UI_THEME_COLOR
 	data["debug_enabled"] = bool(data.get("debug_enabled", false))
 	if not (data.get("debug") is Dictionary):
 		data["debug"] = {}

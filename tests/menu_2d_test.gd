@@ -63,6 +63,24 @@ func _run() -> void:
 	_check(not menu.stash.visible, "ESC closes the stash")
 
 	_check(menu.deployment != null and not menu.deployment.visible, "deployment menu exists")
+	_check(menu._bg_textures.size() == 3, "start menu loads all three tactical background slides")
+	menu.select_bg_slide(2)
+	_check(menu._bg_index == 2, "start menu background slide selector switches cleanly")
+	_check(menu.theme_buttons.size() == 4 and menu.theme_picker != null,
+		"start menu exposes four theme presets and custom color picker")
+	if p != null:
+		p.set_loadout_2d(&"akm", &"g17")
+		menu._refresh_dossier()
+		_check(menu._loadout_slots["primary"]["name"].text.contains("AKM")
+			and menu._loadout_slots["secondary"]["name"].text.contains("G17"),
+			"start menu loadout card shows equipped primary and secondary weapons")
+		menu._select_theme_preset("cyan")
+		_check(p.ui_theme() == "cyan" and PixelUI.theme_id() == "cyan",
+			"selecting cyan theme updates PixelUI palette and saves to Progress")
+		menu._on_custom_theme_color(Color(0.85, 0.35, 0.95))
+		_check(p.ui_theme() == "custom" and absf(p.ui_theme_color().r - 0.85) < 0.02,
+			"custom theme color switches to custom mode and persists")
+		menu._select_theme_preset("amber")
 	menu._start()
 	_check(menu.deployment.visible, "start opens the deployment screen")
 	menu.deployment.close_menu()

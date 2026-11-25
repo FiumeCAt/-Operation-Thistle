@@ -32,6 +32,120 @@ const STAM_HIGH := Color(0.56, 0.94, 1.0)
 const ICON_ROOT := "res://assets/art/ui/icons/"
 const PORTRAIT_ROOT := "res://assets/art/ui/portraits/"
 
+## 界面主题预设（默认琥珀 + 终端绿 + 科幻亮青 + 简约黑白 + 自定义主色）：
+## 既有 const AMBER / BG / TEXT 全部保留不动确保全库兼容，新控件与可换肤界面调用 theme_*() 取动态色。
+const THEME_ORDER: Array[String] = ["amber", "terminal", "cyan", "mono", "custom"]
+const THEME_NAMES := {
+	"amber": "琥珀",
+	"terminal": "终端绿",
+	"cyan": "亮青",
+	"mono": "黑白",
+	"custom": "自定义",
+}
+const THEME_PRESETS := {
+	"amber": {
+		"accent": Color(1.0, 0.62, 0.24),
+		"accent_bright": Color(1.0, 0.82, 0.48),
+		"bg": Color(0.014, 0.020, 0.028, 0.95),
+		"bg_light": Color(0.055, 0.070, 0.088, 0.98),
+		"text": Color(0.90, 0.94, 0.97),
+		"dim": Color(0.58, 0.66, 0.75),
+	},
+	"terminal": {
+		"accent": Color(0.24, 0.91, 0.48),
+		"accent_bright": Color(0.56, 1.0, 0.71),
+		"bg": Color(0.012, 0.026, 0.018, 0.95),
+		"bg_light": Color(0.038, 0.078, 0.052, 0.98),
+		"text": Color(0.86, 0.98, 0.90),
+		"dim": Color(0.48, 0.72, 0.56),
+	},
+	"cyan": {
+		"accent": Color(0.21, 0.86, 1.0),
+		"accent_bright": Color(0.61, 0.94, 1.0),
+		"bg": Color(0.012, 0.024, 0.038, 0.95),
+		"bg_light": Color(0.040, 0.075, 0.110, 0.98),
+		"text": Color(0.88, 0.96, 1.0),
+		"dim": Color(0.50, 0.70, 0.82),
+	},
+	"mono": {
+		"accent": Color(0.93, 0.95, 0.97),
+		"accent_bright": Color(1.0, 1.0, 1.0),
+		"bg": Color(0.025, 0.027, 0.031, 0.95),
+		"bg_light": Color(0.075, 0.080, 0.088, 0.98),
+		"text": Color(0.96, 0.97, 0.98),
+		"dim": Color(0.62, 0.65, 0.69),
+	},
+}
+
+static var _active_theme_id := "amber"
+static var _custom_accent := Color(1.0, 0.62, 0.24)
+
+
+static func set_theme_palette(id: String, custom_color: Color = AMBER) -> void:
+	_active_theme_id = id if THEME_ORDER.has(id) else "amber"
+	_custom_accent = custom_color
+
+
+static func theme_id() -> String:
+	return _active_theme_id
+
+
+static func theme_name(id: String) -> String:
+	return String(THEME_NAMES.get(id, id))
+
+
+static func theme_accent() -> Color:
+	if _active_theme_id == "custom":
+		return _custom_accent
+	return THEME_PRESETS.get(_active_theme_id, THEME_PRESETS["amber"])["accent"]
+
+
+static func theme_accent_bright() -> Color:
+	if _active_theme_id == "custom":
+		return _custom_accent.lightened(0.32)
+	return THEME_PRESETS.get(_active_theme_id, THEME_PRESETS["amber"])["accent_bright"]
+
+
+static func theme_bg(alpha := -1.0) -> Color:
+	var c: Color
+	if _active_theme_id == "custom":
+		var a := _custom_accent
+		c = Color(lerpf(0.014, a.r, 0.03), lerpf(0.018, a.g, 0.03), lerpf(0.024, a.b, 0.03), 0.95)
+	else:
+		c = THEME_PRESETS.get(_active_theme_id, THEME_PRESETS["amber"])["bg"]
+	if alpha >= 0.0:
+		c.a = alpha
+	return c
+
+
+static func theme_bg_light(alpha := -1.0) -> Color:
+	var c: Color
+	if _active_theme_id == "custom":
+		var a := _custom_accent
+		c = Color(lerpf(0.052, a.r, 0.07), lerpf(0.062, a.g, 0.07), lerpf(0.076, a.b, 0.07), 0.98)
+	else:
+		c = THEME_PRESETS.get(_active_theme_id, THEME_PRESETS["amber"])["bg_light"]
+	if alpha >= 0.0:
+		c.a = alpha
+	return c
+
+
+static func theme_text() -> Color:
+	if _active_theme_id == "custom":
+		return Color(0.92, 0.95, 0.98)
+	return THEME_PRESETS.get(_active_theme_id, THEME_PRESETS["amber"])["text"]
+
+
+static func theme_dim() -> Color:
+	if _active_theme_id == "custom":
+		return Color(0.60, 0.67, 0.75)
+	return THEME_PRESETS.get(_active_theme_id, THEME_PRESETS["amber"])["dim"]
+
+
+static func theme_on_primary() -> Color:
+	var a := theme_accent()
+	return Color(0.05, 0.05, 0.06) if a.get_luminance() > 0.36 else Color(0.97, 0.98, 1.0)
+
 static func icon(parent: Node, icon_name: String, px: int) -> TextureRect:
 	var path := ICON_ROOT + icon_name + ".png"
 	var tex := TextureRect.new()
@@ -57,19 +171,33 @@ class PixelPanel extends PanelContainer:
 	var accent := Color(1, 1, 1)
 	var weight := 2.0
 	var corner := 24.0
+	var use_theme_accent := false
+	var bg_alpha := -1.0
+
+	func apply_active_theme() -> void:
+		if use_theme_accent:
+			accent = PixelUI.theme_accent()
+		var bg := PixelUI.theme_bg(bg_alpha)
+		var st := get_theme_stylebox("panel")
+		if st is StyleBoxFlat:
+			var dup := (st as StyleBoxFlat).duplicate() as StyleBoxFlat
+			dup.bg_color = bg
+			add_theme_stylebox_override("panel", dup)
+		queue_redraw()
 
 	func _draw() -> void:
 		var s := size
 		if s.x < 12.0 or s.y < 12.0:
 			return
-		draw_rect(Rect2(Vector2.ZERO, s), accent, false, weight)
-		draw_rect(Rect2(Vector2(5.0, 5.0), s - Vector2(10.0, 10.0)), Color(accent, 0.30), false, 1.0)
+		var draw_acc := PixelUI.theme_accent() if use_theme_accent else accent
+		draw_rect(Rect2(Vector2.ZERO, s), draw_acc, false, weight)
+		draw_rect(Rect2(Vector2(5.0, 5.0), s - Vector2(10.0, 10.0)), Color(draw_acc, 0.30), false, 1.0)
 		var thick := weight + 2.0
 		var c := minf(corner, minf(s.x, s.y) * 0.4)
 		for p in [Vector2.ZERO, Vector2(s.x - c, 0.0), Vector2(0.0, s.y - thick), Vector2(s.x - c, s.y - thick)]:
-			draw_rect(Rect2(p, Vector2(c, thick)), accent, true)
+			draw_rect(Rect2(p, Vector2(c, thick)), draw_acc, true)
 		for p in [Vector2.ZERO, Vector2(s.x - thick, 0.0), Vector2(0.0, s.y - c), Vector2(s.x - thick, s.y - c)]:
-			draw_rect(Rect2(p, Vector2(thick, c)), accent, true)
+			draw_rect(Rect2(p, Vector2(thick, c)), draw_acc, true)
 
 static func panel_style(bg: Color = BG, border := 0, border_color: Color = AMBER) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
@@ -83,11 +211,16 @@ static func panel_style(bg: Color = BG, border := 0, border_color: Color = AMBER
 	s.content_margin_bottom = 16
 	return s
 
-## 带切角描边的面板；正文内容请加给返回的 PanelContainer
-static func panel(bg: Color = BG, accent: Color = AMBER) -> PixelPanel:
+## 带切角描边的面板；默认自动跟随当前主题配色，显式传参时使用指定颜色。
+static func panel(bg: Color = Color(-1, -1, -1, -1), accent: Color = Color(-1, -1, -1, -1)) -> PixelPanel:
 	var p := PixelPanel.new()
-	p.accent = accent
-	p.add_theme_stylebox_override("panel", panel_style(bg))
+	var use_default_accent := accent.r < 0.0
+	var use_default_bg := bg.r < 0.0
+	p.use_theme_accent = use_default_accent
+	p.accent = theme_accent() if use_default_accent else accent
+	var final_bg := theme_bg() if use_default_bg else bg
+	p.bg_alpha = final_bg.a
+	p.add_theme_stylebox_override("panel", panel_style(final_bg))
 	return p
 
 static func label(parent: Node, text: String, size: int, color: Color) -> Label:
@@ -163,27 +296,38 @@ static func section_bar(parent: Node, title: String, tag: String = "",
 	return row
 
 static func style_button(button: Button) -> void:
+	var acc := theme_accent()
+	var bright := theme_accent_bright()
+	var bg_l := theme_bg_light()
 	var normal := StyleBoxFlat.new()
-	normal.bg_color = BG_LIGHT
-	normal.border_color = Color(AMBER, 0.75)
+	normal.bg_color = bg_l
+	normal.border_color = Color(acc, 0.75)
 	normal.set_border_width_all(2)
 	normal.content_margin_left = 18
 	normal.content_margin_right = 18
 	normal.content_margin_top = 10
 	normal.content_margin_bottom = 10
 	var hover := normal.duplicate() as StyleBoxFlat
-	hover.bg_color = Color(0.16, 0.11, 0.05, 1.0)
-	hover.border_color = AMBER_BRIGHT
+	hover.bg_color = Color(
+		lerpf(bg_l.r, acc.r, 0.16),
+		lerpf(bg_l.g, acc.g, 0.16),
+		lerpf(bg_l.b, acc.b, 0.16),
+		1.0)
+	hover.border_color = bright
 	var pressed := normal.duplicate() as StyleBoxFlat
-	pressed.bg_color = Color(0.26, 0.15, 0.05, 1.0)
-	pressed.border_color = AMBER_BRIGHT
+	pressed.bg_color = Color(
+		lerpf(bg_l.r, acc.r, 0.28),
+		lerpf(bg_l.g, acc.g, 0.28),
+		lerpf(bg_l.b, acc.b, 0.28),
+		1.0)
+	pressed.border_color = bright
 	var disabled := normal.duplicate() as StyleBoxFlat
 	disabled.bg_color = Color(0.035, 0.042, 0.048, 0.9)
 	disabled.border_color = Color(0.26, 0.29, 0.31)
 	# 焦点只画描边：默认主题的焦点样式会在按钮上盖一层白底，破坏像素配色。
 	var focus := StyleBoxFlat.new()
 	focus.bg_color = Color(0, 0, 0, 0)
-	focus.border_color = AMBER_BRIGHT
+	focus.border_color = bright
 	focus.set_border_width_all(2)
 	focus.draw_center = false
 	button.add_theme_stylebox_override("normal", normal)
@@ -191,10 +335,10 @@ static func style_button(button: Button) -> void:
 	button.add_theme_stylebox_override("pressed", pressed)
 	button.add_theme_stylebox_override("disabled", disabled)
 	button.add_theme_stylebox_override("focus", focus)
-	button.add_theme_color_override("font_color", TEXT)
-	button.add_theme_color_override("font_hover_color", AMBER_BRIGHT)
-	button.add_theme_color_override("font_pressed_color", AMBER_BRIGHT)
-	button.add_theme_color_override("font_disabled_color", DIM)
+	button.add_theme_color_override("font_color", theme_text())
+	button.add_theme_color_override("font_hover_color", bright)
+	button.add_theme_color_override("font_pressed_color", bright)
+	button.add_theme_color_override("font_disabled_color", theme_dim())
 	button.add_theme_font_size_override("font_size", FS_BODY)
 	_attach_ui_sfx(button)
 
@@ -205,33 +349,41 @@ static func button(text: String, height := 56) -> Button:
 	style_button(b)
 	return b
 
-## 主行动按钮：琥珀实心，一屏只用于唯一主操作（开始/确认）。
-static func primary_button(text: String, height := 56) -> Button:
-	var b := button(text, height)
+## 主行动按钮：主题主色实心，一屏只用于唯一主操作（开始/确认）。
+static func style_primary_button(b: Button) -> void:
+	style_button(b)
+	var acc := theme_accent()
+	var bright := theme_accent_bright()
+	var on_acc := theme_on_primary()
 	var normal := StyleBoxFlat.new()
-	normal.bg_color = AMBER
-	normal.border_color = AMBER_BRIGHT
+	normal.bg_color = acc
+	normal.border_color = bright
 	normal.set_border_width_all(2)
 	normal.content_margin_left = 18
 	normal.content_margin_right = 18
 	normal.content_margin_top = 10
 	normal.content_margin_bottom = 10
 	var hover := normal.duplicate() as StyleBoxFlat
-	hover.bg_color = AMBER_BRIGHT
-	hover.border_color = Color(1.0, 0.92, 0.78)
+	hover.bg_color = bright
+	hover.border_color = bright.lightened(0.30)
 	var pressed := normal.duplicate() as StyleBoxFlat
-	pressed.bg_color = Color(0.86, 0.48, 0.16)
+	pressed.bg_color = acc.darkened(0.16)
 	var disabled := normal.duplicate() as StyleBoxFlat
-	disabled.bg_color = Color(0.24, 0.20, 0.14)
-	disabled.border_color = Color(0.34, 0.30, 0.24)
+	disabled.bg_color = Color(0.24, 0.24, 0.26)
+	disabled.border_color = Color(0.34, 0.34, 0.36)
 	b.add_theme_stylebox_override("normal", normal)
 	b.add_theme_stylebox_override("hover", hover)
 	b.add_theme_stylebox_override("pressed", pressed)
 	b.add_theme_stylebox_override("disabled", disabled)
-	b.add_theme_color_override("font_color", Color(0.08, 0.05, 0.02))
-	b.add_theme_color_override("font_hover_color", Color(0.05, 0.03, 0.01))
-	b.add_theme_color_override("font_pressed_color", Color(0.05, 0.03, 0.01))
-	b.add_theme_color_override("font_disabled_color", DIM)
+	b.add_theme_color_override("font_color", on_acc)
+	b.add_theme_color_override("font_hover_color", on_acc)
+	b.add_theme_color_override("font_pressed_color", on_acc)
+	b.add_theme_color_override("font_focus_color", on_acc)
+	b.add_theme_color_override("font_disabled_color", theme_dim())
+
+static func primary_button(text: String, height := 56) -> Button:
+	var b := button(text, height)
+	style_primary_button(b)
 	return b
 
 ## 给所有按钮统一挂上悬停/点击音；跨场景可用，不依赖具体菜单。
