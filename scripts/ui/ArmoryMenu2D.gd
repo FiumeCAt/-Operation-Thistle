@@ -213,6 +213,7 @@ func _build() -> void:
 	_detail_view.build(weapon_page)
 	_detail_view.weapon_selected.connect(_select)
 	_detail_view.category_selected.connect(_select_category)
+	_detail_view.ammo_selected.connect(_select_ammo)
 	_detail_view.equip_requested.connect(_equip)
 	_detail_view.mod_requested.connect(_open_mods_for_weapon)
 	_detail_view.tip_show_requested.connect(_show_tip)
@@ -324,6 +325,17 @@ func _select_category(category: StringName) -> void:
 		_selected = StringName(visible_ids[0])
 	if _list_scroll != null:
 		_list_scroll.scroll_vertical = 0
+	_refresh()
+
+
+func _select_ammo(ammo_id: StringName) -> void:
+	var p := _progress_node()
+	if p != null and p.has_method("set_weapon_ammo_2d"):
+		if p.set_weapon_ammo_2d(_selected, ammo_id):
+			var a := WeaponDB.get_ammo(ammo_id)
+			if a != null:
+				_feedback.text = "默认出战弹种已切换为 [%s %s] %s · 局内可按 Q 热切" % [
+					WeaponDB.tier_label(a.tier), WeaponDB.role_label(a.role), a.display_name]
 	_refresh()
 
 

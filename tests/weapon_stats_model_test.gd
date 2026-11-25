@@ -36,7 +36,8 @@ func _run() -> void:
 	_check(is_equal_approx(float(akm_bare["range"]), 40.0), "AKM bare range == 40.0m")
 	_check(is_equal_approx(float(akm_bare["speed"]), 715.0), "AKM bare bullet_speed == 715 m/s")
 	_check(bool(akm_bare["auto"]), "AKM bare default_auto_fire == true")
-	_check(is_equal_approx(float(akm_bare["damage"]), 38.0), "AKM bare damage == 38.0")
+	_check(is_equal_approx(float(akm_bare["damage"]), 38.0 * 1.04), "AKM bare damage includes 1.04x inherent bonus (39.52)")
+	_check(is_equal_approx(float(akm_bare["ap"]), 72.0 + 2.0), "AKM bare AP includes +2 inherent bonus (74)")
 	_check(is_equal_approx(float(akm_bare["spread"]), 0.058), "AKM bare hip spread == 0.058 rad")
 
 	var g17_bare: Dictionary = STATS_MODEL.compute(&"g17", {})
@@ -48,26 +49,35 @@ func _run() -> void:
 	var m870_bare: Dictionary = STATS_MODEL.compute(&"m870", {})
 	_check(int(m870_bare["mag"]) == 5, "M870 bare mag == 5")
 	_check(int(m870_bare["pellets"]) == 8, "M870 bare pellets == 8")
-	_check(is_equal_approx(float(m870_bare["damage"]), 64.0), "M870 bare total damage == 64.0 (8*8)")
+	_check(is_equal_approx(float(m870_bare["damage"]), 10.0 * 8.0 * 1.25), "M870 bare total damage == 100.0 (8*10*1.25)")
 	_check(is_equal_approx(float(m870_bare["range"]), 33.0), "M870 bare range == 33.0m")
 	_check(is_equal_approx(float(m870_bare["cycle_time"]), 0.28 + 0.35),
 		"M870 pump-action cycle_time includes pump_time (0.63s)")
-	_check(absf(float(m870_bare["burst_dps"]) - 64.0 / 0.63) < 0.05,
-		"M870 burst DPS uses true pump cycle (%.1f /s, not fake 64/0.28)" % float(m870_bare["burst_dps"]))
+	_check(absf(float(m870_bare["burst_dps"]) - 100.0 / 0.63) < 0.05,
+		"M870 burst DPS uses true pump cycle (%.1f /s, not fake 100/0.28)" % float(m870_bare["burst_dps"]))
 	_check(float(m870_bare["sustained_dps"]) > 0.0 and float(m870_bare["sustained_dps"]) < float(m870_bare["burst_dps"]),
 		"M870 sustained DPS factors in shell-by-shell reload (%.1f < %.1f)" % [
 			float(m870_bare["sustained_dps"]), float(m870_bare["burst_dps"])])
-	_check(is_equal_approx(float(m870_bare["mag_damage"]), 64.0 * 5.0), "M870 single-mag total damage == 320")
+	_check(is_equal_approx(float(m870_bare["mag_damage"]), 100.0 * 5.0), "M870 single-mag total damage == 500")
 
 	var awm_bare: Dictionary = STATS_MODEL.compute(&"awm", {})
 	_check(int(awm_bare["mag"]) == 5, "AWM bare mag == 5")
-	_check(is_equal_approx(float(awm_bare["damage"]), 110.0), "AWM bare damage == 110.0")
+	_check(is_equal_approx(float(awm_bare["damage"]), 122.0 * 1.15), "AWM bare damage == 140.3 (122*1.15)")
+	_check(is_equal_approx(float(awm_bare["ap"]), 158.0 + 10.0), "AWM bare AP == 168 (158+10)")
 	_check(is_equal_approx(float(awm_bare["range"]), 70.5), "AWM bare range == 70.5m")
 	_check(is_equal_approx(float(awm_bare["speed"]), 918.0), "AWM bare speed == 918 m/s")
-	_check(absf(float(awm_bare["burst_dps"]) - 110.0 / 0.70) < 0.05
-		and is_equal_approx(float(awm_bare["mag_damage"]), 550.0)
+	_check(absf(float(awm_bare["burst_dps"]) - 140.3 / 0.70) < 0.05
+		and is_equal_approx(float(awm_bare["mag_damage"]), 140.3 * 5.0)
 		and float(awm_bare["sustained_dps"]) < float(awm_bare["burst_dps"]),
 		"AWM burst/sustained DPS and mag total damage match formula")
+	# 同口径换弹（肉伤 vs 穿甲）验证：高穿降肉伤、升穿甲
+	var akm_hp: Dictionary = STATS_MODEL.compute(&"akm", {}, {}, Callable(), &"762x39_hp")
+	var akm_ap: Dictionary = STATS_MODEL.compute(&"akm", {}, {}, Callable(), &"762x39_ap")
+	_check(float(akm_hp["damage"]) > float(akm_bare["damage"])
+		and float(akm_bare["damage"]) > float(akm_ap["damage"])
+		and float(akm_ap["ap"]) > float(akm_bare["ap"])
+		and float(akm_bare["ap"]) > float(akm_hp["ap"]),
+		"7.62x39 flesh > std > AP in damage, and AP > std > flesh in penetration")
 	_check(float(g17_bare["ads_time"]) < float(akm_bare["ads_time"])
 		and float(akm_bare["ads_time"]) < float(awm_bare["ads_time"]),
 		"ADS time scales by weapon class (G17 %.2fs < AKM %.2fs < AWM %.2fs)" % [

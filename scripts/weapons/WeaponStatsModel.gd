@@ -49,8 +49,10 @@ static func talents_from_progress(progress: Node) -> Dictionary:
 
 ## 按给定武器 ID、配件字典与天赋等级，计算完整的武器最终属性快照。
 ## reticle_resolver 可选：Callable(sight_id: String, default_reticle: String) -> String。
+## ammo_override 可选：覆盖当前使用的同口径弹种（如肉伤 / 常规 / 穿甲）。
 static func compute(weapon_id: StringName, installed: Dictionary,
-		talents: Dictionary = {}, reticle_resolver: Callable = Callable()) -> Dictionary:
+		talents: Dictionary = {}, reticle_resolver: Callable = Callable(),
+		ammo_override: StringName = &"") -> Dictionary:
 	var base := WeaponDB.get_weapon(weapon_id)
 	var wid := String(weapon_id)
 	var mods := ModDB.modifiers(installed, false, wid)
@@ -130,10 +132,24 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 	var speed_mul := float(mods.get("speed_mul", 1.0))
 	var speed := float(base.bullet_speed_mps) * speed_mul
 
-	# 弹药派生：单丸伤害、总伤害、穿甲、腰射散布与真实 DPS（爆发 / 持续 / 单匣总伤）。
-	var ammo = WeaponDB.ammo_table().get(base.ammo_id)
+	# 弹药派生：结合武器固有属性加成（damage_mul / ap_bonus / weakspot_mul）计算最终伤害、穿甲、散布与每秒 DPS。
+	var ammo_table := WeaponDB.ammo_table()
+	var active_ammo_id: StringName = base.ammo_id
+	if ammo_override != &"" and ammo_table.has(ammo_override):
+		var cand: AmmoData = ammo_table[ammo_override]
+		if cand.caliber == base.caliber:
+			active_ammo_id = ammo_override
+	var ammo: AmmoData = ammo_table.get(active_ammo_id)
+	var weapon_damage_mul := clampf(float(base.damage_mul), 0.2, 3.0)
+	var weapon_ap_bonus := float(base.ap_bonus)
+	var weapon_weakspot_mul := clampf(float(base.weakspot_mul), 0.5, 3.0)
 	var pellets := 0
+	var base_ap := 0.0
 	var ap := 0.0
+	var ammo_tier := 0
+	var effective_tier := 0
+	var ammo_role: StringName = &"std"
+	var ammo_reserve_cost := 1.0
 	var base_pellet_damage := 0.0
 	var pellet_damage := 0.0
 	var base_total_damage := 0.0
@@ -142,8 +158,13 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 	var spread := 0.0
 	if ammo != null:
 		pellets = int(ammo.pellets)
-		ap = float(ammo.ap)
-		base_pellet_damage = float(ammo.damage)
+		base_ap = float(ammo.ap)
+		ap = maxf(0.0, base_ap + weapon_ap_bonus)
+		ammo_tier = int(ammo.tier)
+		effective_tier = WeaponDB.tier_from_rha(ap)
+		ammo_role = ammo.role
+		ammo_reserve_cost = float(ammo.reserve_cost)
+		base_pellet_damage = float(ammo.damage) * weapon_damage_mul
 		pellet_damage = base_pellet_damage * damage_mul
 		base_total_damage = base_pellet_damage * float(pellets)
 		total_damage = pellet_damage * float(pellets)
@@ -167,6 +188,14 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"base": base,
 		"mods": mods,
 		"ammo": ammo,
+		"ammo_id": active_ammo_id,
+		"ammo_tier": ammo_tier,
+		"effective_tier": effective_tier,
+		"ammo_role": ammo_role,
+		"ammo_reserve_cost": ammo_reserve_cost,
+		"weapon_damage_mul": weapon_damage_mul,
+		"weapon_ap_bonus": weapon_ap_bonus,
+		"weapon_weakspot_mul": weapon_weakspot_mul,
 		"mag": mag,
 		"mag_style": mag_style,
 		"mag_scale": mag_scale,
@@ -212,6 +241,7 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"base_mag_damage": float(base_dps_info["mag_dmg"]),
 		"mag_damage": float(dps_info["mag_dmg"]),
 		"pellets": pellets,
+		"base_ap": base_ap,
 		"ap": ap,
 		"base_spread": base_spread,
 		"spread": spread,
@@ -221,21 +251,24 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 	}
 
 
-## 便捷入口：从 Progress 读取指定武器的已装配件、天赋与准星样式；
+## 便捷入口：从 Progress 读取指定武器的已装配件、天赋、默认弹种与准星样式；
 ## 传入 installed_override（如改枪预览表）时覆盖已装配件字典。
 static func compute_for_progress(weapon_id: StringName, progress: Node,
-		installed_override = null) -> Dictionary:
+		installed_override = null, ammo_override: StringName = &"") -> Dictionary:
 	var installed: Dictionary = {}
 	if installed_override is Dictionary:
 		installed = installed_override
 	elif progress != null and progress.has_method("weapon_mods_2d"):
 		installed = progress.weapon_mods_2d(weapon_id)
+	var chosen_ammo := ammo_override
+	if chosen_ammo == &"" and progress != null and progress.has_method("weapon_ammo_2d"):
+		chosen_ammo = progress.weapon_ammo_2d(weapon_id)
 	var talents := talents_from_progress(progress)
 	var resolver := Callable()
 	if progress != null and progress.has_method("reticle_style"):
 		resolver = func(sight_id: String, default_reticle: String) -> String:
 			return String(progress.reticle_style(sight_id, default_reticle))
-	return compute(weapon_id, installed, talents, resolver)
+	return compute(weapon_id, installed, talents, resolver, chosen_ammo)
 
 
 ## 基于基础模板克隆出全新运行期 WeaponData 并写入改装字段，绝不原地污染基础模板。
@@ -264,3 +297,5 @@ static func apply_to_weapon_data(data: WeaponData, stats: Dictionary) -> void:
 	data.mag_style = StringName(stats.get("mag_style", data.mag_style))
 	data.mag_scale = float(stats.get("mag_scale", 1.0))
 	data.auto_fire = bool(stats["auto"])
+	if stats.has("ammo_id") and StringName(stats["ammo_id"]) != &"":
+		data.ammo_id = StringName(stats["ammo_id"])

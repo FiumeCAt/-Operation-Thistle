@@ -93,7 +93,7 @@ const WORLD_PER_METER := UNITS.PIXELS_PER_METER
 const INTERACT_RADIUS := INTERACTION_SYSTEM.INTERACT_RADIUS
 const EXIT_RADIUS := INTERACTION_SYSTEM.EXIT_RADIUS
 const SHOT_ORIGIN_OFFSET := Vector2(0, -8)
-const HINT_DEFAULT := "WASD 移动 · 左键开火 · 右键瞄准 · B 切模式 · R 换弹 · X 收/拔枪 · TAB 背包 · Alt+滚轮 缩放 · E 交互"
+const HINT_DEFAULT := "WASD 移动 · 左键开火 · 右键瞄准 · Q 切弹 · B 切模式 · R 换弹 · X 收/拔枪 · TAB 背包 · E 交互"
 
 ## 结算标签由 RunHUD2D 构建，测试按名字读取。
 var result_label: Label
@@ -404,6 +404,11 @@ func _ensure_view_zoom_action() -> void:
 		var j_key := InputEventKey.new()
 		j_key.physical_keycode = KEY_J
 		InputMap.action_add_event("ammo_display", j_key)
+	if not InputMap.has_action("ammo_switch"):
+		InputMap.add_action("ammo_switch")
+		var q_key := InputEventKey.new()
+		q_key.physical_keycode = KEY_Q
+		InputMap.action_add_event("ammo_switch", q_key)
 
 
 ## 通过命令行切换角色表现：
@@ -441,6 +446,7 @@ func _apply_visual_override() -> void:
 		rig.loadout = allowed
 		rig.fire_input_blocked_fn = hud.is_pointer_over_interactive
 		rig.fire_mode_changed.connect(_on_fire_mode_changed)
+		rig.ammo_switched.connect(_on_ammo_switched)
 	if rig_style == "" or rig_style == "off":
 		return
 	doll.enable_rig(rig_style)
@@ -931,6 +937,18 @@ func _on_fire_mode_changed(mode: String, supported: bool) -> void:
 		_flash_hint("开火模式：全自动 (F)")
 	else:
 		_flash_hint("开火模式：半自动 (S)")
+	if doll != null:
+		hud.update_weapon(doll.weapon_rig)
+
+
+func _on_ammo_switched(ammo_id: StringName) -> void:
+	if hud == null:
+		return
+	var ammo := WeaponDB.get_ammo(ammo_id)
+	if ammo != null:
+		var cost_tag := "" if ammo.reserve_cost <= 1.01 else "（耗弹 ×%.1f）" % ammo.reserve_cost
+		_flash_hint("切弹完成：[%s %s] %s%s" % [
+			WeaponDB.tier_label(ammo.tier), WeaponDB.role_label(ammo.role), ammo.display_name, cost_tag])
 	if doll != null:
 		hud.update_weapon(doll.weapon_rig)
 

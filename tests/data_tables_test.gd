@@ -52,7 +52,23 @@ func _run() -> void:
 	var m870 := WeaponDB.get_weapon(&"m870")
 	_check(m870.feed_mode == &"shell" and not m870.auto_cycle, "M870 管仓/手动循环")
 	var ammo := WeaponDB.ammo_table()
-	_check(ammo.size() == 12, "弹药 12 种")
+	_check(ammo.size() == 30, "弹药 30 种（10 口径 × 3 档肉伤/常规/穿甲）")
+	var all_calibers_have_three := true
+	for wid in WeaponDB.WEAPON_ORDER:
+		if WeaponDB.ammo_for_weapon(wid).size() != 3:
+			all_calibers_have_three = false
+	_check(all_calibers_have_three, "全部 18 把武器所属口径均有 3 种可携带切换弹药")
+	_check(ammo[&"9mm_ap"].reserve_cost > 1.0 and ammo[&"762nato_ap"].reserve_cost >= 2.0
+		and is_equal_approx(ammo[&"9mm"].reserve_cost, 1.0),
+		"高穿弹消耗更多备弹点数（T4/T5 1.5 点，T6 2.0 点）")
+	_check(WeaponDB.get_weapon(&"m870").damage_mul > WeaponDB.get_weapon(&"saiga12k").damage_mul
+		and WeaponDB.get_weapon(&"sr25").damage_mul > WeaponDB.get_weapon(&"fal").damage_mul
+		and WeaponDB.get_weapon(&"g17").damage_mul > WeaponDB.get_weapon(&"g18").damage_mul,
+		"武器固有属性加成拉开了同口径武器定位差异（M870>Saiga / SR25>FAL / G17>G18）")
+	_check(StringName(EnemyDB.stats(&"hunter_type1").get("archetype", "")) == &"mech"
+		and StringName(EnemyDB.stats(&"rifleman").get("archetype", "")) == &"human"
+		and float(EnemyDB.archetype_profile(&"mutant").get("flesh_mul", 1.0)) > 1.1,
+		"敌人表已接入三系生态（mech / human / mutant）与参数配置")
 	var categories := WeaponDB.category_table()
 	_check(categories.size() == 5, "通用弹药 5 类")
 	_check(WeaponDB.get_weapon(&"g17").ammo_category == &"light"

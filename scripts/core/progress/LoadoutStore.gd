@@ -33,6 +33,32 @@ static func weapon_mods_2d(data: Dictionary, weapon_id: StringName) -> Dictionar
 	return (all_mods.get(String(weapon_id), {}) as Dictionary).duplicate()
 
 
+static func weapon_ammo_2d(data: Dictionary, weapon_id: StringName) -> StringName:
+	var all_ammo: Dictionary = data.get("weapon_ammo_2d", {})
+	var raw := String(all_ammo.get(String(weapon_id), ""))
+	if raw != "":
+		var aid := StringName(raw)
+		var tbl := WeaponDB.ammo_table()
+		if tbl.has(aid) and tbl[aid].caliber == WeaponDB.get_weapon(weapon_id).caliber:
+			return aid
+	return WeaponDB.get_weapon(weapon_id).ammo_id
+
+
+static func set_weapon_ammo_2d(data: Dictionary, weapon_id: StringName, ammo_id: StringName) -> bool:
+	var wid := String(weapon_id)
+	if not WEAPON_IDS.has(wid):
+		return false
+	var tbl := WeaponDB.ammo_table()
+	if not tbl.has(ammo_id):
+		return false
+	if tbl[ammo_id].caliber != WeaponDB.get_weapon(weapon_id).caliber:
+		return false
+	var all_ammo: Dictionary = data.get("weapon_ammo_2d", {})
+	all_ammo[wid] = String(ammo_id)
+	data["weapon_ammo_2d"] = all_ammo
+	return true
+
+
 static func armor_mods_2d(data: Dictionary) -> Dictionary:
 	return (data.get("armor_mods_2d", {}) as Dictionary).duplicate()
 

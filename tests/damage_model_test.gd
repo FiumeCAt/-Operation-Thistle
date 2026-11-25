@@ -36,32 +36,40 @@ func _run() -> void:
 	_check(DAMAGE.format_rha(46.0, "rha_mm") == "4.6mm RHA", "format_rha rha_mm mode: 46 -> '4.6mm RHA'")
 	_check(DAMAGE.format_rha(180.0, "rha_mm") == "18.0mm RHA", "format_rha .338: 180 -> '18.0mm RHA'")
 
-	# ---- 2) 敌人固定 RHA 护甲：击穿余穿加伤 + 未击穿平滑曲线 ----
+	# ---- 2) 敌人固定 RHA 护甲（Phase 3B：无甲无余穿加伤 + 有甲余穿封顶 + 三系钝伤与肉伤倍率） ----
 	_check(is_equal_approx(DAMAGE.resolve_enemy_damage(0.0, 0.0, 0.0), 0.0), "enemy 0 damage returns 0")
-	# 用户指定示例：17 伤害、15 穿甲打 0 护甲 = 17 + 15 * 0.1 = 18.5
+	# 无甲目标不吃余穿增伤（防止高穿弹在无甲变异体上反超肉伤弹）
 	_check(
-		is_equal_approx(DAMAGE.resolve_enemy_damage(17.0, 15.0, 0.0), 18.5),
-		"17 dmg / 15 AP vs 0 armor == 18.5 (overpen +0.1/pt)"
+		is_equal_approx(DAMAGE.resolve_enemy_damage(17.0, 15.0, 0.0), 17.0),
+		"17 dmg / 15 AP vs 0 armor == 17.0 (no unarmored overpen inflation)"
+	)
+	_check(
+		is_equal_approx(DAMAGE.resolve_enemy_damage(20.0, 12.0, 0.0, 0.22, 1.20), 24.0),
+		"flesh ammo vs 0-armor mutant gets 1.20x flesh multiplier (24.0)"
 	)
 	# 等穿：无余穿加伤也无减伤
 	_check(
 		is_equal_approx(DAMAGE.resolve_enemy_damage(30.0, 55.0, 55.0), 30.0),
 		"ap == armor deals exact base damage (30.0)"
 	)
-	# 9mm (18 dmg, AP 22) vs rifleman (armor 18) -> penetrated: 18 + 4*0.1 = 18.4
+	# 击穿有甲目标：余穿增伤按 0.08/pt 且封顶 30pt (+2.4)
 	_check(
-		is_equal_approx(DAMAGE.resolve_enemy_damage(18.0, 22.0, 18.0), 18.4),
-		"9mm (AP 22) penetrates rifleman (18) -> 18.4"
+		is_equal_approx(DAMAGE.resolve_enemy_damage(19.0, 32.0, 18.0), 19.0 + 14.0 * 0.08),
+		"9mm FMJ (AP 32) penetrates rifleman (18) -> 20.12"
 	)
-	# .338 (110 dmg, AP 180) vs heavy (armor 140) -> penetrated: 110 + 40*0.1 = 114.0
 	_check(
-		is_equal_approx(DAMAGE.resolve_enemy_damage(110.0, 180.0, 140.0), 114.0),
-		".338 (AP 180) penetrates heavy (140) -> 114.0"
+		is_equal_approx(DAMAGE.resolve_enemy_damage(102.0, 185.0, 125.0), 102.0 + 30.0 * 0.08),
+		".338 AP (185) penetrates heavy (125) -> capped overpen +2.4 (104.4)"
 	)
-	# 未击穿 0 AP 打重甲 -> 12% 钝伤保底
+	# 未击穿 0 AP 打重甲 -> 默认 12% 钝伤保底；机械 8% / 变异 22%
 	_check(
 		is_equal_approx(DAMAGE.resolve_enemy_damage(100.0, 0.0, 100.0), 12.0),
-		"0 AP vs 100 armor hits 12% blunt floor (12.0)"
+		"0 AP vs 100 armor hits default 12% blunt floor (12.0)"
+	)
+	_check(
+		is_equal_approx(DAMAGE.resolve_enemy_damage(100.0, 0.0, 100.0, 0.08), 8.0)
+		and is_equal_approx(DAMAGE.resolve_enemy_damage(100.0, 0.0, 100.0, 0.22), 22.0),
+		"mech (8%) resists blunt more than mutant bone carapace (22%)"
 	)
 	# 未击穿平滑曲线：50% 穿深 -> lerp(0.12, 1.0, 0.25) = 0.34；80% 穿深 -> lerp(0.12, 1.0, 0.64) = 0.6832
 	_check(
@@ -168,8 +176,13 @@ func _run() -> void:
 	enemy.hp = 100.0
 	var dealt: float = enemy.take_damage(32.0, 95.0)
 	_check(
-		is_equal_approx(dealt, DAMAGE.resolve_enemy_damage(32.0, 95.0, float(enemy.stats["armor"]))),
+		is_equal_approx(dealt, DAMAGE.resolve_enemy_damage(32.0, 95.0, float(enemy.stats["armor"]), enemy.def.blunt_floor, 1.0)),
 		"Enemy2D.take_damage() matches RHA DamageModel (%.2f)" % dealt
+	)
+	var dealt_flesh: float = enemy.take_damage(20.0, 30.0, Vector2.ZERO, true)
+	_check(
+		is_equal_approx(dealt_flesh, DAMAGE.resolve_enemy_damage(20.0, 30.0, float(enemy.stats["armor"]), enemy.def.blunt_floor, enemy.def.flesh_mul)),
+		"Enemy2D.take_damage() applies archetype flesh_mul for flesh ammo (%.2f)" % dealt_flesh
 	)
 	enemy.queue_free()
 

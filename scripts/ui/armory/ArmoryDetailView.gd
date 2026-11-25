@@ -5,6 +5,7 @@ class_name ArmoryDetailView
 
 signal weapon_selected(weapon_id: StringName)
 signal category_selected(category: StringName)
+signal ammo_selected(ammo_id: StringName)
 signal equip_requested(primary_slot: bool)
 signal mod_requested(weapon_id: StringName)
 signal tip_show_requested(key: String)
@@ -25,6 +26,8 @@ var weapon_buttons: Dictionary = {}
 var detail_icon: TextureRect
 var detail_title: Label
 var detail_subtitle: Label
+var ammo_bar: HBoxContainer
+var ammo_buttons: Array[Button] = []
 var detail_values: Dictionary = {}
 var detail_deltas: Dictionary = {}
 var detail_base: Dictionary = {}
@@ -113,6 +116,18 @@ func build(parent: Node) -> void:
 	var detail_divider := HSeparator.new()
 	detail_divider.add_theme_color_override("color", Color(PixelUI.AMBER, 0.6))
 	detail_rows_box.add_child(detail_divider)
+
+	# 默认出战弹种选择栏（同口径 3 档：肉伤 / 常规 / 穿甲；局内可按 Q 自由热切）。
+	ammo_bar = HBoxContainer.new()
+	ammo_bar.add_theme_constant_override("separation", 6)
+	detail_rows_box.add_child(ammo_bar)
+	for _slot_i in 3:
+		var abtn := PixelUI.button("", 26)
+		abtn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		abtn.add_theme_font_size_override("font_size", 14)
+		ammo_bar.add_child(abtn)
+		ammo_buttons.append(abtn)
+
 	for key in TOOLTIP_VIEW.STAT_KEYS:
 		_build_stat_row(detail_rows_box, key)
 
@@ -226,6 +241,8 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 	var stats: Dictionary = STATS_MODEL.compute_for_progress(selected, progress, installed)
 	var base: WeaponData = stats["base"]
 	var ammo = stats["ammo"]
+	var active_ammo_id: StringName = StringName(stats.get("ammo_id", base.ammo_id))
+	_refresh_ammo_bar(selected, active_ammo_id)
 
 	detail_title.text = base.display_name
 	if detail_subtitle != null:
@@ -298,10 +315,17 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 		var ammo_text: String = ammo.display_name
 		if ammo.pellets > 1:
 			ammo_text += " ×%d" % ammo.pellets
+		if float(ammo.reserve_cost) > 1.01:
+			ammo_text += " (×%.1f)" % float(ammo.reserve_cost)
 		_set_plain_stat("弹药", ammo_text)
 		_set_plain_stat("弹丸数", "%d" % ammo.pellets)
-		_set_plain_stat("穿甲",
-			DAMAGE_MODEL.format_rha(ammo.ap, MOD_SERVICE.armor_display_mode(progress)))
+		var eff_ap: float = float(stats["ap"])
+		var base_ap: float = float(stats["base_ap"])
+		var eff_tier: int = int(stats["effective_tier"])
+		var ap_mode: String = MOD_SERVICE.armor_display_mode(progress)
+		var ap_fmt := "%s · %s" % [WeaponDB.tier_label(eff_tier), DAMAGE_MODEL.format_rha(eff_ap, ap_mode)]
+		var base_ap_fmt := "%s · %s" % [WeaponDB.tier_label(WeaponDB.tier_from_rha(base_ap)), DAMAGE_MODEL.format_rha(base_ap, ap_mode)]
+		set_stat("穿甲", ap_fmt, base_ap_fmt, eff_ap - base_ap, true, 0)
 		var pellets := float(ammo.pellets)
 		set_stat("伤害",
 			"%d × %.1f = %.1f" % [ammo.pellets, damage, float(stats["damage"])],
@@ -335,6 +359,38 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 	if tooltip_view != null:
 		tooltip_view.refresh_tooltips(selected, installed, reload_talent, ammo,
 			detail_base, detail_values, progress, stats)
+
+
+func _refresh_ammo_bar(weapon_id: StringName, active_ammo_id: StringName) -> void:
+	if ammo_buttons.is_empty():
+		return
+	var options := WeaponDB.ammo_for_weapon(weapon_id)
+	var base := WeaponDB.get_weapon(weapon_id)
+	for i in ammo_buttons.size():
+		var btn: Button = ammo_buttons[i]
+		for conn in btn.pressed.get_connections():
+			btn.pressed.disconnect(conn["callable"])
+		if i >= options.size():
+			btn.visible = false
+			continue
+		var aid: StringName = options[i]
+		var a := WeaponDB.get_ammo(aid)
+		if a == null:
+			btn.visible = false
+			continue
+		btn.visible = true
+		var eff_tier := WeaponDB.tier_from_rha(maxf(0.0, float(a.ap) + float(base.ap_bonus)))
+		var active := aid == active_ammo_id
+		var cost_tag := "" if a.reserve_cost <= 1.01 else " ×%.1f" % a.reserve_cost
+		btn.text = "%s%s %s%s" % [
+			"▶ " if active else "",
+			WeaponDB.role_label(a.role),
+			WeaponDB.tier_label(eff_tier),
+			cost_tag,
+		]
+		var col := WeaponDB.tier_color(eff_tier) if active else PixelUI.TEXT
+		btn.add_theme_color_override("font_color", col)
+		btn.pressed.connect(func() -> void: ammo_selected.emit(aid))
 
 
 func _set_plain_stat(key: String, text: String) -> void:

@@ -167,11 +167,15 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 		if key == "弹药" and ammo != null:
 			# 弹药行只描述弹种自身属性，伤害计算放在「伤害」行。
 			var cat: Dictionary = WeaponDB.category_table().get(String(ammo.category), {})
-			text += "\n弹丸 %d · 散布 %.1f° · 穿甲 %d · 通用备弹 %d" % [
+			var cost_text := "%.1f 点/发" % float(ammo.reserve_cost)
+			text += "\n定位：%s（%s 档）· 备弹消耗 %s" % [
+				WeaponDB.role_label(ammo.role), WeaponDB.tier_label(ammo.tier), cost_text]
+			text += "\n弹丸 %d · 散布 %.1f° · 弹药穿深 %d · 通用备弹 %d" % [
 				ammo.pellets, rad_to_deg(ammo.spread), int(ammo.ap),
 				int(cat.get("reserve_max", ammo.reserve_max))]
+			text += "\n局内按 Q 键可在同口径 3 档弹种（肉伤/常规/穿甲）间热切换"
 			if not cat.is_empty():
-				text += "\n属性：%s · %s" % [
+				text += "\n弹池：%s · %s" % [
 					String(cat.get("display_name", "")), String(cat.get("note", ""))]
 			tips[key] = text
 			continue
@@ -180,9 +184,15 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 			tips[key] = text
 			continue
 		if key == "穿甲" and ammo != null:
-			var ap_val := int(round(float(ammo.ap)))
-			text += "\n穿甲 %d（%.1f mm RHA）· 穿甲高于目标护甲时击穿并触发余穿增伤" % [
-				ap_val, float(ammo.ap) * 0.1]
+			var eff_ap := float(stats.get("ap", ammo.ap))
+			var base_ap := float(stats.get("base_ap", ammo.ap))
+			var ap_bonus := float(stats.get("weapon_ap_bonus", 0.0))
+			var eff_tier := int(stats.get("effective_tier", ammo.tier))
+			text += "\n最终穿甲 %s · %d（%.1f mm RHA）" % [
+				WeaponDB.tier_label(eff_tier), int(round(eff_ap)), eff_ap * 0.1]
+			if absf(ap_bonus) >= 0.05:
+				text += "\n构成：弹药基础 %d + 武器固有 %+d" % [int(round(base_ap)), int(round(ap_bonus))]
+			text += "\n高于目标护甲时击穿（有甲余穿加伤封顶 +2.4）；低于护甲按比例结算钝伤"
 			tips[key] = text
 			continue
 		var effect_key := String(STAT_EFFECT.get(key, ""))
@@ -287,6 +297,13 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 			text += "\n现实枪口初速，已包含弹种与枪管长度差异"
 			var time_scale := float(ammo.bullet_time_scale) if ammo != null else 0.294
 			text += "\n游戏内飞行时间按 %.3f 时间压缩" % time_scale
+		if key == "伤害" and base_w != null:
+			var w_dm := float(stats.get("weapon_damage_mul", 1.0))
+			var w_ws := float(stats.get("weapon_weakspot_mul", 1.0))
+			if absf(w_dm - 1.0) >= 0.005:
+				sources.push_front("· 武器固有 · 伤害倍率：×%.2f（%+.0f%%）" % [w_dm, (w_dm - 1.0) * 100.0])
+			if absf(w_ws - 1.0) >= 0.005:
+				text += "\n武器弱点倍率：×%.2f（命中弱点时额外增伤）" % w_ws
 		if sources.is_empty():
 			text += "\n无配件加成 · 使用基础数据"
 		else:

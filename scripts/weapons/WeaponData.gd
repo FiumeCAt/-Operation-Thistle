@@ -21,6 +21,10 @@ class_name WeaponData
 @export var shake_decay: float = 32.0
 ## 停止力：每颗弹丸命中时给敌人的击退速度（像素/秒）。
 @export var knockback: float = 40.0
+## 武器固有属性加成（Phase 3B）：解决同口径武器共用弹药时缺乏定位差异的问题。
+@export var damage_mul: float = 1.0
+@export var ap_bonus: float = 0.0
+@export var weakspot_mul: float = 1.0
 @export var mag_capacity: int = 5
 @export var chamber_size: int = 1
 @export var fire_interval: float = 0.28

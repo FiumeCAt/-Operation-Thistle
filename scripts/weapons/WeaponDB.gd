@@ -97,6 +97,9 @@ static func get_weapon(id: StringName) -> WeaponData:
 	w.auto_fire = w.default_auto_fire
 	w.mag_capacity = int(rec.get("mag", 5))
 	w.chamber_size = int(rec.get("chamber", 0))
+	w.damage_mul = clampf(float(rec.get("damage_mul", 1.0)), 0.2, 3.0)
+	w.ap_bonus = clampf(float(rec.get("ap_bonus", 0.0)), -30.0, 60.0)
+	w.weakspot_mul = clampf(float(rec.get("weakspot_mul", 1.0)), 0.5, 3.0)
 	w.pump_time = float(rec.get("pump_time", 0.0))
 	w.load_time = float(rec.get("load_time", 0.35))
 	w.fire_interval = float(rec.get("fire_interval", 0.28))
@@ -301,7 +304,11 @@ static func ammo_table() -> Dictionary:
 		a.id = id
 		a.display_name = String(rec.get("display_name", String(id)))
 		a.short_name = String(rec.get("short", a.display_name))
+		a.caliber = StringName(rec.get("caliber", String(id)))
 		a.category = StringName(rec.get("category", "shotgun"))
+		a.role = StringName(rec.get("role", "std"))
+		a.tier = clampi(int(rec.get("tier", tier_from_rha(float(rec.get("ap", 0.0))))), 0, 6)
+		a.reserve_cost = clampf(float(rec.get("reserve_cost", 1.0)), 0.5, 5.0)
 		a.pellets = int(rec.get("pellets", 1))
 		a.damage = float(rec.get("damage", 0.0))
 		a.spread = float(rec.get("spread", 0.0)) * spread_mul
@@ -318,3 +325,77 @@ static func ammo_table() -> Dictionary:
 		a.color = Color.html(String(rec.get("color", "#ffffff")))
 		out[a.id] = a
 	return out
+
+
+static func get_ammo(id: StringName) -> AmmoData:
+	var table := ammo_table()
+	if table.has(id):
+		return table[id]
+	return table.get(&"buckshot", null)
+
+
+## 返回指定口径可携带的 3 档弹药 ID（肉伤 / 常规 / 穿甲），按 AMMO_ORDER 排序。
+static func ammo_for_caliber(caliber: StringName) -> Array[StringName]:
+	var table := ammo_table()
+	var out: Array[StringName] = []
+	for id in AMMO_ORDER:
+		var a: AmmoData = table.get(id)
+		if a != null and a.caliber == caliber:
+			out.append(id)
+	return out
+
+
+static func ammo_for_weapon(weapon_id: StringName) -> Array[StringName]:
+	var w := get_weapon(weapon_id)
+	var list := ammo_for_caliber(w.caliber)
+	if list.is_empty():
+		list.append(w.ammo_id)
+	return list
+
+
+static func tier_from_rha(rha: float) -> int:
+	if rha < 15.0:
+		return 0
+	if rha < 30.0:
+		return 1
+	if rha < 55.0:
+		return 2
+	if rha < 85.0:
+		return 3
+	if rha < 120.0:
+		return 4
+	if rha < 155.0:
+		return 5
+	return 6
+
+
+static func tier_label(tier: int) -> String:
+	return "T%d" % clampi(tier, 0, 6)
+
+
+static func role_label(role: StringName) -> String:
+	match role:
+		&"flesh":
+			return "肉伤"
+		&"ap":
+			return "穿甲"
+		_:
+			return "常规"
+
+
+static func tier_color(tier: int) -> Color:
+	match clampi(tier, 0, 6):
+		0:
+			return Color(1.0, 0.56, 0.28)
+		1:
+			return Color(1.0, 0.74, 0.38)
+		2:
+			return Color(0.66, 0.85, 1.0)
+		3:
+			return Color(0.54, 0.94, 0.70)
+		4:
+			return Color(0.38, 0.86, 1.0)
+		5:
+			return Color(0.36, 0.68, 1.0)
+		_:
+			return Color(0.80, 0.58, 1.0)

@@ -23,9 +23,10 @@ func _check(cond: bool, label: String) -> void:
 
 func _run() -> void:
 	var rifle: EnemyDef = ENEMY_DEF.from_dict(&"rifleman", EnemyDB.stats(&"rifleman"))
-	_check(rifle.kind == &"rifleman" and is_equal_approx(rifle.hp, 70.0)
-		and is_equal_approx(rifle.armor, 10.0) and rifle.hit_material == "flesh",
-		"rifleman parses base hp/armor/material")
+	_check(rifle.kind == &"rifleman" and is_equal_approx(rifle.hp, 75.0)
+		and is_equal_approx(rifle.armor, 18.0) and rifle.hit_material == "flesh"
+		and rifle.archetype == &"human",
+		"rifleman parses base hp/armor/material/archetype")
 	_check(is_equal_approx(rifle.default_view_angle(), 110.0)
 		and is_equal_approx(rifle.attack_ap(), 22.0)
 		and not rifle.is_self_destruct_unit(),
@@ -55,9 +56,10 @@ func _run() -> void:
 		and is_equal_approx(hunter.attack_ap(), 12.0),
 		"blind hunter clamps hit weight and uses default AP")
 
-	_check(is_equal_approx(rifle.scaled_hp(1, 1.0), 70.0)
-		and is_equal_approx(rifle.scaled_hp(2, 1.5), 70.0 * 1.1 * 1.5),
-		"scaled_hp applies depth and wave multiplier")
+	_check(is_equal_approx(rifle.scaled_hp(1, 1.0), 75.0)
+		and is_equal_approx(rifle.scaled_hp(2, 1.5), 75.0 * 1.1 * 1.5)
+		and is_equal_approx(heavy.blunt_floor, 0.10) and hunter.archetype == &"mech",
+		"scaled_hp and archetype/override fields apply accurately")
 
 	var p := root.get_node_or_null("Progress")
 	if p != null:

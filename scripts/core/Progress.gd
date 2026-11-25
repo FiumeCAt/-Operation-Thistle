@@ -253,6 +253,12 @@ func map_id() -> String:
 func weapon_mods_2d(weapon_id: StringName) -> Dictionary:
 	return LOADOUT_STORE.weapon_mods_2d(data, weapon_id)
 
+func weapon_ammo_2d(weapon_id: StringName) -> StringName:
+	return LOADOUT_STORE.weapon_ammo_2d(data, weapon_id)
+
+func set_weapon_ammo_2d(weapon_id: StringName, ammo_id: StringName) -> bool:
+	return save_data() if LOADOUT_STORE.set_weapon_ammo_2d(data, weapon_id, ammo_id) else false
+
 func armor_mods_2d() -> Dictionary:
 	return LOADOUT_STORE.armor_mods_2d(data)
 

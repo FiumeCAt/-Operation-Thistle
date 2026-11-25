@@ -41,7 +41,7 @@ func _run() -> void:
 
 	# 敌人子页：8 条，默认第一条为哨兵。
 	_check(codex.enemy_count() == 8, "eight enemy entries")
-	_check(codex.item_count() == 37, "thirty-seven item entries")
+	_check(codex.item_count() == 55, "fifty-five item entries (18 weapons + 30 ammo + 7 resources)")
 	_check(codex._detail_title.text.contains("哨兵"), "first enemy is rifleman")
 	_check(codex._portrait.texture != null, "enemy portrait texture loaded")
 	_check(codex._note_label.text.length() > 12, "enemy archive note has text")
@@ -69,13 +69,13 @@ func _run() -> void:
 	_check(codex._next_button.disabled, "last enemy disables next button")
 	_check(codex._page_label.text.contains("08 / 08"), "enemy page counter ends at 8 / 8")
 
-	# 物品子页：18 武器 + 12 弹药 + 7 资源。
+	# 物品子页：18 武器 + 30 弹药 + 7 资源 = 55 条。
 	codex._show_page("item")
 	await process_frame
 	_check(codex._tab_item.text.begins_with("▶"), "item tab marked active")
 	_check(codex._detail_title.text.contains("M870"), "first item is M870")
 	_check(codex._portrait.texture != null, "weapon portrait texture loaded")
-	_check(codex._page_label.text.contains("01 / 37"), "item page counter starts at 1 / 37")
+	_check(codex._page_label.text.contains("01 / 55"), "item page counter starts at 1 / 55")
 	_check(codex._note_label.text.length() > 12, "weapon archive note has text")
 
 	var missing_portrait := 0
@@ -87,14 +87,14 @@ func _run() -> void:
 			missing_portrait += 1
 		if codex._detail_title.text.strip_edges() == "":
 			missing_title += 1
-	_check(missing_portrait == 0, "all 37 items have a portrait")
-	_check(missing_title == 0, "all 37 items have a title")
+	_check(missing_portrait == 0, "all 55 items have a portrait")
+	_check(missing_title == 0, "all 55 items have a title")
 
 	codex._item_index = codex.item_count() - 1
 	codex._refresh_entry()
 	_check(codex._next_button.disabled, "last item disables next button")
 	_check(not codex._prev_button.disabled, "last item keeps previous enabled")
-	_check(codex._page_label.text.contains("37 / 37"), "item page counter ends at 37 / 37")
+	_check(codex._page_label.text.contains("55 / 55"), "item page counter ends at 55 / 55")
 
 	# 翻页按钮位于面板内部左下/右下，且图标已加载。
 	await process_frame

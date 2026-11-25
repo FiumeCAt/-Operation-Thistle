@@ -524,9 +524,10 @@ func _build_weapon_panel() -> void:
 	meta_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	meta_row.add_theme_constant_override("separation", 8)
 	rows.add_child(meta_row)
-	_ammo_name = PixelUI.label(meta_row, "9mm", PixelUI.FS_BODY, PixelUI.AMBER)
+	_ammo_name = PixelUI.label(meta_row, "9mm", 18, PixelUI.AMBER)
 	_ammo_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_ammo_name.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_ammo_name.clip_text = true
 	_mode_badge = PixelUI.label(meta_row, "[J] 图文", 15, Color(PixelUI.DIM, 0.85))
 	_mode_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_mode_badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -722,7 +723,7 @@ func set_hint(text: String) -> void:
 ## 自动将操作提示中的按键（WASD / 左键 / 右键 / B / R / X / TAB / Alt+滚轮 / E / M）着色加重。
 static func _format_hint_bbcode(text: String) -> String:
 	var out := text
-	for key in ["WASD", "Alt+滚轮", "左键", "右键", "TAB", "ESC", " B ", " R ", " X ", " E ", " M "]:
+	for key in ["WASD", "Alt+滚轮", "左键", "右键", "TAB", "ESC", " Q ", " B ", " R ", " X ", " E ", " M "]:
 		var ks := String(key)
 		var trimmed := ks.strip_edges()
 		if out.contains(ks):
@@ -784,8 +785,11 @@ func update_weapon(rig) -> void:
 	var short_name: String = String(data.display_name).split(" // ")[0]
 	_title.text = "%s // %s" % [short_name, data.caliber_label]
 	if ammo != null:
-		_ammo_name.text = ammo.short_name
-		_ammo_name.add_theme_color_override("font_color", ammo.color)
+		var eff_ap := maxf(0.0, float(ammo.ap) + float(data.ap_bonus))
+		var eff_tier := WeaponDB.tier_from_rha(eff_ap)
+		var cost_tag := "" if ammo.reserve_cost <= 1.01 else " ×%.1f" % ammo.reserve_cost
+		_ammo_name.text = "[%s] %s%s" % [WeaponDB.tier_label(eff_tier), ammo.short_name, cost_tag]
+		_ammo_name.add_theme_color_override("font_color", WeaponDB.tier_color(eff_tier))
 	var reserve_cnt: int = rig.get_reserve()
 	_reserve.text = "备弹 %d" % reserve_cnt
 	_reserve.add_theme_color_override(
@@ -812,8 +816,14 @@ func update_weapon(rig) -> void:
 		_state.text = "已收枪"
 		state_color = PixelUI.DIM
 	elif reloading:
-		_state.text = "装填中"
-		state_color = PixelUI.DANGER
+		var pending_aid: StringName = rig.get_pending_ammo_id() if rig.has_method("get_pending_ammo_id") else &""
+		if pending_aid != &"":
+			var p_ammo := WeaponDB.get_ammo(pending_aid)
+			_state.text = "切弹→%s" % (WeaponDB.role_label(p_ammo.role) if p_ammo != null else "")
+			state_color = PixelUI.CYAN
+		else:
+			_state.text = "装填中"
+			state_color = PixelUI.DANGER
 	elif switching:
 		_state.text = "切枪中"
 		state_color = PixelUI.AMBER

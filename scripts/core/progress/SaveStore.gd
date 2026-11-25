@@ -43,6 +43,7 @@ static func defaults() -> Dictionary:
 			"high_energy_cell": 0, "military_alloy": 0,
 		},
 		"weapon_mods_2d": {"m870": {}, "m1014": {}, "saiga12k": {}, "g17": {}},
+		"weapon_ammo_2d": {},
 		"armor_mods_2d": {},
 		"xp": 0,
 		"skill_level": 1,
@@ -250,6 +251,19 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 				clean_slots[slot] = option_id
 		clean_weapon_mods[weapon_id] = clean_slots
 	data["weapon_mods_2d"] = clean_weapon_mods
+	var weapon_ammo = data.get("weapon_ammo_2d", null)
+	if typeof(weapon_ammo) != TYPE_DICTIONARY:
+		weapon_ammo = {}
+	var clean_weapon_ammo := {}
+	var ammo_tbl := WeaponDB.ammo_table()
+	for wid in WEAPON_IDS:
+		var raw_aid := String(weapon_ammo.get(wid, ""))
+		if raw_aid == "":
+			continue
+		var aid := StringName(raw_aid)
+		if ammo_tbl.has(aid) and ammo_tbl[aid].caliber == WeaponDB.get_weapon(StringName(wid)).caliber:
+			clean_weapon_ammo[wid] = raw_aid
+	data["weapon_ammo_2d"] = clean_weapon_ammo
 	var armor_mods = data.get("armor_mods_2d", null)
 	if typeof(armor_mods) != TYPE_DICTIONARY:
 		armor_mods = {}

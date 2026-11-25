@@ -46,3 +46,18 @@ static func has(id: StringName) -> bool:
 
 static func stats(id: StringName) -> Dictionary:
 	return DATA.get(id, DATA[&"rifleman"])
+
+
+## 敌人三系生态默认参数（mech / human / mutant）；缺省回退内置表。
+static func archetype_profile(archetype: StringName) -> Dictionary:
+	var table: Dictionary = GameData.table("enemies").get("archetypes", {})
+	var key := String(archetype)
+	if table.has(key) and table[key] is Dictionary:
+		return table[key]
+	match archetype:
+		&"mech":
+			return {"name": "机械", "blunt_floor": 0.08, "flesh_mul": 1.00}
+		&"mutant":
+			return {"name": "变异", "blunt_floor": 0.22, "flesh_mul": 1.20}
+		_:
+			return {"name": "人类", "blunt_floor": 0.14, "flesh_mul": 1.05}

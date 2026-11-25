@@ -102,6 +102,28 @@ func _run() -> void:
 	var tog2 := feed.toggle_fire_mode(fal)
 	_check(bool(tog2["changed"]) and feed.is_auto_mode(fal), "toggling FAL again restores full-auto")
 
+	# 8. Phase 3B: 局内 Q 键 3 档切弹（肉伤 / 常规 / 穿甲）+ 高穿弹备弹点数消耗与退还
+	var akm: WeaponData = WeaponDB.get_weapon(&"akm")
+	feed.on_weapon_equipped(&"akm", akm.mag_capacity, akm)
+	feed.mag = 30
+	feed.set_reserve(akm, 90)
+	_check(akm.ammo_id == &"762x39", "AKM starts with standard 7.62x39 ammo")
+	var sw_ap := feed.start_ammo_switch(akm, 1)
+	_check(bool(sw_ap["ok"]) and sw_ap["target"] == &"762x39_ap" and feed.reload_t > 0.0,
+		"Q switch starts tactical reload to 7.62x39 AP")
+	var sw_ev := feed.tick(feed.reload_total + 0.01, akm)
+	# 退还 30*1.0 -> 120 备弹点；装填 30 发 AP（1.5点/发 = 45点）-> 剩 75 点
+	_check(sw_ev["ammo_switched"] == &"762x39_ap" and akm.ammo_id == &"762x39_ap"
+		and feed.mag == 30 and feed.get_reserve(akm) == 75,
+		"switching to 7.62x39 AP refunds std rounds and spends 1.5x reserve points (75 left)")
+	# 再次切到肉伤弹（HP，1.0点/发）：退还 30*1.5=45 -> 120 点，装 30 发 HP -> 剩 90 点（无刷弹也无损点）
+	var sw_hp := feed.start_ammo_switch(akm, 1)
+	_check(bool(sw_hp["ok"]) and sw_hp["target"] == &"762x39_hp",
+		"second Q switch cycles cleanly to 7.62x39 flesh ammo")
+	feed.tick(feed.reload_total + 0.01, akm)
+	_check(akm.ammo_id == &"762x39_hp" and feed.mag == 30 and feed.get_reserve(akm) == 90,
+		"switching back to 1.0x ammo restores exact reserve points with zero dupe/loss (90)")
+
 	print("\n=== weapon feed state: %s (%d ok / %d fail) ===" % [
 		"PASS" if _fail == 0 else "FAIL", _pass, _fail])
 	quit(0 if _fail == 0 else 1)

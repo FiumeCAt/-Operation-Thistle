@@ -15,6 +15,10 @@ var reserve: Dictionary = {}
 var mag_by_id: Dictionary = {}
 ## 每把武器独立的开火模式状态："auto"（全自动）/ "semi"（半自动）；仅半自动武器固定为 "semi"。
 var fire_mode_by_id: Dictionary = {}
+## 每把武器独立的当前装填弹种 ID（同口径 3 档：肉伤 / 常规 / 穿甲，切枪往返保持选择）。
+var ammo_by_id: Dictionary = {}
+## Q 键切弹中的目标弹种；为空表示常规换弹。
+var pending_ammo_id: StringName = &""
 var cooldown := 0.0
 var shots := 0
 
@@ -36,12 +40,37 @@ var stow_total := 0.0
 var stow_kind := 0  # -1 收枪，1 拔枪
 
 
-## 换装武器时恢复或初始化该枪的独立弹匣数。
-func on_weapon_equipped(id: StringName, mag_capacity: int) -> void:
+## 换装武器时恢复或初始化该枪的独立弹匣数与当前弹种。
+func on_weapon_equipped(id: StringName, mag_capacity: int, data: WeaponData = null) -> void:
 	weapon_id = id
+	pending_ammo_id = &""
 	if not mag_by_id.has(id):
 		mag_by_id[id] = mag_capacity
 	mag = int(mag_by_id[id])
+	if data != null:
+		if ammo_by_id.has(id):
+			var saved := StringName(ammo_by_id[id])
+			var ammo := WeaponDB.get_ammo(saved)
+			if ammo != null and ammo.caliber == data.caliber:
+				data.ammo_id = saved
+		ammo_by_id[id] = data.ammo_id
+
+
+static func ammo_reserve_cost(ammo_id: StringName) -> float:
+	var ammo := WeaponDB.get_ammo(ammo_id)
+	return clampf(float(ammo.reserve_cost), 0.5, 5.0) if ammo != null else 1.0
+
+
+static func cost_for_rounds(rounds: int, unit_cost: float) -> int:
+	if rounds <= 0:
+		return 0
+	return int(ceil(float(rounds) * maxf(unit_cost, 0.1)))
+
+
+static func max_rounds_affordable(points: int, unit_cost: float) -> int:
+	if points <= 0:
+		return 0
+	return int(floor(float(points) / maxf(unit_cost, 0.1)))
 
 
 ## 推进冷却、切枪、换弹、收拔枪计时器，并返回本帧触发的事件字典。
@@ -49,6 +78,7 @@ func tick(delta: float, data: WeaponData) -> Dictionary:
 	var events := {
 		"switch_swap": &"",
 		"reload_finished": false,
+		"ammo_switched": &"",
 		"holster_completed": false,
 	}
 	if data == null:
@@ -65,8 +95,11 @@ func tick(delta: float, data: WeaponData) -> Dictionary:
 	if reload_t > 0.0:
 		reload_t = maxf(reload_t - delta, 0.0)
 		if reload_t <= 0.0:
+			var switched_to := pending_ammo_id
 			finish_reload(data)
 			events["reload_finished"] = true
+			if switched_to != &"":
+				events["ammo_switched"] = data.ammo_id
 	if stow_t > 0.0:
 		var was_stowing := stow_t
 		stow_t = maxf(stow_t - delta, 0.0)
@@ -93,15 +126,53 @@ func try_fire(data: WeaponData) -> StringName:
 	return &"fired"
 
 
-## R 换弹：弹匣枪整匣更换，霰弹枪一次压一发。
+## R 换弹：弹匣枪整匣更换，霰弹枪一次压一发；高穿弹按 reserve_cost 消耗更多通用备弹点数。
 func reload(data: WeaponData) -> bool:
 	if data == null or reload_t > 0.0 or switch_t > 0.0 or holstered or stow_t > 0.0:
 		return false
-	if mag >= data.mag_capacity or get_reserve(data) <= 0:
+	var unit_cost := ammo_reserve_cost(data.ammo_id)
+	if mag >= data.mag_capacity or max_rounds_affordable(get_reserve(data), unit_cost) <= 0:
 		return false
+	pending_ammo_id = &""
 	reload_total = maxf(data.load_time * reload_time_mul, 0.15)
 	reload_t = reload_total
 	return true
+
+
+## Q 键局内切弹：在当前武器所属口径的 3 档弹药（肉伤 / 常规 / 穿甲）间循环切换。
+## 切弹完成时把旧弹匣余弹按原点数退回通用备弹池，再按新弹种单发点数装填。
+func start_ammo_switch(data: WeaponData, step := 1) -> Dictionary:
+	if data == null or switch_t > 0.0 or holstered or stow_t > 0.0:
+		return {"ok": false, "target": &"", "cancelled": false}
+	if reload_t > 0.0 and pending_ammo_id == &"":
+		return {"ok": false, "target": &"", "cancelled": false}
+	var options := WeaponDB.ammo_for_caliber(data.caliber)
+	if options.size() <= 1:
+		return {"ok": false, "target": &"", "cancelled": false}
+	var base_id := pending_ammo_id if pending_ammo_id != &"" else data.ammo_id
+	var cur_idx := options.find(base_id)
+	if cur_idx < 0:
+		cur_idx = 0
+	var old_cost := ammo_reserve_cost(data.ammo_id)
+	var pool_after_refund := get_reserve(data) + int(round(float(mag) * old_cost))
+	for offset in range(1, options.size() + 1):
+		var idx := (cur_idx + step * offset + options.size() * 4) % options.size()
+		var cand: StringName = options[idx]
+		if cand == data.ammo_id:
+			if pending_ammo_id != &"":
+				pending_ammo_id = &""
+				reload_t = 0.0
+				reload_total = 0.0
+				return {"ok": true, "target": data.ammo_id, "cancelled": true}
+			return {"ok": false, "target": &"", "cancelled": false}
+		var cand_cost := ammo_reserve_cost(cand)
+		if max_rounds_affordable(pool_after_refund, cand_cost) >= 1:
+			pending_ammo_id = cand
+			var switch_dur := data.load_time * (2.2 if data.feed_mode == &"shell" else 0.85) * reload_time_mul
+			reload_total = maxf(switch_dur, 0.25 if data.feed_mode == &"shell" else 0.15)
+			reload_t = reload_total
+			return {"ok": true, "target": cand, "cancelled": false}
+	return {"ok": false, "target": &"", "cancelled": false}
 
 
 ## 「持续装填」：按住 R 时，上一发装完后自动续压下一发（仅限管仓武器）。
@@ -116,12 +187,30 @@ func process_hold_reload(data: WeaponData) -> bool:
 func finish_reload(data: WeaponData) -> void:
 	if data == null:
 		return
+	if pending_ammo_id != &"":
+		var old_cost := ammo_reserve_cost(data.ammo_id)
+		var refund := int(round(float(mag) * old_cost))
+		set_reserve(data, get_reserve(data) + refund)
+		mag = 0
+		data.ammo_id = pending_ammo_id
+		ammo_by_id[weapon_id] = pending_ammo_id
+		pending_ammo_id = &""
+		var new_cost := ammo_reserve_cost(data.ammo_id)
+		var take := mini(data.mag_capacity, max_rounds_affordable(get_reserve(data), new_cost))
+		var spent := cost_for_rounds(take, new_cost)
+		set_reserve(data, get_reserve(data) - spent)
+		mag = take
+		mag_by_id[weapon_id] = mag
+		return
+	var unit_cost := ammo_reserve_cost(data.ammo_id)
 	if data.feed_mode == &"mag":
-		var take := mini(data.mag_capacity - mag, get_reserve(data))
-		set_reserve(data, get_reserve(data) - take)
-		mag += take
-	elif get_reserve(data) > 0:
-		set_reserve(data, get_reserve(data) - 1)
+		var affordable := max_rounds_affordable(get_reserve(data), unit_cost)
+		var take := mini(data.mag_capacity - mag, affordable)
+		if take > 0:
+			set_reserve(data, get_reserve(data) - cost_for_rounds(take, unit_cost))
+			mag += take
+	elif max_rounds_affordable(get_reserve(data), unit_cost) >= 1:
+		set_reserve(data, get_reserve(data) - cost_for_rounds(1, unit_cost))
 		mag += 1
 	mag_by_id[weapon_id] = mag
 
@@ -132,10 +221,11 @@ func start_switch(id: StringName, data: WeaponData) -> StringName:
 		return &"rejected"
 	if not loadout.has(id):
 		return &"rejected"
-	# 换弹中切枪直接取消，避免两套动画打架
+	# 换弹/切弹中切枪直接取消，避免两套动画打架
 	if reload_t > 0.0:
 		reload_t = 0.0
 		reload_total = 0.0
+		pending_ammo_id = &""
 	if holstered:
 		return &"instant_holstered"
 	pending_id = id

@@ -217,7 +217,9 @@ func refresh_stats(weapon_id: StringName, current_installed: Dictionary,
 		float(pre["speed"]) - float(cur["speed"]), true, 0)
 	_set_stat("spread", "%.1f°" % rad_to_deg(float(pre["spread"])),
 		rad_to_deg(float(pre["spread"]) - float(cur["spread"])), false, 1)
-	_set_stat("ap", DAMAGE_MODEL.format_rha(float(pre["ap"]), MOD_SERVICE.armor_display_mode(p)),
+	var ap_mode := MOD_SERVICE.armor_display_mode(p)
+	var ap_tier := WeaponDB.tier_label(int(pre.get("effective_tier", 0)))
+	_set_stat("ap", "%s %s" % [ap_tier, DAMAGE_MODEL.format_rha(float(pre["ap"]), ap_mode)],
 		float(pre["ap"]) - float(cur["ap"]), true, 0)
 	_set_stat("sound", "%.0fm" % float(pre["sound"]),
 		float(pre["sound"]) - float(cur["sound"]), false, 0)

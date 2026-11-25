@@ -135,10 +135,20 @@ func _run() -> void:
 	_check(menu.armory._weapon_buttons[&"m870"].text.contains("弹速 400 m/s"),
 		"weapon list shows bullet speed")
 	_check(menu.armory._detail_values["枪声范围"].text.contains("20"), "M870 sound radius shown separately")
-	_check(menu.armory._detail_values["弹药"].text == "鹿弹 ×8",
+	_check(menu.armory._detail_values["弹药"].text == "00 鹿弹 ×8",
 		"ammo row shows the ammo type only")
-	_check(menu.armory._detail_values["伤害"].text == "8 × 8.0 = 64.0",
-		"damage row shows the full calculation")
+	_check(menu.armory._detail_values["伤害"].text == "8 × 12.5 = 100.0",
+		"damage row shows the full calculation with M870 inherent 1.25x bonus")
+	_check(menu.armory._detail_values["穿甲"].text.contains("T0")
+		and menu.armory._detail_deltas["穿甲"].text == "(+6)",
+		"AP row displays tier and weapon inherent ap_bonus (+6)")
+	# 武备库 3 档弹种切换：M870 切穿甲独头后实时刷新穿甲档位（T5）与单发伤害
+	menu.armory._select_ammo(&"ap_slug")
+	_check(p.weapon_ammo_2d(&"m870") == &"ap_slug"
+		and menu.armory._detail_values["穿甲"].text.contains("T5")
+		and menu.armory._detail_values["弹药"].text.contains("×1.5"),
+		"selecting AP slug updates persisted default ammo, T5 tier, and reserve cost tag")
+	menu.armory._select_ammo(&"buckshot")
 	_check(menu.armory._detail_values["射速"].text.contains("RPM"), "fire rate uses the RPM preference")
 	_check(menu.armory._detail_icon.texture != null, "weapon icon texture is loaded")
 

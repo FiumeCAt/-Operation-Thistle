@@ -99,9 +99,10 @@ func _process(delta: float) -> void:
 			_distortion_on = bool(progress.scope_lens_distortion())
 	_blend = float(rig.get_ads_blend())
 	var drawn: bool = not rig.is_holstered() and not rig.is_stowing()
-	# 狙击镜平滑开镜渐变：随武器真实 ADS 进度平滑展开（透明渐入 + 镜口缩放 + 光学平滑放大 + 眼盒暗边退散）。
+	# 狙击镜平滑开镜渐变：随武器真实 ADS 进度平滑展开（透明渐入 + 镜口缩放 + 光学平滑放大 + 眼盒暗边退散），
+	# 开镜到位瞬间同步抵达 1.0，无额外拖尾延迟。
 	var target_fade := clampf((_blend - 0.10) / 0.90, 0.0, 1.0) if (_has_scope and drawn) else 0.0
-	var fade_rate := maxf(float(rig.get_ads_rate()) * 1.45, 7.0) if rig.has_method("get_ads_rate") else 8.0
+	var fade_rate := maxf(float(rig.get_ads_rate()) * 3.0, 14.0) if rig.has_method("get_ads_rate") else 14.0
 	_fade = move_toward(_fade, target_fade, delta * fade_rate)
 	var ease_t := 1.0 - pow(1.0 - _fade, 3.0)
 	var alpha_t := smoothstep(0.0, 0.78, _fade)

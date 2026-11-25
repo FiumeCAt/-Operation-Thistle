@@ -364,14 +364,17 @@ func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 	last_pellet_spread = pellet_spread
 	add_burst_spread(data)
 	var length := shot_range()
-	var damage_mul: float = _doll.weapon_rig.damage_mul
+	var damage_mul: float = _doll.weapon_rig.damage_mul * clampf(float(data.damage_mul), 0.2, 3.0)
 	if dbg != null:
 		damage_mul *= float(dbg.debug_mul("damage"))
+	var effective_ap := maxf(0.0, float(ammo.ap) + float(data.ap_bonus))
+	var is_flesh_ammo := ammo.role == &"flesh"
 
 	var pellet_count := maxi(1, ammo.pellets)
 	var ctx := {
 		"data": data,
-		"ap": float(ammo.ap),
+		"ap": effective_ap,
+		"is_flesh": is_flesh_ammo,
 		"knockback": float(data.knockback),
 		"multi": pellet_count > 1,
 		"pending": pellet_count,
@@ -389,7 +392,7 @@ func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 		var direction := base_dir.rotated(spread_offset(pellet_spread)).normalized()
 		last_pellet_dirs.append(direction)
 		var bullet := spawn_player_bullet(origin, direction, speed, drag_px,
-			ammo.damage * damage_mul, ammo.ap, length, ammo.color, ctx, data.knockback)
+			ammo.damage * damage_mul, effective_ap, length, ammo.color, ctx, data.knockback)
 		if bullet == null:
 			ctx["pending"] = int(ctx["pending"]) - 1
 
@@ -494,7 +497,8 @@ func apply_hit_batch(ctx: Dictionary, target, amount: float,
 		return
 	var before := float(target.hp)
 	var dealt: float = target.take_damage(amount, float(ctx.get("ap", 0.0)),
-		dir * float(ctx.get("knockback", 0.0)))
+		dir * float(ctx.get("knockback", 0.0)), bool(ctx.get("is_flesh", false))) if target is Enemy2D \
+		else target.take_damage(amount, float(ctx.get("ap", 0.0)), dir * float(ctx.get("knockback", 0.0)))
 	damage_dealt += dealt
 	var killed := before > 0.0 and float(target.hp) <= 0.0
 	var material := "metal"

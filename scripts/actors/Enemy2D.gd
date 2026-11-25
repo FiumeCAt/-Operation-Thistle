@@ -298,10 +298,12 @@ func hear_noise(pos: Vector2, radius_m: float) -> void:
 		_enter("suspicious")
 
 
-func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO) -> float:
+func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO,
+		is_flesh_ammo: bool = false) -> float:
 	if _dead:
 		return 0.0
-	var dmg: float = DAMAGE_MODEL.resolve_enemy_damage(amount, ap, def.armor)
+	var f_mul := def.flesh_mul if is_flesh_ammo else 1.0
+	var dmg: float = DAMAGE_MODEL.resolve_enemy_damage(amount, ap, def.armor, def.blunt_floor, f_mul)
 	hp -= dmg
 	_hit_flash = 0.14
 	if impulse.length_squared() > 1.0:

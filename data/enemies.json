@@ -1,14 +1,24 @@
 {
   "_note": "敌人数值表。order 为基础刷新池；new_units 为四台新单位（已接入关卡房间与环廊刷新）。credit 相关倍率在 progression.json。",
-  "order": ["rifleman", "rusher", "heavy", "hunter"],
-  "new_units": ["mobile_turret", "sentry_type1", "hunter_type1", "goliath"],
+  "order": [
+	"rifleman",
+	"rusher",
+	"heavy",
+    "hunter"
+  ],
+  "new_units": [
+	"mobile_turret",
+	"sentry_type1",
+	"hunter_type1",
+    "goliath"
+  ],
   "data": {
 	"rifleman": {
 	  "name": "哨兵",
 	  "hit_material": "flesh",
 	  "texture": "res://assets/art/enemies/rifleman.png",
-	  "hp": 70.0,
-	  "armor": 10.0,
+	  "hp": 75.0,
+	  "armor": 18.0,
 	  "speed": 2.6,
 	  "damage": 7.0,
 	  "range": 13.0,
@@ -22,16 +32,20 @@
 	  "strafe": true,
 	  "ammo": "9mm",
 	  "ammo_drop": 0.35,
-	  "ammo_amount": [12, 24],
+	  "ammo_amount": [
+		12,
+		24
+	  ],
 	  "advanced_drop": 0.063,
-	  "body_scale": 0.30,
-	  "collision_radius": 17.0
+	  "body_scale": 0.3,
+	  "collision_radius": 17.0,
+	  "archetype": "human"
 	},
 	"rusher": {
 	  "name": "突击者",
 	  "hit_material": "flesh",
 	  "texture": "res://assets/art/enemies/rusher.png",
-	  "hp": 45.0,
+	  "hp": 50.0,
 	  "armor": 0.0,
 	  "speed": 4.6,
 	  "damage": 9.0,
@@ -45,14 +59,15 @@
 	  "flees": false,
 	  "strafe": false,
 	  "body_scale": 0.28,
-	  "collision_radius": 17.0
+	  "collision_radius": 17.0,
+	  "archetype": "human"
 	},
 	"heavy": {
 	  "name": "重装",
 	  "hit_material": "flesh",
 	  "texture": "res://assets/art/enemies/heavy.png",
 	  "hp": 180.0,
-	  "armor": 140.0,
+	  "armor": 125.0,
 	  "speed": 1.7,
 	  "damage": 14.0,
 	  "range": 2.2,
@@ -66,14 +81,16 @@
 	  "strafe": false,
 	  "advanced_drop": 0.189,
 	  "body_scale": 0.34,
-	  "collision_radius": 22.0
+	  "collision_radius": 22.0,
+	  "archetype": "human",
+	  "blunt_floor": 0.1
 	},
 	"hunter": {
 	  "name": "声呐猎手",
 	  "hit_material": "metal",
 	  "texture": "res://assets/art/enemies/dinergate.png",
-	  "hp": 55.0,
-	  "armor": 35.0,
+	  "hp": 65.0,
+	  "armor": 38.0,
 	  "speed": 3.4,
 	  "damage": 10.0,
 	  "range": 2.0,
@@ -87,16 +104,17 @@
 	  "strafe": false,
 	  "blind": true,
 	  "advanced_drop": 0.158,
-	  "body_scale": 0.30,
-	  "collision_radius": 17.0
+	  "body_scale": 0.3,
+	  "collision_radius": 17.0,
+	  "archetype": "mech"
 	},
 	"mobile_turret": {
 	  "name": "移动哨戒炮一型",
 	  "hit_material": "metal",
 	  "sheet": "res://assets/art/enemies/mobile_turret_anim_sheet.png",
 	  "frames": "res://assets/art/enemies/mobile_turret_anim_frames.tres",
-	  "hp": 150.0,
-	  "armor": 75.0,
+	  "hp": 160.0,
+	  "armor": 82.0,
 	  "speed": 1.9,
 	  "damage": 10.0,
 	  "range": 16.0,
@@ -115,15 +133,16 @@
 	  "spread": 0.1,
 	  "advanced_drop": 0.18,
 	  "body_scale": 0.34,
-	  "collision_radius": 20.0
+	  "collision_radius": 20.0,
+	  "archetype": "mech"
 	},
 	"sentry_type1": {
 	  "name": "哨兵一型",
 	  "hit_material": "metal",
 	  "sheet": "res://assets/art/enemies/sentry_type1_anim_sheet.png",
 	  "frames": "res://assets/art/enemies/sentry_type1_anim_frames.tres",
-	  "hp": 90.0,
-	  "armor": 55.0,
+	  "hp": 100.0,
+	  "armor": 60.0,
 	  "speed": 3.0,
 	  "damage": 12.0,
 	  "range": 1.8,
@@ -131,7 +150,7 @@
 	  "hearing": 14.0,
 	  "cooldown": 1.6,
 	  "melee": true,
-	  "radius": 0.40,
+	  "radius": 0.4,
 	  "patrol_radius": 6.0,
 	  "flees": false,
 	  "strafe": false,
@@ -141,15 +160,16 @@
 	  "charge_cooldown": 3.0,
 	  "advanced_drop": 0.12,
 	  "body_scale": 0.32,
-	  "collision_radius": 19.0
+	  "collision_radius": 19.0,
+	  "archetype": "mech"
 	},
 	"hunter_type1": {
 	  "name": "巡猎者一型",
 	  "hit_material": "metal",
 	  "sheet": "res://assets/art/enemies/hunter_type1_anim_sheet.png",
 	  "frames": "res://assets/art/enemies/hunter_type1_anim_frames.tres",
-	  "hp": 300.0,
-	  "armor": 100.0,
+	  "hp": 280.0,
+	  "armor": 110.0,
 	  "speed": 3.2,
 	  "damage": 25.0,
 	  "range": 2.0,
@@ -164,7 +184,8 @@
 	  "behavior": "melee",
 	  "advanced_drop": 0.3,
 	  "body_scale": 0.5,
-	  "collision_radius": 22.0
+	  "collision_radius": 22.0,
+	  "archetype": "mech"
 	},
 	"goliath": {
 	  "name": "歌利亚通用一型",
@@ -190,8 +211,26 @@
 	  "explode_delay": 1.8,
 	  "death_explode": true,
 	  "advanced_drop": 0.16,
-	  "body_scale": 0.30,
-	  "collision_radius": 18.0
+	  "body_scale": 0.3,
+	  "collision_radius": 18.0,
+	  "archetype": "mech"
+	}
+  },
+  "archetypes": {
+	"mech": {
+	  "name": "机械",
+	  "blunt_floor": 0.08,
+	  "flesh_mul": 1.0
+	},
+	"human": {
+	  "name": "人类",
+	  "blunt_floor": 0.14,
+	  "flesh_mul": 1.05
+	},
+	"mutant": {
+	  "name": "变异",
+	  "blunt_floor": 0.22,
+	  "flesh_mul": 1.2
 	}
   }
 }

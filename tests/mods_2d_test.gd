@@ -241,8 +241,9 @@ func _run() -> void:
 		await process_frame
 	main.doll.weapon_rig.ads = true
 	main.doll.ads = true
-	for i in 30:
-		await process_frame
+	for i in 28:
+		await physics_frame
+	await process_frame
 	# 高倍镜开镜平滑拉远主镜头（4× ≈ 0.76×），在展开双向视野的同时保持角色留在屏内；
 	# 镜内 SubViewport 仍保持额定 4× 放大，且通过方案 A 锚点与 force_update_scroll 锁住初始准心点。
 	_check(main.scope_magnification < 0.85 and main.scope_magnification > 0.65,
@@ -255,17 +256,21 @@ func _run() -> void:
 		_check(pso_img != null and pso_img.get_pixel(0, 0).a < 0.01,
 			"PSO reticle has a transparent background")
 	# 镜内放大与玩家视角缩放联动：40% 视角时实际放大降到 40%。
+	var saved_vz: float = main.view_zoom_pct
+	main.view_zoom_pct = 100.0
 	main._view_zoom_visual = 100.0
 	for i in 2:
 		await process_frame
 	var lens_zoom_full: float = main.scope_sight._cam.zoom.x
+	main.view_zoom_pct = 40.0
 	main._view_zoom_visual = 40.0
 	for i in 2:
 		await process_frame
 	var lens_zoom_low: float = main.scope_sight._cam.zoom.x
 	_check(lens_zoom_full > 3.5 and lens_zoom_full / maxf(lens_zoom_low, 0.01) > 2.0,
 		"scope magnification follows the player view zoom")
-	main._view_zoom_visual = float(p.data.get("view_zoom", 100))
+	main.view_zoom_pct = saved_vz
+	main._view_zoom_visual = saved_vz
 	for i in 2:
 		await process_frame
 	_check(main.doll.weapon_rig.sight_reticle == "pso"

@@ -10,6 +10,7 @@ signal weapon_switched(id: StringName)
 signal reload_finished
 signal holstered_changed(stowed: bool)
 signal fire_mode_changed(mode: String, supported: bool)
+signal ammo_switched(ammo_id: StringName)
 
 const UNITS := preload("res://scripts/core/GameUnits.gd")
 const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
@@ -257,7 +258,7 @@ func setup(id: StringName) -> void:
 	_support_hand = _make_hand(_support_root, "SupportHand")
 	_support_root.visible = false
 
-	feed.on_weapon_equipped(id, data.mag_capacity)
+	feed.on_weapon_equipped(id, data.mag_capacity, data)
 	_update_layer()
 	_apply_pose()
 
@@ -300,6 +301,9 @@ func _process(delta: float) -> void:
 		weapon_switched.emit(swap_id)
 	if bool(ev["reload_finished"]):
 		reload_finished.emit()
+	var switched_ammo: StringName = ev.get("ammo_switched", &"")
+	if switched_ammo != &"":
+		ammo_switched.emit(switched_ammo)
 	if bool(ev["holster_completed"]):
 		holstered_changed.emit(true)
 
@@ -329,6 +333,8 @@ func _process(delta: float) -> void:
 		toggle_holster()
 	if InputMap.has_action("fire_mode") and Input.is_action_just_pressed("fire_mode"):
 		toggle_fire_mode()
+	if InputMap.has_action("ammo_switch") and Input.is_action_just_pressed("ammo_switch"):
+		switch_ammo()
 	if InputMap.has_action("reload"):
 		if Input.is_action_just_pressed("reload"):
 			reload()
@@ -473,6 +479,14 @@ func try_fire() -> bool:
 
 func reload() -> bool: return feed.reload(data)
 func process_hold_reload() -> void: feed.process_hold_reload(data)
+func get_pending_ammo_id() -> StringName: return feed.pending_ammo_id
+
+
+func switch_ammo(step := 1) -> Dictionary:
+	var res := feed.start_ammo_switch(data, step)
+	if bool(res.get("ok", false)):
+		_play_fire_select_sfx(1.12 if not bool(res.get("cancelled", false)) else 0.85)
+	return res
 
 func switch_to(id: StringName) -> bool:
 	var result := feed.start_switch(id, data)

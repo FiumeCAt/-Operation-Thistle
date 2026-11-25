@@ -23,7 +23,9 @@ class_name DamageModel
 ##   - 破甲边界：剩余护甲不足本次耐久消耗时，按实际吸收比例在“满甲受击”与“空甲受击”间平滑插值，避免突变。
 ##   - 耐久归零：不再享受护甲基础减伤，仅受 min_reduction（护甲组件/天赋最低减伤率）保护。
 
-const OVERPEN_BONUS_PER_POINT := 0.10
+const OVERPEN_BONUS_PER_POINT := 0.08
+const OVERPEN_MAX_EXCESS := 30.0
+const PLAYER_OVERPEN_PER_POINT := 0.10
 const NON_PEN_BLUNT_FLOOR := 0.12
 const PLAYER_BASE_RHA := 30.0          # 默认 Lv1 护甲 = 30 (3.0mm RHA)
 const PLAYER_RHA_PER_LEVEL := 20.0     # 每提升 1 级防御 / 装甲组件 = +20 (+2.0mm RHA)
@@ -55,18 +57,25 @@ static func is_penetrated(ap: float, effective_armor: float) -> bool:
 	return effective_armor <= 0.0 or ap >= effective_armor
 
 
-## 敌人受击结算（固定 RHA 护甲，当前无敌人护甲耐久条）：
-##   ap >= armor -> amount + (ap - armor) * 0.1
-##   ap <  armor -> max(1.0, amount * lerp(0.12, 1.0, (ap / armor)^2))
-static func resolve_enemy_damage(amount: float, ap: float, armor: float) -> float:
+## 敌人受击结算（Phase 3B：无甲不吃余穿增伤 + 有甲余穿封顶 + 三系生态钝伤保底与肉伤倍率）：
+##   armor <= 0            -> amount * flesh_mul
+##   armor > 0, ap >= armor -> (amount + min(ap - armor, 30) * 0.08) * flesh_mul
+##   armor > 0, ap <  armor -> max(1.0, amount * lerp(blunt_floor, 1.0, (ap / armor)^2))
+static func resolve_enemy_damage(amount: float, ap: float, armor: float,
+		blunt_floor: float = NON_PEN_BLUNT_FLOOR, flesh_mul: float = 1.0) -> float:
 	if amount <= 0.0:
 		return 0.0
 	var eff_armor := maxf(armor, 0.0)
 	var eff_ap := maxf(ap, 0.0)
+	var f_mul := maxf(flesh_mul, 0.1)
+	if eff_armor <= 0.0:
+		return amount * f_mul
 	if is_penetrated(eff_ap, eff_armor):
-		return amount + (eff_ap - eff_armor) * OVERPEN_BONUS_PER_POINT
+		var excess := minf(eff_ap - eff_armor, OVERPEN_MAX_EXCESS)
+		return (amount + excess * OVERPEN_BONUS_PER_POINT) * f_mul
 	var r := clampf(eff_ap / eff_armor, 0.0, 1.0)
-	var blunt_mul := lerpf(NON_PEN_BLUNT_FLOOR, 1.0, r * r)
+	var floor_val := clampf(blunt_floor, 0.02, 0.80)
+	var blunt_mul := lerpf(floor_val, 1.0, r * r)
 	return maxf(1.0, amount * blunt_mul)
 
 
@@ -107,7 +116,7 @@ static func resolve_player_damage(amount: float, ap: float,
 
 	var armor_damage := 0
 	var hp_damage := 0
-	var bare_hp := maxi(1, int(round((amount + eff_ap * OVERPEN_BONUS_PER_POINT) * (1.0 - floor_red))))
+	var bare_hp := maxi(1, int(round((amount + eff_ap * PLAYER_OVERPEN_PER_POINT) * (1.0 - floor_red))))
 	if armor <= 0:
 		# 耐久耗尽：不再享受护甲基础减伤，仅受组件/天赋提供的最低减伤率保护。
 		hp_damage = bare_hp
@@ -117,7 +126,7 @@ static func resolve_player_damage(amount: float, ap: float,
 		if penetrated:
 			# 击穿（偏护罩碎甲模型）：25%~50% 穿透入血 + 100%~130% 碎甲损耗，保证护甲通常先碎。
 			var over_t := clampf((eff_ap - eff_rha) / maxf(eff_rha, 10.0), 0.0, 2.0) * 0.5
-			var eff_dmg := amount + (eff_ap - eff_rha) * OVERPEN_BONUS_PER_POINT
+			var eff_dmg := amount + (eff_ap - eff_rha) * PLAYER_OVERPEN_PER_POINT
 			var hp_ratio := lerpf(PLAYER_PEN_MIN_HP_RATIO, PLAYER_PEN_MAX_HP_RATIO, over_t)
 			armored_hp = maxi(1, int(round(eff_dmg * hp_ratio * (1.0 - floor_red))))
 			var wear := lerpf(PLAYER_PEN_ARMOR_WEAR_MIN, PLAYER_PEN_ARMOR_WEAR_MAX, over_t)

@@ -5,6 +5,10 @@ class_name EnemyDef
 
 var kind: StringName = &"rifleman"
 var display_name: String = ""
+## 敌人三系生态：mech（机械）/ human（人类）/ mutant（变异）；支持单单位覆写钝伤保底与肉伤倍率。
+var archetype: StringName = &"human"
+var blunt_floor: float = 0.14
+var flesh_mul: float = 1.05
 var hit_material: String = "metal"
 var texture_path: String = ""
 var frames_path: String = ""
@@ -42,6 +46,11 @@ static func from_dict(kind_id: StringName, raw: Dictionary) -> EnemyDef:
 	d.kind = kind_id
 	d.display_name = String(raw.get("name", String(kind_id)))
 	d.hit_material = String(raw.get("hit_material", "metal"))
+	var default_arch := "mech" if d.hit_material == "metal" else "human"
+	d.archetype = StringName(raw.get("archetype", default_arch))
+	var arch_profile := EnemyDB.archetype_profile(d.archetype)
+	d.blunt_floor = clampf(float(raw.get("blunt_floor", arch_profile.get("blunt_floor", 0.14))), 0.02, 0.80)
+	d.flesh_mul = clampf(float(raw.get("flesh_mul", arch_profile.get("flesh_mul", 1.0))), 0.5, 2.0)
 	d.texture_path = String(raw.get("texture", ""))
 	d.frames_path = String(raw.get("frames", ""))
 
