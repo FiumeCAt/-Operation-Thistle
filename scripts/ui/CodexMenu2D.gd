@@ -326,6 +326,8 @@ func _refresh_entry() -> void:
 				"resource":
 					_refresh_resource(entry["id"])
 	_update_pager()
+	if visible and _note_label != null:
+		PixelUI.play_typewriter(_note_label)
 
 
 func _refresh_enemy(id: StringName) -> void:

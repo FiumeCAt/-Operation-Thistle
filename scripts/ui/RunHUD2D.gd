@@ -229,6 +229,7 @@ func push_pickup(text: String, color: Color) -> void:
 	line.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	line.add_theme_constant_override("outline_size", 6)
 	line.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.03, 0.9))
+	PixelUI.play_typewriter(line)
 	_feed_items.append({"label": line, "t": FEED_LIFE})
 	while _feed_items.size() > FEED_MAX:
 		var old: Dictionary = _feed_items.pop_front()
@@ -501,6 +502,7 @@ func flash(text: String) -> void:
 	hint_label.add_theme_color_override("font_color", PixelUI.OK)
 	if _hint_rich != null:
 		_hint_rich.text = PixelUI.bb(text, PixelUI.OK)
+		PixelUI.play_typewriter(_hint_rich)
 	_flash_t = 2.2
 
 
@@ -599,6 +601,7 @@ func show_result(success: bool, loot: Dictionary, advanced := {}, meta_reward :=
 			result_detail.text = "本局物资全部丢失 · 仓库与装备保留"
 		else:
 			result_detail.text = "    ".join(PackedStringArray(fail_parts))
+	PixelUI.play_typewriter(result_detail)
 
 
 ## 带出物资：只显示有产出的行，全部为 0 时给出空手提示。

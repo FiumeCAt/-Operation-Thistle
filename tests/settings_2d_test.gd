@@ -161,14 +161,20 @@ func _run() -> void:
 	pm.queue_free()
 	await process_frame
 
-	# 弹道线条与小地图（形状/比例/缩放）写入磁盘：模拟重启后仍保持玩家选择。
+	# 弹道线条与小地图（形状/比例/缩放 + 实时预览窗 + 调试 3.0× 上下限）写入磁盘：模拟重启后仍保持玩家选择。
 	sm = SettingsMenu2D.new()
 	root.add_child(sm)
 	await process_frame
 	sm.open()
+	_check(sm._minimap_preview != null and sm._minimap_preview.preview_mode,
+		"settings menu embeds a live minimap preview widget")
 	sm._set_minimap_shape("circle")
 	sm._minimap_scale_slider.value = 125.0
 	sm._minimap_zoom_slider.value = 160.0
+	_check(sm._minimap_preview.map_shape == "circle"
+		and _near(sm._minimap_preview.map_scale, 1.25)
+		and _near(sm._minimap_preview.map_zoom, 1.6),
+		"live minimap preview immediately mirrors shape, scale, and zoom")
 	await create_timer(0.5).timeout
 	sm.queue_free()
 	await process_frame
@@ -177,6 +183,67 @@ func _run() -> void:
 		and _near(p.minimap_scale(), 1.25)
 		and _near(p.minimap_zoom(), 1.6),
 		"minimap shape, scale, and zoom persist across reload")
+
+	# 调试界面修改小地图最小/最大缩放上限（最高 3.0×），并同步放开设置页缩放滑杆。
+	sm = SettingsMenu2D.new()
+	root.add_child(sm)
+	await process_frame
+	sm.open()
+	var dm: DebugMenu2D = sm._debug_menu
+	_check(dm != null and dm._sliders.size() == 8
+		and dm._minimap_zoom_min_slider != null and dm._minimap_zoom_max_slider != null,
+		"debug menu exposes minimap zoom bounds without changing the 8 multiplier sliders")
+	dm.open()
+	dm._minimap_zoom_min_slider.value = 0.5
+	dm._minimap_zoom_max_slider.value = 3.0
+	dm.close_menu()
+	await process_frame
+	_check(_near(sm._minimap_zoom_slider.min_value, 50.0)
+		and _near(sm._minimap_zoom_slider.max_value, 300.0),
+		"settings minimap zoom slider dynamically adopts debug 0.5x-3.0x range")
+	sm._minimap_zoom_slider.value = 300.0
+	_check(_near(sm._minimap_preview.map_zoom, 3.0),
+		"live minimap preview supports 3.0x zoom")
+	await create_timer(0.45).timeout
+	sm.queue_free()
+	await process_frame
+	p.load_data()
+	_check(_near(p.minimap_zoom_min(), 0.5) and _near(p.minimap_zoom_max(), 3.0)
+		and _near(p.minimap_zoom(), 3.0),
+		"debug minimap zoom bounds and 3.0x zoom persist across reload")
+
+	# 实验性打字机开关与速度调节持久化 + PixelUI 逐字播放驱动检查。
+	sm = SettingsMenu2D.new()
+	root.add_child(sm)
+	await process_frame
+	sm.open()
+	_check(sm._typewriter_buttons.size() == 2 and sm._typewriter_speed_slider != null
+		and sm._typewriter_preview != null and not p.typewriter_enabled(),
+		"experimental typewriter defaults to off with speed slider and live preview")
+	sm._set_typewriter_enabled(true)
+	sm._typewriter_speed_slider.value = 85.0
+	await process_frame
+	_check(PixelUI.typewriter_enabled() and _near(PixelUI.typewriter_speed(), 85.0),
+		"typewriter toggle and speed sync to PixelUI")
+	var probe_lbl := Label.new()
+	probe_lbl.text = "K-17 TACTICAL TYPEWRITER TEST"
+	root.add_child(probe_lbl)
+	PixelUI.play_typewriter(probe_lbl, false, 90.0)
+	_check(probe_lbl.visible_characters >= 0 and probe_lbl.visible_characters < probe_lbl.text.length(),
+		"typewriter starts revealing characters progressively without altering text")
+	PixelUI.finish_typewriter(probe_lbl)
+	_check(probe_lbl.visible_characters == -1, "finish_typewriter restores full visibility")
+	probe_lbl.queue_free()
+	await create_timer(0.45).timeout
+	sm.queue_free()
+	await process_frame
+	p.load_data()
+	_check(p.typewriter_enabled() and _near(p.typewriter_speed(), 85.0),
+		"typewriter enabled state and speed persist across reload")
+
+	p.set_typewriter_enabled(false)
+	p.set_typewriter_speed(48.0)
+	p.reset_debug()
 	p.set_minimap_shape("square")
 	p.set_minimap_scale(1.0)
 	p.set_minimap_zoom(1.0)

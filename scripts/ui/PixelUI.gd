@@ -52,20 +52,20 @@ const THEME_PRESETS := {
 		"dim": Color(0.58, 0.66, 0.75),
 	},
 	"terminal": {
-		"accent": Color(0.24, 0.91, 0.48),
-		"accent_bright": Color(0.56, 1.0, 0.71),
-		"bg": Color(0.012, 0.026, 0.018, 0.95),
-		"bg_light": Color(0.038, 0.078, 0.052, 0.98),
-		"text": Color(0.86, 0.98, 0.90),
-		"dim": Color(0.48, 0.72, 0.56),
+		"accent": Color(4.0 / 255.0, 168.0 / 255.0, 46.0 / 255.0),
+		"accent_bright": Color(0.0, 1.0, 0.0),
+		"bg": Color(0.008, 0.024, 0.012, 0.95),
+		"bg_light": Color(0.020, 0.068, 0.032, 0.98),
+		"text": Color(0.84, 1.0, 0.88),
+		"dim": Color(0.36, 0.72, 0.44),
 	},
 	"cyan": {
-		"accent": Color(0.21, 0.86, 1.0),
-		"accent_bright": Color(0.61, 0.94, 1.0),
-		"bg": Color(0.012, 0.024, 0.038, 0.95),
-		"bg_light": Color(0.040, 0.075, 0.110, 0.98),
-		"text": Color(0.88, 0.96, 1.0),
-		"dim": Color(0.50, 0.70, 0.82),
+		"accent": Color(82.0 / 255.0, 202.0 / 255.0, 193.0 / 255.0),
+		"accent_bright": Color(52.0 / 255.0, 252.0 / 255.0, 254.0 / 255.0),
+		"bg": Color(0.010, 0.024, 0.028, 0.95),
+		"bg_light": Color(0.030, 0.070, 0.078, 0.98),
+		"text": Color(0.88, 0.98, 0.99),
+		"dim": Color(0.46, 0.74, 0.76),
 	},
 	"mono": {
 		"accent": Color(0.93, 0.95, 0.97),
@@ -79,6 +79,73 @@ const THEME_PRESETS := {
 
 static var _active_theme_id := "amber"
 static var _custom_accent := Color(1.0, 0.62, 0.24)
+
+## 实验性打字机文本效果全局配置（由 Progress 自动同步，默认关闭）。
+const TYPEWRITER_SPEED_MIN := 15.0
+const TYPEWRITER_SPEED_MAX := 140.0
+const TYPEWRITER_SPEED_DEFAULT := 48.0
+static var _typewriter_enabled := false
+static var _typewriter_speed := TYPEWRITER_SPEED_DEFAULT
+
+
+static func set_typewriter_config(enabled: bool, speed: float) -> void:
+	_typewriter_enabled = enabled
+	_typewriter_speed = clampf(speed, TYPEWRITER_SPEED_MIN, TYPEWRITER_SPEED_MAX)
+
+
+static func typewriter_enabled() -> bool:
+	return _typewriter_enabled
+
+
+static func typewriter_speed() -> float:
+	return _typewriter_speed
+
+
+static func finish_typewriter(node: Control) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	if node.has_meta(&"_tw_tween"):
+		var old_tw = node.get_meta(&"_tw_tween")
+		if old_tw is Tween and old_tw.is_valid():
+			old_tw.kill()
+		node.remove_meta(&"_tw_tween")
+	if node is Label or node is RichTextLabel:
+		node.visible_characters = -1
+
+
+## 为 Label / RichTextLabel 播放实验性逐字打字机效果（仅驱动 visible_characters，不改动原文本）。
+static func play_typewriter(node: Control, force := false, speed_override := -1.0) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	finish_typewriter(node)
+	if not _typewriter_enabled and not force:
+		return
+	if not node.is_inside_tree():
+		return
+	var total := 0
+	if node is RichTextLabel:
+		total = (node as RichTextLabel).get_total_character_count()
+		if total <= 0:
+			total = (node as RichTextLabel).get_parsed_text().length()
+	elif node is Label:
+		total = (node as Label).text.length()
+	else:
+		return
+	if total <= 1:
+		node.visible_characters = -1
+		return
+	var cps := speed_override if speed_override > 0.0 else _typewriter_speed
+	cps = clampf(cps, TYPEWRITER_SPEED_MIN, TYPEWRITER_SPEED_MAX)
+	var duration := clampf(float(total) / cps, 0.06, 8.0)
+	node.visible_characters = 0
+	var tw := node.create_tween()
+	tw.set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	tw.tween_property(node, "visible_characters", total, duration).from(0)
+	tw.finished.connect(func() -> void:
+		if is_instance_valid(node):
+			node.visible_characters = -1
+	)
+	node.set_meta(&"_tw_tween", tw)
 
 
 static func set_theme_palette(id: String, custom_color: Color = AMBER) -> void:
@@ -357,15 +424,15 @@ static func style_primary_button(b: Button) -> void:
 	var on_acc := theme_on_primary()
 	var normal := StyleBoxFlat.new()
 	normal.bg_color = acc
-	normal.border_color = bright
+	normal.border_color = acc.lerp(bright, 0.65)
 	normal.set_border_width_all(2)
 	normal.content_margin_left = 18
 	normal.content_margin_right = 18
 	normal.content_margin_top = 10
 	normal.content_margin_bottom = 10
 	var hover := normal.duplicate() as StyleBoxFlat
-	hover.bg_color = bright
-	hover.border_color = bright.lightened(0.30)
+	hover.bg_color = acc.lerp(bright, 0.85)
+	hover.border_color = bright.lightened(0.20)
 	var pressed := normal.duplicate() as StyleBoxFlat
 	pressed.bg_color = acc.darkened(0.16)
 	var disabled := normal.duplicate() as StyleBoxFlat

@@ -7,8 +7,10 @@ class_name SettingsMenu2D
 
 signal closed
 
-const LEFT_COL_WIDTH := 500.0
-const RIGHT_COL_WIDTH := 530.0
+const LEFT_COL_WIDTH := 590.0
+const RIGHT_COL_WIDTH := 590.0
+const PREVIEW_BOX_SIZE := Vector2(236.0, 200.0)
+const TYPEWRITER_SAMPLE := "▶ [K-17] 战术终端链路就绪 · 正在解码实验性逐字输出..."
 
 var _sliders: Dictionary = {}
 var _values: Dictionary = {}
@@ -28,6 +30,15 @@ var _minimap_scale_slider: HSlider
 var _minimap_scale_value: Label
 var _minimap_zoom_slider: HSlider
 var _minimap_zoom_value: Label
+var _minimap_zoom_hint: Label
+var _minimap_preview: Minimap2D
+var _minimap_preview_frame: PanelContainer
+var _preview_angle := 0.0
+var _typewriter_buttons: Dictionary = {}
+var _typewriter_speed_slider: HSlider
+var _typewriter_speed_value: Label
+var _typewriter_replay_button: Button
+var _typewriter_preview: RichTextLabel
 var _shake_scale_slider: HSlider
 var _shake_scale_edit: LineEdit
 var _zoom_slider: HSlider
@@ -50,8 +61,17 @@ func _ready() -> void:
 	_build()
 	_debug_menu = DebugMenu2D.new()
 	_debug_menu.name = "DebugMenu2D"
+	_debug_menu.minimap_bounds_changed.connect(_on_debug_minimap_bounds_changed)
+	_debug_menu.closed.connect(_refresh_minimap_zoom_bounds)
 	add_child(_debug_menu)
 	visible = false
+	set_process(true)
+
+
+func _process(delta: float) -> void:
+	if not visible:
+		return
+	_preview_angle = fposmod(_preview_angle + delta * 0.55, TAU)
 
 
 func _build() -> void:
@@ -62,25 +82,25 @@ func _build() -> void:
 
 	var panel := PixelUI.panel()
 	panel.set_anchors_preset(Control.PRESET_CENTER)
-	panel.offset_left = -565
-	panel.offset_right = 565
-	panel.offset_top = -415
-	panel.offset_bottom = 415
+	panel.offset_left = -630
+	panel.offset_right = 630
+	panel.offset_top = -416
+	panel.offset_bottom = 416
 	add_child(panel)
 
 	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 10)
+	rows.add_theme_constant_override("separation", 7)
 	panel.add_child(rows)
 
 	var header := HBoxContainer.new()
 	rows.add_child(header)
 	var title := PixelUI.emphasize(
-		PixelUI.label(header, "系统设置 // SETTINGS", PixelUI.FS_TITLE, PixelUI.AMBER), 3, 2)
+		PixelUI.label(header, "系统设置 // SETTINGS", 32, PixelUI.AMBER), 3, 2)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var esc_hint := PixelUI.rich_label(header,
-		"[right]%s 关闭 · 修改自动保存[/right]" % PixelUI.bb("[ESC]", PixelUI.GOLD), 20, PixelUI.DIM, 1)
+		"[right]%s 关闭 · 修改自动保存[/right]" % PixelUI.bb("[ESC]", PixelUI.GOLD), 18, PixelUI.DIM, 1)
 	esc_hint.autowrap_mode = TextServer.AUTOWRAP_OFF
-	esc_hint.custom_minimum_size = Vector2(270, 26)
+	esc_hint.custom_minimum_size = Vector2(270, 24)
 	esc_hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 	var divider := HSeparator.new()
@@ -98,11 +118,11 @@ func _build() -> void:
 	footer.add_theme_constant_override("separation", 14)
 	footer.alignment = BoxContainer.ALIGNMENT_CENTER
 	rows.add_child(footer)
-	var debug_button := PixelUI.button("调试模式 // DEBUG", 44)
+	var debug_button := PixelUI.button("调试模式 // DEBUG", 38)
 	debug_button.custom_minimum_size.x = 220
 	debug_button.pressed.connect(_open_debug)
 	footer.add_child(debug_button)
-	_back_button = PixelUI.primary_button("返回", 44)
+	_back_button = PixelUI.primary_button("返回", 38)
 	_back_button.custom_minimum_size.x = 220
 	_back_button.pressed.connect(close_menu)
 	footer.add_child(_back_button)
@@ -120,11 +140,11 @@ func _column_box(width: float) -> PanelContainer:
 	var style := PixelUI.panel_style(PixelUI.BG_LIGHT, 1, Color(PixelUI.AMBER, 0.35))
 	style.content_margin_left = 14
 	style.content_margin_right = 14
-	style.content_margin_top = 10
-	style.content_margin_bottom = 10
+	style.content_margin_top = 8
+	style.content_margin_bottom = 8
 	panel.add_theme_stylebox_override("panel", style)
 	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 8)
+	rows.add_theme_constant_override("separation", 5)
 	panel.add_child(rows)
 	return panel
 
@@ -154,14 +174,100 @@ func _build_left_column() -> Control:
 
 	_sep(rows, PixelUI.OK)
 	PixelUI.section_bar(rows, "小地图与雷达", "MINIMAP", PixelUI.OK)
-	_add_minimap_shape_row(rows)
-	_add_minimap_scale_row(rows)
-	_add_minimap_zoom_row(rows)
+	var mm_split := HBoxContainer.new()
+	mm_split.add_theme_constant_override("separation", 12)
+	rows.add_child(mm_split)
+
+	var mm_ctrl := VBoxContainer.new()
+	mm_ctrl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mm_ctrl.add_theme_constant_override("separation", 8)
+	mm_split.add_child(mm_ctrl)
+	_add_minimap_shape_row(mm_ctrl)
+	_add_minimap_scale_row(mm_ctrl)
+	_add_minimap_zoom_row(mm_ctrl)
+	_minimap_zoom_hint = PixelUI.label(mm_ctrl, "范围 0.8×–2.5× · 调试可扩至 3.0×", 16, PixelUI.DIM)
+	_minimap_zoom_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	_build_minimap_preview_box(mm_split)
 
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	rows.add_child(spacer)
 	return panel
+
+
+func _build_minimap_preview_box(parent: Node) -> void:
+	_minimap_preview_frame = PanelContainer.new()
+	_minimap_preview_frame.custom_minimum_size = PREVIEW_BOX_SIZE + Vector2(8, 28)
+	_minimap_preview_frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var st := PixelUI.panel_style(Color(0.012, 0.018, 0.026, 0.96), 1, Color(PixelUI.OK, 0.48))
+	st.content_margin_left = 4
+	st.content_margin_right = 4
+	st.content_margin_top = 4
+	st.content_margin_bottom = 4
+	_minimap_preview_frame.add_theme_stylebox_override("panel", st)
+	parent.add_child(_minimap_preview_frame)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	_minimap_preview_frame.add_child(box)
+
+	var cap := PixelUI.label(box, "LIVE PREVIEW // 实时预览", 14, PixelUI.OK)
+	cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+	var stage := Control.new()
+	stage.custom_minimum_size = PREVIEW_BOX_SIZE
+	stage.clip_contents = true
+	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(stage)
+
+	_minimap_preview = Minimap2D.new()
+	_minimap_preview.name = "MinimapLivePreview"
+	_minimap_preview.process_mode = Node.PROCESS_MODE_ALWAYS
+	_minimap_preview.preview_mode = true
+	_minimap_preview.preview_box_size = PREVIEW_BOX_SIZE
+	_minimap_preview.set_snapshot_provider(_build_preview_snapshot)
+	stage.add_child(_minimap_preview)
+
+
+func _build_preview_snapshot() -> Dictionary:
+	var tile := float(GameUnits.TILE)
+	var map_w := 30.0 * tile
+	var map_h := 22.0 * tile
+	var player_pos := Vector2(14.5, 11.2) * tile
+	var aim_dir := Vector2.from_angle(_preview_angle)
+	return {
+		"map_size": Vector2(map_w, map_h),
+		"tile_size": tile,
+		"floor_rects": [
+			Rect2i(2, 2, 26, 18),
+		],
+		"rooms": [
+			{"rect": Rect2(Vector2(3, 3) * tile, Vector2(7, 6) * tile)},
+			{"rect": Rect2(Vector2(12, 3) * tile, Vector2(6, 5) * tile)},
+			{"rect": Rect2(Vector2(20, 4) * tile, Vector2(7, 6) * tile)},
+			{"rect": Rect2(Vector2(4, 12) * tile, Vector2(8, 6) * tile)},
+			{"rect": Rect2(Vector2(16, 13) * tile, Vector2(9, 5) * tile)},
+		],
+		"player_pos": player_pos,
+		"aim_dir": aim_dir,
+		"containers": [
+			{"position": Vector2(6.5, 6.0) * tile, "searched": false},
+			{"position": Vector2(15.0, 5.2) * tile, "searched": false},
+			{"position": Vector2(22.5, 7.0) * tile, "searched": false},
+			{"position": Vector2(8.0, 15.0) * tile, "searched": false},
+		],
+		"power_on": false,
+		"power_position": Vector2(15.0, 5.5) * tile,
+		"switch_exit_position": Vector2(23.5, 15.5) * tile,
+		"exit_position": Vector2(25.5, 7.0) * tile,
+		"tracking": false,
+		"enemy_positions": [
+			Vector2(18.0, 9.8) * tile,
+			Vector2(11.5, 13.8) * tile,
+			Vector2(17.2, 14.5) * tile,
+		],
+	}
 
 
 func _build_right_column() -> Control:
@@ -231,13 +337,52 @@ func _build_right_column() -> Control:
 	_add_toggle_row(rows, "镜内运动模糊", _scope_blur_buttons, _set_scope_blur)
 	_add_toggle_row(rows, "镜内畸变", _scope_distortion_buttons, _set_scope_distortion)
 
+	_sep(rows, PixelUI.PURPLE)
+	PixelUI.section_bar(rows, "实验性功能", "EXPERIMENTAL", PixelUI.PURPLE)
+	_add_toggle_row(rows, "打字机文本", _typewriter_buttons, _set_typewriter_enabled)
+	_add_typewriter_speed_row(rows)
+
+	var tw_box := PanelContainer.new()
+	var tw_st := PixelUI.panel_style(Color(0.012, 0.018, 0.026, 0.92), 1, Color(PixelUI.PURPLE, 0.45))
+	tw_st.content_margin_left = 10
+	tw_st.content_margin_right = 10
+	tw_st.content_margin_top = 6
+	tw_st.content_margin_bottom = 6
+	tw_box.add_theme_stylebox_override("panel", tw_st)
+	rows.add_child(tw_box)
+	_typewriter_preview = PixelUI.rich_label(tw_box,
+		PixelUI.bb(TYPEWRITER_SAMPLE, PixelUI.CYAN), 16, PixelUI.TEXT, 1)
+	_typewriter_preview.custom_minimum_size.y = 24
+
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	rows.add_child(spacer)
 	PixelUI.rich_label(rows,
 		"%s 局内随时按 ESC 调整，小地图/音效/视野立即生效" % PixelUI.bb("●", PixelUI.OK),
-		18, PixelUI.DIM, 1)
+		16, PixelUI.DIM, 1)
 	return panel
+
+
+func _add_typewriter_speed_row(parent: Node) -> void:
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 8)
+	parent.add_child(line)
+	var label := PixelUI.label(line, "打字速度", 19, PixelUI.DIM)
+	label.custom_minimum_size.x = 136
+	_typewriter_speed_slider = _make_slider()
+	_typewriter_speed_slider.min_value = 15.0
+	_typewriter_speed_slider.max_value = 140.0
+	_typewriter_speed_slider.step = 5.0
+	_typewriter_speed_slider.custom_minimum_size.x = 140
+	_typewriter_speed_slider.value_changed.connect(_on_typewriter_speed_changed)
+	line.add_child(_typewriter_speed_slider)
+	_typewriter_speed_value = PixelUI.emphasize(PixelUI.label(line, "48字/s", 17, PixelUI.PURPLE), 2, 1)
+	_typewriter_speed_value.custom_minimum_size.x = 68
+	_typewriter_speed_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_typewriter_replay_button = _option_button("试播")
+	_typewriter_replay_button.custom_minimum_size = Vector2(64, 32)
+	_typewriter_replay_button.pressed.connect(_replay_typewriter_preview)
+	line.add_child(_typewriter_replay_button)
 
 
 func _add_hitstop_row(parent: Node) -> void:
@@ -315,11 +460,11 @@ func _add_shake_scale_row(parent: Node) -> void:
 
 func _add_minimap_shape_row(parent: Node) -> void:
 	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 8)
+	line.add_theme_constant_override("separation", 6)
 	parent.add_child(line)
-	var label := PixelUI.label(line, "小地图形状", 19, PixelUI.DIM)
-	label.custom_minimum_size.x = 116
-	for entry in [["square", "方形地图"], ["circle", "圆形雷达"]]:
+	var label := PixelUI.label(line, "形状", 18, PixelUI.DIM)
+	label.custom_minimum_size.x = 58
+	for entry in [["square", "方形"], ["circle", "圆形"]]:
 		var shape := String(entry[0])
 		var button := _option_button(String(entry[1]))
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -330,35 +475,37 @@ func _add_minimap_shape_row(parent: Node) -> void:
 
 func _add_minimap_scale_row(parent: Node) -> void:
 	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 8)
+	line.add_theme_constant_override("separation", 6)
 	parent.add_child(line)
-	var label := PixelUI.label(line, "小地图比例", 19, PixelUI.DIM)
-	label.custom_minimum_size.x = 116
+	var label := PixelUI.label(line, "比例", 18, PixelUI.DIM)
+	label.custom_minimum_size.x = 58
 	_minimap_scale_slider = _make_slider()
+	_minimap_scale_slider.custom_minimum_size.x = 120
 	_minimap_scale_slider.min_value = 70.0
 	_minimap_scale_slider.max_value = 150.0
 	_minimap_scale_slider.step = 5.0
 	_minimap_scale_slider.value_changed.connect(_on_minimap_scale_changed)
 	line.add_child(_minimap_scale_slider)
-	_minimap_scale_value = PixelUI.emphasize(PixelUI.label(line, "100%", 19, PixelUI.OK), 2, 1)
-	_minimap_scale_value.custom_minimum_size.x = 60
+	_minimap_scale_value = PixelUI.emphasize(PixelUI.label(line, "100%", 18, PixelUI.OK), 2, 1)
+	_minimap_scale_value.custom_minimum_size.x = 54
 	_minimap_scale_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 
 func _add_minimap_zoom_row(parent: Node) -> void:
 	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 8)
+	line.add_theme_constant_override("separation", 6)
 	parent.add_child(line)
-	var label := PixelUI.label(line, "小地图缩放", 19, PixelUI.DIM)
-	label.custom_minimum_size.x = 116
+	var label := PixelUI.label(line, "缩放", 18, PixelUI.DIM)
+	label.custom_minimum_size.x = 58
 	_minimap_zoom_slider = _make_slider()
+	_minimap_zoom_slider.custom_minimum_size.x = 120
 	_minimap_zoom_slider.min_value = 80.0
 	_minimap_zoom_slider.max_value = 250.0
 	_minimap_zoom_slider.step = 10.0
 	_minimap_zoom_slider.value_changed.connect(_on_minimap_zoom_changed)
 	line.add_child(_minimap_zoom_slider)
-	_minimap_zoom_value = PixelUI.emphasize(PixelUI.label(line, "1.0×", 19, PixelUI.CYAN), 2, 1)
-	_minimap_zoom_value.custom_minimum_size.x = 60
+	_minimap_zoom_value = PixelUI.emphasize(PixelUI.label(line, "1.0×", 18, PixelUI.CYAN), 2, 1)
+	_minimap_zoom_value.custom_minimum_size.x = 54
 	_minimap_zoom_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 
@@ -390,8 +537,15 @@ func _add_toggle_row(parent: Node, title: String, store: Dictionary, callback: C
 
 
 func _option_button(text: String) -> Button:
-	var button := PixelUI.button(text, 36)
-	button.add_theme_font_size_override("font_size", 18)
+	var button := PixelUI.button(text, 30)
+	button.add_theme_font_size_override("font_size", 17)
+	for st_name in ["normal", "hover", "pressed", "disabled"]:
+		var sb := button.get_theme_stylebox(st_name)
+		if sb is StyleBoxFlat:
+			var dup := (sb as StyleBoxFlat).duplicate() as StyleBoxFlat
+			dup.content_margin_top = 4
+			dup.content_margin_bottom = 4
+			button.add_theme_stylebox_override(st_name, dup)
 	return button
 
 
@@ -452,20 +606,99 @@ func _on_zoom_changed(value: float) -> void:
 
 
 func _on_minimap_scale_changed(value: float) -> void:
-	_minimap_scale_value.text = "%d%%" % int(round(value))
+	var sc := clampf(roundf(value / 5.0) * 0.05, 0.70, 1.50)
+	_minimap_scale_value.text = "%d%%" % int(round(sc * 100.0))
 	var p := get_node_or_null("/root/Progress")
 	if p != null:
-		p.data["minimap_scale"] = clampf(roundf(value / 5.0) * 0.05, 0.70, 1.50)
+		p.data["minimap_scale"] = sc
+	_sync_minimap_preview()
 	_save_timer.start()
 
 
 func _on_minimap_zoom_changed(value: float) -> void:
-	var z := clampf(roundf(value / 10.0) * 0.1, 0.80, 2.50)
+	var bounds := _minimap_zoom_bounds()
+	var z := clampf(roundf(value / 10.0) * 0.1, bounds.x, bounds.y)
 	_minimap_zoom_value.text = "%.1f×" % z
 	var p := get_node_or_null("/root/Progress")
 	if p != null:
 		p.data["minimap_zoom"] = z
+	_sync_minimap_preview()
 	_save_timer.start()
+
+
+func _minimap_zoom_bounds() -> Vector2:
+	var p := get_node_or_null("/root/Progress")
+	var lo := float(p.minimap_zoom_min()) if (p != null and p.has_method("minimap_zoom_min")) else 0.80
+	var hi := float(p.minimap_zoom_max()) if (p != null and p.has_method("minimap_zoom_max")) else 2.50
+	return Vector2(lo, maxf(hi, lo))
+
+
+func _on_debug_minimap_bounds_changed(_zmin: float, _zmax: float) -> void:
+	_refresh_minimap_zoom_bounds()
+
+
+func _refresh_minimap_zoom_bounds() -> void:
+	var bounds := _minimap_zoom_bounds()
+	var p := get_node_or_null("/root/Progress")
+	var z := float(p.minimap_zoom()) if (p != null and p.has_method("minimap_zoom")) else 1.0
+	z = clampf(z, bounds.x, bounds.y)
+	if _minimap_zoom_slider != null:
+		_minimap_zoom_slider.min_value = roundf(bounds.x * 100.0)
+		_minimap_zoom_slider.max_value = roundf(bounds.y * 100.0)
+		_minimap_zoom_slider.set_value_no_signal(roundf(z * 100.0))
+	if _minimap_zoom_value != null:
+		_minimap_zoom_value.text = "%.1f×" % z
+	if _minimap_zoom_hint != null:
+		_minimap_zoom_hint.text = "范围 %.1f×–%.1f× · 调试可调 0.4×–3.0×" % [bounds.x, bounds.y]
+	_sync_minimap_preview()
+
+
+func _sync_minimap_preview() -> void:
+	if _minimap_preview == null:
+		return
+	var p := get_node_or_null("/root/Progress")
+	var shape := String(p.minimap_shape()) if (p != null and p.has_method("minimap_shape")) else "square"
+	var sc := clampf(roundf(_minimap_scale_slider.value / 5.0) * 0.05, 0.70, 1.50) if _minimap_scale_slider != null else 1.0
+	var bounds := _minimap_zoom_bounds()
+	var zm := clampf(roundf(_minimap_zoom_slider.value / 10.0) * 0.1, bounds.x, bounds.y) if _minimap_zoom_slider != null else 1.0
+	_minimap_preview.configure(shape, sc, zm)
+
+
+func _set_typewriter_enabled(enabled: bool) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_typewriter_enabled"):
+		p.set_typewriter_enabled(enabled)
+	else:
+		PixelUI.set_typewriter_config(enabled, PixelUI.typewriter_speed())
+	_refresh_typewriter_buttons(enabled)
+	_replay_typewriter_preview()
+
+
+func _on_typewriter_speed_changed(value: float) -> void:
+	var cps := clampf(roundf(value), 15.0, 140.0)
+	if _typewriter_speed_value != null:
+		_typewriter_speed_value.text = "%d字/s" % int(cps)
+	var p := get_node_or_null("/root/Progress")
+	if p != null:
+		p.data["typewriter_speed"] = cps
+		PixelUI.set_typewriter_config(bool(p.typewriter_enabled()), cps)
+	else:
+		PixelUI.set_typewriter_config(PixelUI.typewriter_enabled(), cps)
+	_replay_typewriter_preview()
+	_save_timer.start()
+
+
+func _replay_typewriter_preview() -> void:
+	if _typewriter_preview == null:
+		return
+	var p := get_node_or_null("/root/Progress")
+	var enabled := bool(p.typewriter_enabled()) if (p != null and p.has_method("typewriter_enabled")) else PixelUI.typewriter_enabled()
+	var cps := float(p.typewriter_speed()) if (p != null and p.has_method("typewriter_speed")) else PixelUI.typewriter_speed()
+	_typewriter_preview.text = PixelUI.bb(TYPEWRITER_SAMPLE, PixelUI.CYAN if enabled else PixelUI.DIM)
+	if enabled:
+		PixelUI.play_typewriter(_typewriter_preview, true, cps)
+	else:
+		PixelUI.finish_typewriter(_typewriter_preview)
 
 
 func _on_shake_scale_changed(value: float) -> void:
@@ -492,6 +725,7 @@ func _set_minimap_shape(shape: String) -> void:
 	if p != null and p.has_method("set_minimap_shape"):
 		p.set_minimap_shape(shape)
 	_refresh_minimap_shape_buttons(shape)
+	_sync_minimap_preview()
 
 
 func _set_hitstop(enabled: bool) -> void:
@@ -553,6 +787,8 @@ func _load_values() -> void:
 	var mm_shape := "square"
 	var mm_scale := 1.0
 	var mm_zoom := 1.0
+	var tw_enabled := false
+	var tw_speed := 48.0
 	if p != null:
 		master = float(p.data.get("volume", 0.8))
 		sfx = float(p.data.get("sfx_volume", 0.8))
@@ -572,6 +808,8 @@ func _load_values() -> void:
 		mm_shape = String(p.minimap_shape()) if p.has_method("minimap_shape") else "square"
 		mm_scale = float(p.minimap_scale()) if p.has_method("minimap_scale") else 1.0
 		mm_zoom = float(p.minimap_zoom()) if p.has_method("minimap_zoom") else 1.0
+		tw_enabled = bool(p.typewriter_enabled()) if p.has_method("typewriter_enabled") else false
+		tw_speed = float(p.typewriter_speed()) if p.has_method("typewriter_speed") else 48.0
 	_set_slider("master", master * 100.0)
 	_set_slider("sfx", sfx * 100.0)
 	_set_slider("music", music * 100.0)
@@ -581,8 +819,11 @@ func _load_values() -> void:
 	_shake_scale_edit.text = str(int(round(shake_scale)))
 	_minimap_scale_slider.set_value_no_signal(mm_scale * 100.0)
 	_minimap_scale_value.text = "%d%%" % int(round(mm_scale * 100.0))
+	_refresh_minimap_zoom_bounds()
 	_minimap_zoom_slider.set_value_no_signal(mm_zoom * 100.0)
 	_minimap_zoom_value.text = "%.1f×" % mm_zoom
+	_typewriter_speed_slider.set_value_no_signal(tw_speed)
+	_typewriter_speed_value.text = "%d字/s" % int(round(tw_speed))
 	_refresh_fire_buttons(fire_mode)
 	_refresh_armor_display_buttons(armor_mode)
 	_refresh_ammo_buttons(ammo_mode)
@@ -594,6 +835,9 @@ func _load_values() -> void:
 	_refresh_sample_buttons(sample_impacts)
 	_refresh_hit_fx_buttons(hit_fx_level)
 	_refresh_minimap_shape_buttons(mm_shape)
+	_refresh_typewriter_buttons(tw_enabled)
+	_sync_minimap_preview()
+	_replay_typewriter_preview()
 
 
 func _set_slider(key: String, value: float) -> void:
@@ -615,8 +859,11 @@ func _save_settings() -> void:
 	p.data["music_volume"] = _sliders["music"].value / 100.0
 	p.data["shake_scale"] = clampf(roundf(_shake_scale_slider.value), 0.0, 1000.0)
 	p.data["view_zoom"] = clampf(roundf(_zoom_slider.value / 10.0) * 10.0, 20.0, 200.0)
+	var bounds := _minimap_zoom_bounds()
 	p.data["minimap_scale"] = clampf(roundf(_minimap_scale_slider.value / 5.0) * 0.05, 0.70, 1.50)
-	p.data["minimap_zoom"] = clampf(roundf(_minimap_zoom_slider.value / 10.0) * 0.1, 0.80, 2.50)
+	p.data["minimap_zoom"] = clampf(roundf(_minimap_zoom_slider.value / 10.0) * 0.1, bounds.x, bounds.y)
+	if _typewriter_speed_slider != null:
+		p.data["typewriter_speed"] = clampf(roundf(_typewriter_speed_slider.value), 15.0, 140.0)
 	p.save_data()
 
 
@@ -697,12 +944,16 @@ func _refresh_ammo_buttons(mode: String) -> void:
 
 
 func _refresh_minimap_shape_buttons(shape: String) -> void:
-	var names := {"square": "方形地图", "circle": "圆形雷达"}
+	var names := {"square": "方形", "circle": "圆形"}
 	for key in _minimap_shape_buttons:
 		var button: Button = _minimap_shape_buttons[key]
 		button.text = ("▶ " if key == shape else "   ") + String(names.get(key, key))
 		button.add_theme_color_override(
 			"font_color", PixelUI.OK if key == shape else PixelUI.TEXT)
+
+
+func _refresh_typewriter_buttons(enabled: bool) -> void:
+	_refresh_toggle_buttons(_typewriter_buttons, enabled)
 
 
 func _refresh_shake_buttons(enabled: bool) -> void:

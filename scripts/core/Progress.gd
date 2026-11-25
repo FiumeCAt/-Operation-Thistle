@@ -186,6 +186,7 @@ func load_from_slot(slot: int) -> bool:
 	SAVE_STORE.normalize_data(data, UPGRADE_MAX, TALENT_2D_MAX)
 	data["active_slot"] = index
 	_last_saved_text = ""
+	_sync_ui_theme()
 	return save_data()
 
 
@@ -368,6 +369,7 @@ func set_ui_theme_color(color: Color) -> bool:
 
 func _sync_ui_theme() -> void:
 	PixelUI.set_theme_palette(ui_theme(), ui_theme_color())
+	PixelUI.set_typewriter_config(typewriter_enabled(), typewriter_speed())
 
 func set_ammo_display(mode: String) -> bool:
 	return save_data() if SETTINGS_STORE.set_ammo_display(data, mode) else false
@@ -434,11 +436,41 @@ func set_minimap_scale(value: float) -> bool:
 	SETTINGS_STORE.set_minimap_scale(data, value)
 	return save_data()
 
+func minimap_zoom_min() -> float:
+	return SETTINGS_STORE.minimap_zoom_min(data)
+
+func set_minimap_zoom_min(value: float) -> bool:
+	SETTINGS_STORE.set_minimap_zoom_min(data, value)
+	return save_data()
+
+func minimap_zoom_max() -> float:
+	return SETTINGS_STORE.minimap_zoom_max(data)
+
+func set_minimap_zoom_max(value: float) -> bool:
+	SETTINGS_STORE.set_minimap_zoom_max(data, value)
+	return save_data()
+
 func minimap_zoom() -> float:
 	return SETTINGS_STORE.minimap_zoom(data)
 
 func set_minimap_zoom(value: float) -> bool:
 	SETTINGS_STORE.set_minimap_zoom(data, value)
+	return save_data()
+
+func typewriter_enabled() -> bool:
+	return SETTINGS_STORE.typewriter_enabled(data)
+
+func set_typewriter_enabled(enabled: bool) -> bool:
+	SETTINGS_STORE.set_typewriter_enabled(data, enabled)
+	PixelUI.set_typewriter_config(typewriter_enabled(), typewriter_speed())
+	return save_data()
+
+func typewriter_speed() -> float:
+	return SETTINGS_STORE.typewriter_speed(data)
+
+func set_typewriter_speed(speed: float) -> bool:
+	SETTINGS_STORE.set_typewriter_speed(data, speed)
+	PixelUI.set_typewriter_config(typewriter_enabled(), typewriter_speed())
 	return save_data()
 
 func set_motion_blur(enabled: bool) -> bool:

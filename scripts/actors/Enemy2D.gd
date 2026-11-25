@@ -250,7 +250,11 @@ func _enter(new_state: String) -> void:
 		return
 	var old_state := state
 	if new_state == "combat" and old_state != "combat":
-		if _anim != null:
+		if always_hunt:
+			var sfx := get_node_or_null("/root/Sfx")
+			if sfx != null and sfx.has_method("play_wave_spawn_cue"):
+				sfx.play_wave_spawn_cue(-10.0, randf_range(0.96, 1.05))
+		elif _anim != null:
 			_sfx("enemy_alert", -10.0, randf_range(0.96, 1.05))
 		_play_anim_override("alert", 0.4)
 	combat.on_state_entered(self, new_state, old_state)

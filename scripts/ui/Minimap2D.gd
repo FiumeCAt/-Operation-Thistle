@@ -14,6 +14,8 @@ const TOP_MARGIN := 20.0
 ## 只显示玩家附近的敌人，保留探索紧张感。
 const ENEMY_RADIUS := 760.0
 const CARDINALS := ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+const ZOOM_HARD_MIN := 0.40
+const ZOOM_HARD_MAX := 3.00
 
 var run: Node2D
 var snapshot_provider: Callable = Callable()
@@ -23,6 +25,10 @@ var map_shape := "square"
 var map_scale := 1.0
 var map_zoom := 1.0
 var _use_progress_prefs := true
+
+## 嵌入预览模式（供 SettingsMenu2D 实时预览窗使用）：按真实比例缩放居中，不抢占父容器右上角锚点。
+var preview_mode := false
+var preview_box_size := Vector2(228.0, 198.0)
 
 var _tick := 0.0
 var _last_shape := ""
@@ -50,7 +56,7 @@ func configure(shape: String, ui_scale: float, zoom_level: float) -> void:
 	_use_progress_prefs = false
 	map_shape = shape if ["square", "circle"].has(shape) else "square"
 	map_scale = clampf(ui_scale, 0.70, 1.50)
-	map_zoom = clampf(zoom_level, 0.80, 2.50)
+	map_zoom = clampf(zoom_level, ZOOM_HARD_MIN, ZOOM_HARD_MAX)
 	_apply_layout(true)
 	_redraw_all()
 
@@ -135,6 +141,19 @@ func _apply_layout(force := false) -> void:
 		roundf(CIRCLE_BASE * map_scale),
 		roundf((CIRCLE_BASE + CIRCLE_FOOTER) * map_scale),
 	) if map_shape == "circle" else (SIZE * map_scale).round()
+	if preview_mode:
+		var max_w := SIZE.x * 1.50
+		var max_h := (CIRCLE_BASE + CIRCLE_FOOTER) * 1.50
+		var box := preview_box_size
+		var fit := minf((box.x - 10.0) / max_w, (box.y - 10.0) / max_h)
+		custom_minimum_size = Vector2.ZERO
+		set_anchors_preset(Control.PRESET_TOP_LEFT)
+		size = target_size
+		scale = Vector2(fit, fit)
+		position = (box - target_size * fit) * 0.5
+		_rebuild_clip_geometry(target_size)
+		return
+	scale = Vector2.ONE
 	custom_minimum_size = target_size
 	if get_parent() is Control:
 		set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -253,7 +272,7 @@ func _draw_map_content() -> void:
 		return
 	var tile_size := float(snap.get("tile_size", GameUnits.TILE))
 	var fit_scale := minf(area.size.x / map_size.x, area.size.y / map_size.y)
-	var zoom := clampf(map_zoom, 0.80, 2.50)
+	var zoom := clampf(map_zoom, ZOOM_HARD_MIN, ZOOM_HARD_MAX)
 	var world_scale := fit_scale * zoom
 	var player: Vector2 = snap.get("player_pos", Vector2.ZERO)
 	var offset: Vector2

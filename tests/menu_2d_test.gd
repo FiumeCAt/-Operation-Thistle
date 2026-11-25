@@ -75,8 +75,15 @@ func _run() -> void:
 			and menu._loadout_slots["secondary"]["name"].text.contains("G17"),
 			"start menu loadout card shows equipped primary and secondary weapons")
 		menu._select_theme_preset("cyan")
-		_check(p.ui_theme() == "cyan" and PixelUI.theme_id() == "cyan",
-			"selecting cyan theme updates PixelUI palette and saves to Progress")
+		_check(p.ui_theme() == "cyan" and PixelUI.theme_id() == "cyan"
+			and PixelUI.theme_accent().is_equal_approx(Color.html("#52cac1"))
+			and PixelUI.theme_accent_bright().is_equal_approx(Color.html("#34fcfe")),
+			"selecting cyan theme applies updated #52cac1 / #34fcfe palette and saves to Progress")
+		menu._select_theme_preset("terminal")
+		_check(p.ui_theme() == "terminal" and PixelUI.theme_id() == "terminal"
+			and PixelUI.theme_accent().is_equal_approx(Color.html("#04a82e"))
+			and PixelUI.theme_accent_bright().is_equal_approx(Color.html("#00ff00")),
+			"selecting terminal theme applies updated #04a82e / #00ff00 palette")
 		menu._on_custom_theme_color(Color(0.85, 0.35, 0.95))
 		_check(p.ui_theme() == "custom" and absf(p.ui_theme_color().r - 0.85) < 0.02,
 			"custom theme color switches to custom mode and persists")

@@ -12,6 +12,8 @@ const SFX_BUS := BUS_SERVICE.SFX_BUS
 const MUSIC_BUS := BUS_SERVICE.MUSIC_BUS
 const IMPACT_SAMPLE_ROOT := SAMPLES.IMPACT_SAMPLE_ROOT
 const IMPACT_SAMPLE_SETS := SAMPLES.IMPACT_SAMPLE_SETS
+## 浪潮模式生成敌人提示音冷却（毫秒）：5 秒内最多保留 1 次，避免后期多目标刷屏刺耳。
+const WAVE_SPAWN_CUE_COOLDOWN_MS := 5000
 
 var streams: Dictionary = {}
 var _samples: SfxSamples = SAMPLES.new()
@@ -20,6 +22,7 @@ var _ambient_player: AudioStreamPlayer
 var _last_hit_ms := 0
 var _last_wall_ms := 0
 var _last_hurt_ms := 0
+var _last_wave_cue_ms := -100000
 
 
 func _ready() -> void:
@@ -48,6 +51,20 @@ func apply_saved_volumes() -> void:
 
 func play_2d(kind: String, volume_db := 0.0, pitch := 1.0) -> void:
 	play_stream(streams.get(kind), volume_db, pitch)
+
+
+func reset_wave_spawn_cue_cooldown() -> void:
+	_last_wave_cue_ms = -100000
+
+
+## 浪潮模式敌人生成提示音：5 秒窗口内仅保留一次提示音，防止后期数十只敌人同时刷出导致爆音吵闹。
+func play_wave_spawn_cue(volume_db := -10.0, pitch := 1.0, now_ms := -1) -> bool:
+	var now := now_ms if now_ms >= 0 else Time.get_ticks_msec()
+	if now - _last_wave_cue_ms < WAVE_SPAWN_CUE_COOLDOWN_MS:
+		return false
+	_last_wave_cue_ms = now
+	play_2d("enemy_alert", volume_db, pitch)
+	return true
 
 
 func play_stream(stream: AudioStream, volume_db := 0.0, pitch := 1.0) -> void:

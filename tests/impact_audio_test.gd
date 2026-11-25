@@ -103,5 +103,14 @@ func _run() -> void:
 	AudioBusService.set_bus_volume(bus_idx, 0.8)
 	_check(not AudioServer.is_bus_mute(bus_idx), "AudioBusService unmutes bus at positive volume")
 
+	# 7) 浪潮模式生成敌人提示音节流：5 秒窗口内仅保留 1 次提示音，避免后期刷屏吵闹。
+	sfx.reset_wave_spawn_cue_cooldown()
+	var cue1: bool = sfx.play_wave_spawn_cue(-10.0, 1.0, 1000)
+	var cue2: bool = sfx.play_wave_spawn_cue(-10.0, 1.0, 1120)
+	var cue3: bool = sfx.play_wave_spawn_cue(-10.0, 1.0, 5999)
+	var cue4: bool = sfx.play_wave_spawn_cue(-10.0, 1.0, 6000)
+	_check(cue1 and not cue2 and not cue3 and cue4,
+		"wave spawn cue plays at most once within a 5-second window")
+
 	print("\n=== impact audio: %s (%d ok / %d fail) ===" % ["PASS" if _fail == 0 else "FAIL", _pass, _fail])
 	quit()

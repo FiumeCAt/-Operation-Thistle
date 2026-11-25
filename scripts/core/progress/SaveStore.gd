@@ -12,6 +12,11 @@ const DEFAULT_RETICLE_COLOR := "#ff7a3c"
 const DEFAULT_UI_THEME := "amber"
 const DEFAULT_UI_THEME_COLOR := "#ff9e3d"
 const UI_THEME_IDS := ["amber", "terminal", "cyan", "mono", "custom"]
+const MINIMAP_ZOOM_HARD_MIN := 0.40
+const MINIMAP_ZOOM_HARD_MAX := 3.00
+const DEFAULT_MINIMAP_ZOOM_MIN := 0.80
+const DEFAULT_MINIMAP_ZOOM_MAX := 2.50
+const DEFAULT_TYPEWRITER_SPEED := 48.0
 
 const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
 const WEAPON_IDS := [
@@ -66,6 +71,10 @@ static func defaults() -> Dictionary:
 		"minimap_shape": "square",
 		"minimap_scale": 1.0,
 		"minimap_zoom": 1.0,
+		"minimap_zoom_min": DEFAULT_MINIMAP_ZOOM_MIN,
+		"minimap_zoom_max": DEFAULT_MINIMAP_ZOOM_MAX,
+		"typewriter_enabled": false,
+		"typewriter_speed": DEFAULT_TYPEWRITER_SPEED,
 		"motion_blur": true,
 		"scope_motion_blur": true,
 		"scope_lens_distortion": true,
@@ -303,8 +312,21 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 	data["minimap_shape"] = mm_shape if ["square", "circle"].has(mm_shape) else "square"
 	data["minimap_scale"] = clampf(
 		roundf(float(data.get("minimap_scale", 1.0)) * 20.0) / 20.0, 0.70, 1.50)
+	var mm_zmin := clampf(
+		roundf(float(data.get("minimap_zoom_min", DEFAULT_MINIMAP_ZOOM_MIN)) * 10.0) / 10.0,
+		MINIMAP_ZOOM_HARD_MIN, 2.00)
+	var mm_zmax := clampf(
+		roundf(float(data.get("minimap_zoom_max", DEFAULT_MINIMAP_ZOOM_MAX)) * 10.0) / 10.0,
+		1.00, MINIMAP_ZOOM_HARD_MAX)
+	if mm_zmax < mm_zmin:
+		mm_zmax = mm_zmin
+	data["minimap_zoom_min"] = mm_zmin
+	data["minimap_zoom_max"] = mm_zmax
 	data["minimap_zoom"] = clampf(
-		roundf(float(data.get("minimap_zoom", 1.0)) * 10.0) / 10.0, 0.80, 2.50)
+		roundf(float(data.get("minimap_zoom", 1.0)) * 10.0) / 10.0, mm_zmin, mm_zmax)
+	data["typewriter_enabled"] = bool(data.get("typewriter_enabled", false))
+	data["typewriter_speed"] = clampf(
+		roundf(float(data.get("typewriter_speed", DEFAULT_TYPEWRITER_SPEED))), 15.0, 140.0)
 	data["motion_blur"] = bool(data.get("motion_blur", true))
 	data["scope_motion_blur"] = bool(data.get("scope_motion_blur", true))
 	data["scope_lens_distortion"] = bool(data.get("scope_lens_distortion", true))

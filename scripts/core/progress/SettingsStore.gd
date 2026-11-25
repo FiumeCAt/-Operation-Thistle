@@ -135,12 +135,70 @@ static func set_minimap_scale(data: Dictionary, value: float) -> void:
 	data["minimap_scale"] = clampf(roundf(value * 20.0) / 20.0, 0.70, 1.50)
 
 
+static func minimap_zoom_min(data: Dictionary) -> float:
+	var zmin := clampf(
+		roundf(float(data.get("minimap_zoom_min", SAVE_STORE.DEFAULT_MINIMAP_ZOOM_MIN)) * 10.0) / 10.0,
+		SAVE_STORE.MINIMAP_ZOOM_HARD_MIN, 2.00)
+	var zmax := clampf(
+		roundf(float(data.get("minimap_zoom_max", SAVE_STORE.DEFAULT_MINIMAP_ZOOM_MAX)) * 10.0) / 10.0,
+		1.00, SAVE_STORE.MINIMAP_ZOOM_HARD_MAX)
+	return minf(zmin, zmax)
+
+
+static func minimap_zoom_max(data: Dictionary) -> float:
+	var zmin := clampf(
+		roundf(float(data.get("minimap_zoom_min", SAVE_STORE.DEFAULT_MINIMAP_ZOOM_MIN)) * 10.0) / 10.0,
+		SAVE_STORE.MINIMAP_ZOOM_HARD_MIN, 2.00)
+	var zmax := clampf(
+		roundf(float(data.get("minimap_zoom_max", SAVE_STORE.DEFAULT_MINIMAP_ZOOM_MAX)) * 10.0) / 10.0,
+		1.00, SAVE_STORE.MINIMAP_ZOOM_HARD_MAX)
+	return maxf(zmax, zmin)
+
+
+static func set_minimap_zoom_min(data: Dictionary, value: float) -> void:
+	var zmin := clampf(roundf(value * 10.0) / 10.0, SAVE_STORE.MINIMAP_ZOOM_HARD_MIN, 2.00)
+	var zmax := minimap_zoom_max(data)
+	if zmin > zmax:
+		zmax = clampf(zmin, 1.00, SAVE_STORE.MINIMAP_ZOOM_HARD_MAX)
+		zmin = minf(zmin, zmax)
+		data["minimap_zoom_max"] = zmax
+	data["minimap_zoom_min"] = zmin
+	data["minimap_zoom"] = clampf(float(data.get("minimap_zoom", 1.0)), zmin, zmax)
+
+
+static func set_minimap_zoom_max(data: Dictionary, value: float) -> void:
+	var zmax := clampf(roundf(value * 10.0) / 10.0, 1.00, SAVE_STORE.MINIMAP_ZOOM_HARD_MAX)
+	var zmin := minimap_zoom_min(data)
+	if zmax < zmin:
+		zmin = clampf(zmax, SAVE_STORE.MINIMAP_ZOOM_HARD_MIN, 2.00)
+		zmax = maxf(zmax, zmin)
+		data["minimap_zoom_min"] = zmin
+	data["minimap_zoom_max"] = zmax
+	data["minimap_zoom"] = clampf(float(data.get("minimap_zoom", 1.0)), zmin, zmax)
+
+
 static func minimap_zoom(data: Dictionary) -> float:
-	return clampf(float(data.get("minimap_zoom", 1.0)), 0.80, 2.50)
+	return clampf(float(data.get("minimap_zoom", 1.0)), minimap_zoom_min(data), minimap_zoom_max(data))
 
 
 static func set_minimap_zoom(data: Dictionary, value: float) -> void:
-	data["minimap_zoom"] = clampf(roundf(value * 10.0) / 10.0, 0.80, 2.50)
+	data["minimap_zoom"] = clampf(roundf(value * 10.0) / 10.0, minimap_zoom_min(data), minimap_zoom_max(data))
+
+
+static func typewriter_enabled(data: Dictionary) -> bool:
+	return bool(data.get("typewriter_enabled", false))
+
+
+static func set_typewriter_enabled(data: Dictionary, enabled: bool) -> void:
+	data["typewriter_enabled"] = enabled
+
+
+static func typewriter_speed(data: Dictionary) -> float:
+	return clampf(roundf(float(data.get("typewriter_speed", SAVE_STORE.DEFAULT_TYPEWRITER_SPEED))), 15.0, 140.0)
+
+
+static func set_typewriter_speed(data: Dictionary, speed: float) -> void:
+	data["typewriter_speed"] = clampf(roundf(speed), 15.0, 140.0)
 
 
 static func set_motion_blur(data: Dictionary, enabled: bool) -> void:
@@ -204,6 +262,10 @@ static func reset_debug(data: Dictionary) -> void:
 		"recoil_v": 1.0, "recoil_h": 1.0, "recoil_cap": 1.0,
 		"spread": 1.0, "damage": 1.0, "ads": 1.0, "move": 1.0, "vision": 1.0,
 	}
+	data["minimap_zoom_min"] = SAVE_STORE.DEFAULT_MINIMAP_ZOOM_MIN
+	data["minimap_zoom_max"] = SAVE_STORE.DEFAULT_MINIMAP_ZOOM_MAX
+	data["minimap_zoom"] = clampf(float(data.get("minimap_zoom", 1.0)),
+		SAVE_STORE.DEFAULT_MINIMAP_ZOOM_MIN, SAVE_STORE.DEFAULT_MINIMAP_ZOOM_MAX)
 
 
 static func set_camera_mode(data: Dictionary, mode: int) -> void:
