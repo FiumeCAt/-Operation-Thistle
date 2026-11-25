@@ -201,6 +201,18 @@ static func set_typewriter_speed(data: Dictionary, speed: float) -> void:
 	data["typewriter_speed"] = clampf(roundf(speed), 15.0, 140.0)
 
 
+static func pickup_merge_window(data: Dictionary) -> float:
+	return clampf(
+		roundf(float(data.get("pickup_merge_window", SAVE_STORE.DEFAULT_PICKUP_MERGE_WINDOW)) * 2.0) / 2.0,
+		SAVE_STORE.PICKUP_MERGE_MIN, SAVE_STORE.PICKUP_MERGE_MAX)
+
+
+static func set_pickup_merge_window(data: Dictionary, seconds: float) -> void:
+	data["pickup_merge_window"] = clampf(
+		roundf(seconds * 2.0) / 2.0,
+		SAVE_STORE.PICKUP_MERGE_MIN, SAVE_STORE.PICKUP_MERGE_MAX)
+
+
 static func set_motion_blur(data: Dictionary, enabled: bool) -> void:
 	data["motion_blur"] = enabled
 

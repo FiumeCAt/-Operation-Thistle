@@ -13,7 +13,7 @@ const DETAIL_VIEW := preload("res://scripts/ui/armory/ArmoryDetailView.gd")
 const MOD_CANVAS_VIEW := preload("res://scripts/ui/armory/ArmoryModCanvasView.gd")
 const MOD_STATS_STRIP := preload("res://scripts/ui/armory/ArmoryModStatsStrip.gd")
 
-const PANEL_SIZE := Vector2(1240, 820)
+const PANEL_SIZE := Vector2(1280, 856)
 ## 兼容别名：统一收口至各子视图常量，保持既有测试引用不断裂。
 const STAT_KEYS: Array[String] = TOOLTIP_VIEW.STAT_KEYS
 const STAT_EFFECT := TOOLTIP_VIEW.STAT_EFFECT
@@ -23,6 +23,7 @@ const COLOR_PRESETS: Array[Color] = MOD_STATS_STRIP.COLOR_PRESETS
 var _selected: StringName = &"m870"
 var _primary: StringName = &"m870"
 var _secondary: StringName = &"g17"
+var _category: StringName = &"all"
 var _page := "weapon"
 var _weapon_sub := "data"
 
@@ -44,6 +45,10 @@ var _feedback: Label
 ## 对外与既有测试兼容属性转发（单一状态源均在对应子视图内）
 var _weapon_buttons: Dictionary:
 	get: return _detail_view.weapon_buttons
+var _category_buttons: Dictionary:
+	get: return _detail_view.category_buttons
+var _mod_shortcut_button: Button:
+	get: return _detail_view.mod_button
 var _weapon_list: VBoxContainer:
 	get: return _detail_view.weapon_list
 var _list_scroll: ScrollContainer:
@@ -160,7 +165,7 @@ func _build() -> void:
 	add_child(panel)
 
 	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 10)
+	rows.add_theme_constant_override("separation", 8)
 	panel.add_child(rows)
 
 	var header := HBoxContainer.new()
@@ -177,18 +182,18 @@ func _build() -> void:
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 10)
 	rows.add_child(tabs)
-	_tab_weapon = PixelUI.button("▶ 武器数据 // WEAPONS", 44)
+	_tab_weapon = PixelUI.button("▶ 武器数据 // WEAPONS", 40)
 	_tab_weapon.custom_minimum_size.x = 300
 	_tab_weapon.pressed.connect(func() -> void: _show_page("weapon"))
 	tabs.add_child(_tab_weapon)
-	_tab_armor = PixelUI.button("护甲数据 // ARMOR", 44)
+	_tab_armor = PixelUI.button("护甲数据 // ARMOR", 40)
 	_tab_armor.custom_minimum_size.x = 300
 	_tab_armor.pressed.connect(func() -> void: _show_page("armor"))
 	tabs.add_child(_tab_armor)
 
 	# 武器页：数据 / 配件两个子页
 	var weapon_page := VBoxContainer.new()
-	weapon_page.add_theme_constant_override("separation", 8)
+	weapon_page.add_theme_constant_override("separation", 6)
 	weapon_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	rows.add_child(weapon_page)
 	_weapon_page = weapon_page
@@ -196,18 +201,20 @@ func _build() -> void:
 	var sub_tabs := HBoxContainer.new()
 	sub_tabs.add_theme_constant_override("separation", 8)
 	weapon_page.add_child(sub_tabs)
-	_sub_tab_data = PixelUI.button("▶ 武器数据", 36)
+	_sub_tab_data = PixelUI.button("▶ 武器数据", 34)
 	_sub_tab_data.custom_minimum_size.x = 240
 	_sub_tab_data.pressed.connect(func() -> void: _show_weapon_sub("data"))
 	sub_tabs.add_child(_sub_tab_data)
-	_sub_tab_mods = PixelUI.button("配件与组件", 36)
+	_sub_tab_mods = PixelUI.button("配件与组件", 34)
 	_sub_tab_mods.custom_minimum_size.x = 240
 	_sub_tab_mods.pressed.connect(func() -> void: _show_weapon_sub("mods"))
 	sub_tabs.add_child(_sub_tab_mods)
 
 	_detail_view.build(weapon_page)
 	_detail_view.weapon_selected.connect(_select)
+	_detail_view.category_selected.connect(_select_category)
 	_detail_view.equip_requested.connect(_equip)
+	_detail_view.mod_requested.connect(_open_mods_for_weapon)
 	_detail_view.tip_show_requested.connect(_show_tip)
 	_detail_view.tip_hide_requested.connect(_hide_tip)
 
@@ -217,13 +224,21 @@ func _build() -> void:
 	var footer_divider := HSeparator.new()
 	footer_divider.add_theme_color_override("color", Color(PixelUI.AMBER, 0.5))
 	rows.add_child(footer_divider)
-	_loadout_label = PixelUI.label(rows, "", PixelUI.FS_BODY, PixelUI.TEXT)
-	_feedback = PixelUI.label(rows, "点击武器查看数据 · 装备后开始行动生效", PixelUI.FS_BODY, PixelUI.DIM)
-	var close_button := PixelUI.button("返回基地", 46)
-	close_button.custom_minimum_size.x = 300
-	close_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var footer_row := HBoxContainer.new()
+	footer_row.add_theme_constant_override("separation", 16)
+	rows.add_child(footer_row)
+	var footer_info := VBoxContainer.new()
+	footer_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer_info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	footer_info.add_theme_constant_override("separation", 2)
+	footer_row.add_child(footer_info)
+	_loadout_label = PixelUI.label(footer_info, "", 18, PixelUI.TEXT)
+	_feedback = PixelUI.label(footer_info, "点击武器查看数据 · 装备后开始行动生效", 16, PixelUI.DIM)
+	var close_button := PixelUI.button("返回基地", 44)
+	close_button.custom_minimum_size.x = 240
+	close_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	close_button.pressed.connect(close_menu)
-	rows.add_child(close_button)
+	footer_row.add_child(close_button)
 
 	_tooltip_view.build(self)
 
@@ -244,10 +259,13 @@ func _process(_delta: float) -> void:
 
 func open() -> void:
 	_read_loadout()
+	_category = &"all"
 	_selected = _primary
 	_feedback.text = "点击武器查看数据 · 装备后开始行动生效"
 	_show_page("weapon")
 	_refresh()
+	if _list_scroll != null:
+		_list_scroll.scroll_vertical = 0
 	move_to_front()
 	visible = true
 
@@ -277,7 +295,7 @@ func _show_page(page: String) -> void:
 		_refresh_armor()
 
 
-func _show_weapon_sub(sub: String) -> void:
+func _show_weapon_sub(sub: String, target_weapon: StringName = &"") -> void:
 	_weapon_sub = sub
 	if _weapon_data_page != null:
 		_weapon_data_page.visible = sub == "data"
@@ -286,13 +304,41 @@ func _show_weapon_sub(sub: String) -> void:
 	_sub_tab_data.text = ("▶ " if sub == "data" else "   ") + "武器数据"
 	_sub_tab_mods.text = ("▶ " if sub == "mods" else "   ") + "配件与组件"
 	if sub == "mods":
+		_read_loadout()
+		# 直接切到改枪子页时强制选中当前主武器；通过武器详情「去改枪」进入则直达该选中武器。
+		var item_id := String(target_weapon) if target_weapon != &"" else String(_primary)
 		_feedback.text = "配件与组件 · 安装后开始行动生效"
+		_mod_view.select_item(item_id)
 		_mod_view.set_feedback("点击选项切换预览 · 安装消耗信用点与进阶资源", PixelUI.DIM)
-		_refresh_mods()
 	else:
 		_feedback.text = "点击武器查看数据 · 装备后开始行动生效"
 		# 从配件页返回时重新读取实际数据，避免显示安装前的旧数值。
 		_refresh()
+
+
+func _select_category(category: StringName) -> void:
+	_category = category
+	_read_loadout()
+	var visible_ids := MOD_SERVICE.pinned_weapon_order(_primary, _secondary, _category)
+	if not visible_ids.is_empty() and not visible_ids.has(String(_selected)):
+		_selected = StringName(visible_ids[0])
+	if _list_scroll != null:
+		_list_scroll.scroll_vertical = 0
+	_refresh()
+
+
+func _open_mods_for_weapon(weapon_id: StringName) -> void:
+	if weapon_id == &"":
+		weapon_id = _selected
+	_page = "mods"
+	_hide_tip()
+	if _weapon_page != null:
+		_weapon_page.visible = true
+	if _armor_page != null:
+		_armor_page.visible = false
+	_tab_weapon.text = "▶ 武器数据 // WEAPONS"
+	_tab_armor.text = "   护甲数据 // ARMOR"
+	_show_weapon_sub("mods", weapon_id)
 
 
 func _select(id: StringName) -> void:
@@ -324,7 +370,7 @@ func _read_loadout() -> void:
 func _refresh() -> void:
 	_read_loadout()
 	_hide_tip()
-	_detail_view.refresh(_selected, _primary, _secondary, _progress_node(), _tooltip_view)
+	_detail_view.refresh(_selected, _primary, _secondary, _progress_node(), _tooltip_view, _category)
 	_loadout_label.text = "当前携带：主武器 %s · 副武器 %s" % [
 		WeaponDB.get_weapon(_primary).display_name,
 		WeaponDB.get_weapon(_secondary).display_name,

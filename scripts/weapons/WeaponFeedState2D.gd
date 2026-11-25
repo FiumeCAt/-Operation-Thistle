@@ -13,6 +13,8 @@ var mag := 0
 ## category(light/medium/heavy/shotgun/special) → 备弹数量。
 var reserve: Dictionary = {}
 var mag_by_id: Dictionary = {}
+## 每把武器独立的开火模式状态："auto"（全自动）/ "semi"（半自动）；仅半自动武器固定为 "semi"。
+var fire_mode_by_id: Dictionary = {}
 var cooldown := 0.0
 var shots := 0
 
@@ -234,6 +236,48 @@ func is_drawing() -> bool:
 
 func is_busy() -> bool:
 	return reload_t > 0.0 or switch_t > 0.0 or stow_t > 0.0
+
+
+## 当前武器是否具备全自动快慢机档位（含原生全自动或全自动枪机改件）。
+func supports_full_auto(data: WeaponData) -> bool:
+	return data != null and (data.auto_fire or data.default_auto_fire)
+
+
+## 读取当前武器的生效开火模式："auto" 或 "semi"；切枪往返时保持每把武器各自选择。
+func get_fire_mode(data: WeaponData) -> String:
+	if data == null or not supports_full_auto(data):
+		return "semi"
+	if not fire_mode_by_id.has(data.id):
+		fire_mode_by_id[data.id] = "auto"
+	return String(fire_mode_by_id[data.id])
+
+
+func is_auto_mode(data: WeaponData) -> bool:
+	return get_fire_mode(data) == "auto"
+
+
+func set_fire_mode(data: WeaponData, mode: String) -> bool:
+	if data == null:
+		return false
+	if mode == "auto":
+		if not supports_full_auto(data):
+			return false
+		fire_mode_by_id[data.id] = "auto"
+		return true
+	if mode == "semi":
+		fire_mode_by_id[data.id] = "semi"
+		return true
+	return false
+
+
+func toggle_fire_mode(data: WeaponData) -> Dictionary:
+	if data == null or not supports_full_auto(data):
+		if data != null:
+			fire_mode_by_id[data.id] = "semi"
+		return {"changed": false, "supported": false, "mode": "semi"}
+	var next_mode := "semi" if get_fire_mode(data) == "auto" else "auto"
+	fire_mode_by_id[data.id] = next_mode
+	return {"changed": true, "supported": true, "mode": next_mode}
 
 
 ## HUD 文本：枪名 + 弹匣/备弹，空仓或换弹时附提示。

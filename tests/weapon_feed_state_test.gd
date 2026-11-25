@@ -83,6 +83,25 @@ func _run() -> void:
 	_check(feed.mag == m870.mag_capacity and feed.get_reserve(m870) > 0,
 		"refill_all_ammo restores full mag and talent-scaled reserve")
 
+	# 7. 开火模式切换（全自动/半自动）与切枪独立记忆
+	var fal: WeaponData = WeaponDB.get_weapon(&"fal")
+	_check(feed.supports_full_auto(fal) and feed.get_fire_mode(fal) == "auto" and feed.is_auto_mode(fal),
+		"FN FAL supports full-auto and defaults to auto mode")
+	var tog1 := feed.toggle_fire_mode(fal)
+	_check(bool(tog1["changed"]) and bool(tog1["supported"]) and String(tog1["mode"]) == "semi"
+		and not feed.is_auto_mode(fal),
+		"toggling FAL switches from full-auto to semi-auto")
+	var tog_m870 := feed.toggle_fire_mode(m870)
+	_check(not bool(tog_m870["changed"]) and not bool(tog_m870["supported"])
+		and feed.get_fire_mode(m870) == "semi",
+		"semi-only weapon (M870) rejects full-auto toggle and stays semi")
+	# 切枪往返后保持每把武器各自的快慢机档位
+	feed.on_weapon_equipped(&"m870", m870.mag_capacity)
+	feed.on_weapon_equipped(&"fal", fal.mag_capacity)
+	_check(feed.get_fire_mode(fal) == "semi", "FAL retains semi mode after switching weapons")
+	var tog2 := feed.toggle_fire_mode(fal)
+	_check(bool(tog2["changed"]) and feed.is_auto_mode(fal), "toggling FAL again restores full-auto")
+
 	print("\n=== weapon feed state: %s (%d ok / %d fail) ===" % [
 		"PASS" if _fail == 0 else "FAIL", _pass, _fail])
 	quit(0 if _fail == 0 else 1)

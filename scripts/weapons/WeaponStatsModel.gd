@@ -99,7 +99,8 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 
 	var range_m := base.range_m * float(mods["range_mul"])
 	var sound := base.sound_radius * float(mods["sound_mul"])
-	var speed := float(base.bullet_speed_mps)
+	var speed_mul := float(mods.get("speed_mul", 1.0))
+	var speed := float(base.bullet_speed_mps) * speed_mul
 
 	# 弹药派生：单丸伤害、总伤害、穿甲与腰射基础/最终散布。
 	var ammo = WeaponDB.ammo_table().get(base.ammo_id)
@@ -130,6 +131,7 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"load": load_effective,
 		"range": range_m,
 		"speed": speed,
+		"speed_mul": speed_mul,
 		"sound": sound,
 		"auto": auto_fire,
 		"damage_mul": damage_mul,
@@ -194,6 +196,7 @@ static func apply_to_weapon_data(data: WeaponData, stats: Dictionary) -> void:
 	data.load_time = float(stats["load_modded"])
 	data.fire_interval = float(stats["interval"])
 	data.range_m = float(stats["range"])
+	data.bullet_speed_mps = float(stats["speed"])
 	data.sound_radius = float(stats["sound"])
 	data.spread_growth = float(stats["spread_growth"])
 	data.spread_max = float(stats["spread_max"])

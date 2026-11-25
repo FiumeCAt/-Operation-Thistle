@@ -27,14 +27,16 @@ const REFLEX_RETICLE_STYLES: Array = [
 ]
 
 
-## 当前装备的主/副武器固定到列表最上方，其余保持 WeaponDB.WEAPON_ORDER 原顺序。
-static func pinned_weapon_order(primary: StringName, secondary: StringName) -> Array[String]:
+## 当前装备的主/副武器固定到列表最上方（按分类筛选时仅保留该分类武器，且同分类主/副武器仍置顶）。
+static func pinned_weapon_order(primary: StringName, secondary: StringName,
+		category: StringName = &"all") -> Array[String]:
+	var pool: Array[StringName] = WeaponDB.weapons_in_category(category)
 	var order: Array[String] = []
-	if primary != &"":
+	if primary != &"" and pool.has(primary):
 		order.append(String(primary))
-	if secondary != &"" and secondary != primary:
+	if secondary != &"" and secondary != primary and pool.has(secondary):
 		order.append(String(secondary))
-	for id in WeaponDB.WEAPON_ORDER:
+	for id in pool:
 		var sid := String(id)
 		if not order.has(sid):
 			order.append(sid)

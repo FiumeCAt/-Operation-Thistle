@@ -7,6 +7,50 @@ class_name WeaponDB
 static var WEAPON_ORDER: Array[StringName] = _load_weapon_order()
 static var AMMO_ORDER: Array[StringName] = _load_ammo_order()
 
+const WEAPON_CATEGORIES: Array[StringName] = [
+	&"all", &"pistol", &"smg", &"shotgun", &"rifle", &"dmr", &"sniper",
+]
+const WEAPON_CATEGORY_NAMES := {
+	&"all": "全部",
+	&"pistol": "手枪",
+	&"smg": "冲锋枪",
+	&"shotgun": "霰弹枪",
+	&"rifle": "步枪",
+	&"dmr": "射手步枪",
+	&"sniper": "狙击步枪",
+}
+const WEAPON_CATEGORY_DESC := {
+	&"all": "全部 18 种武器 · 主/副武器自动置顶",
+	&"pistol": "手枪 // PISTOL — 轻便机动，适合近距应急与快速拔枪",
+	&"smg": "冲锋枪 // SMG — 高射速压制，主打室内近战与巷战突击",
+	&"shotgun": "霰弹枪 // SHOTGUN — 近距高爆发面杀伤，擅长破门清房",
+	&"rifle": "步枪 // RIFLE — 全能主力，兼顾中远距点射与自动火力压制",
+	&"dmr": "射手步枪 // DMR — 中间威力弹及以上，以半自动为主（含可全自动型号），兼顾高精度与优秀射程",
+	&"sniper": "狙击步枪 // SNIPER — 专用狙击弹或大威力步枪弹，以栓动为主，极致精度与超远射程",
+}
+
+
+static func weapon_category(id: StringName) -> StringName:
+	return StringName(_weapon_record(id).get("category", "shotgun"))
+
+
+static func weapon_category_name(category: StringName) -> String:
+	return String(WEAPON_CATEGORY_NAMES.get(category, String(category)))
+
+
+static func weapon_category_desc(category: StringName) -> String:
+	return String(WEAPON_CATEGORY_DESC.get(category, ""))
+
+
+static func weapons_in_category(category: StringName) -> Array[StringName]:
+	if category == &"all" or category == &"":
+		return WEAPON_ORDER.duplicate()
+	var out: Array[StringName] = []
+	for id in WEAPON_ORDER:
+		if weapon_category(id) == category:
+			out.append(id)
+	return out
+
 
 static func _load_weapon_order() -> Array[StringName]:
 	var out: Array[StringName] = []
@@ -36,6 +80,7 @@ static func get_weapon(id: StringName) -> WeaponData:
 	w.id = id
 	var rec := _weapon_record(id)
 	w.slot = WEAPON_ORDER.find(id) + 1
+	w.category = StringName(rec.get("category", "shotgun"))
 	w.display_name = String(rec.get("display_name", String(id)))
 	w.caliber = StringName(rec.get("caliber", "12gauge"))
 	w.caliber_label = String(rec.get("caliber_label",
@@ -46,6 +91,7 @@ static func get_weapon(id: StringName) -> WeaponData:
 	w.shake_amount = float(rec.get("shake", 2.4 if w.caliber == &"12gauge" else 0.6))
 	_apply_impact_profile(w)
 	w.default_auto_fire = bool(rec.get("full_auto", false))
+	w.auto_fire = w.default_auto_fire
 	w.mag_capacity = int(rec.get("mag", 5))
 	w.chamber_size = int(rec.get("chamber", 0))
 	w.pump_time = float(rec.get("pump_time", 0.0))

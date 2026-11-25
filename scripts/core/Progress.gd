@@ -473,6 +473,13 @@ func set_typewriter_speed(speed: float) -> bool:
 	PixelUI.set_typewriter_config(typewriter_enabled(), typewriter_speed())
 	return save_data()
 
+func pickup_merge_window() -> float:
+	return SETTINGS_STORE.pickup_merge_window(data)
+
+func set_pickup_merge_window(seconds: float) -> bool:
+	SETTINGS_STORE.set_pickup_merge_window(data, seconds)
+	return save_data()
+
 func set_motion_blur(enabled: bool) -> bool:
 	SETTINGS_STORE.set_motion_blur(data, enabled)
 	return save_data()

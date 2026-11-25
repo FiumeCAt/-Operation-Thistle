@@ -24,6 +24,7 @@
   "data": {
     "m870": {
       "display_name": "M870 // 12 GAUGE",
+      "category": "shotgun",
       "caliber": "12gauge",
       "caliber_label": "12 GAUGE",
       "mag": 5,
@@ -47,6 +48,7 @@
     },
     "m1014": {
       "display_name": "M1014 // 12 GAUGE",
+      "category": "shotgun",
       "caliber": "12gauge",
       "caliber_label": "12 GAUGE",
       "mag": 6,
@@ -70,6 +72,7 @@
     },
     "saiga12k": {
       "display_name": "SAIGA-12K // 12 GAUGE",
+      "category": "shotgun",
       "caliber": "12gauge",
       "caliber_label": "12 GAUGE",
       "mag": 5,
@@ -93,6 +96,7 @@
     },
     "g17": {
       "display_name": "G17 // 9MM",
+      "category": "pistol",
       "caliber": "9mm",
       "caliber_label": "9MM",
       "mag": 17,
@@ -116,6 +120,7 @@
     },
     "g18": {
       "display_name": "G18 // 9MM",
+      "category": "pistol",
       "caliber": "9mm",
       "caliber_label": "9MM",
       "mag": 17,
@@ -140,6 +145,7 @@
     },
     "m1911": {
       "display_name": "M1911 // .45 ACP",
+      "category": "pistol",
       "caliber": "45acp",
       "caliber_label": ".45 ACP",
       "mag": 7,
@@ -163,6 +169,7 @@
     },
     "fn57": {
       "display_name": "FN57 // 5.7×28",
+      "category": "pistol",
       "caliber": "5.7x28",
       "caliber_label": "5.7×28",
       "mag": 20,
@@ -186,6 +193,7 @@
     },
     "python": {
       "display_name": "PYTHON // .357",
+      "category": "pistol",
       "caliber": "357mag",
       "caliber_label": ".357 MAG",
       "mag": 6,
@@ -209,6 +217,7 @@
     },
     "mp7": {
       "display_name": "MP7 // 5.7×28",
+      "category": "smg",
       "caliber": "5.7x28",
       "caliber_label": "5.7×28",
       "mag": 40,
@@ -233,6 +242,7 @@
     },
     "tmp": {
       "display_name": "TMP // 9MM",
+      "category": "smg",
       "caliber": "9mm",
       "caliber_label": "9MM",
       "mag": 15,
@@ -257,6 +267,7 @@
     },
     "p90": {
       "display_name": "P90 // 5.7×28",
+      "category": "smg",
       "caliber": "5.7x28",
       "caliber_label": "5.7×28",
       "mag": 50,
@@ -281,6 +292,7 @@
     },
     "ump45": {
       "display_name": "UMP45 // .45 ACP",
+      "category": "smg",
       "caliber": "45acp",
       "caliber_label": ".45 ACP",
       "mag": 25,
@@ -305,6 +317,7 @@
     },
     "fal": {
       "display_name": "FN FAL // 7.62 NATO",
+      "category": "rifle",
       "caliber": "762nato",
       "caliber_label": "7.62 NATO",
       "mag": 20,
@@ -317,6 +330,7 @@
       "sound_radius": 15.0,
       "feed": "mag",
       "auto_cycle": true,
+      "full_auto": true,
       "ammo": "762nato",
       "sfx": "rifle",
       "shake": 1.8,
@@ -328,6 +342,7 @@
     },
     "akm": {
       "display_name": "AKM // 7.62×39",
+      "category": "rifle",
       "caliber": "762x39",
       "caliber_label": "7.62×39",
       "mag": 30,
@@ -352,6 +367,7 @@
     },
     "l85a2": {
       "display_name": "L85A2 // 5.56 NATO",
+      "category": "rifle",
       "caliber": "556nato",
       "caliber_label": "5.56 NATO",
       "mag": 30,
@@ -376,6 +392,7 @@
     },
     "sr25": {
       "display_name": "SR-25 // 7.62 NATO",
+      "category": "dmr",
       "caliber": "762nato",
       "caliber_label": "7.62 NATO",
       "mag": 20,
@@ -399,6 +416,7 @@
     },
     "vss": {
       "display_name": "VSS // 9×39",
+      "category": "dmr",
       "caliber": "9x39",
       "caliber_label": "9×39",
       "mag": 10,
@@ -422,6 +440,7 @@
     },
     "awm": {
       "display_name": "AWM // .338 LM",
+      "category": "sniper",
       "caliber": "338lapua",
       "caliber_label": ".338 LM",
       "mag": 5,

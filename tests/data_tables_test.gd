@@ -98,6 +98,25 @@ func _run() -> void:
 		if float(WeaponDB.get_weapon(wid).bullet_speed_mps) <= 0.0:
 			all_weapons_have_speed = false
 	_check(all_weapons_have_speed, "18 把武器都配置了子弹速度")
+	_check(WeaponDB.weapons_in_category(&"pistol").size() == 5
+		and WeaponDB.weapons_in_category(&"smg").size() == 4
+		and WeaponDB.weapons_in_category(&"shotgun").size() == 3
+		and WeaponDB.weapons_in_category(&"rifle").size() == 3
+		and WeaponDB.weapons_in_category(&"dmr").size() == 2
+		and WeaponDB.weapons_in_category(&"sniper").size() == 1,
+		"18 把武器严格划分为 6 大枪类（5手枪/4冲锋/3霰弹/3步枪/2射手/1狙击）")
+	_check(WeaponDB.weapon_category(&"sr25") == &"dmr"
+		and WeaponDB.weapon_category(&"vss") == &"dmr"
+		and WeaponDB.weapon_category(&"awm") == &"sniper"
+		and WeaponDB.weapon_category(&"fal") == &"rifle",
+		"SR-25/VSS 为射手步枪、AWM 独立狙击步枪页、FAL 为步枪")
+	_check(WeaponDB.get_weapon(&"fal").default_auto_fire,
+		"FN FAL 默认支持全自动开火模式")
+	var supp := ModDB.option("muzzle", "suppressor", false, "akm")
+	var supp_fx: Dictionary = supp.get("effects", {})
+	_check(not supp_fx.has("damage_mul")
+		and is_equal_approx(float(supp_fx.get("speed_mul", 1.0)), 1.06),
+		"消音器不减伤，反而小幅提升子弹速度 (+6%)")
 	_check(is_equal_approx(WeaponDB.base_spread_mul(), 1.0)
 		and WeaponDB.get_weapon(&"akm").base_spread > WeaponDB.get_weapon(&"g17").base_spread,
 		"每把武器使用独立基础散布")

@@ -54,10 +54,12 @@ func _run() -> void:
 	_check(is_equal_approx(float(awm_bare["damage"]), 110.0), "AWM bare damage == 110.0")
 	_check(is_equal_approx(float(awm_bare["range"]), 70.5), "AWM bare range == 70.5m")
 	_check(is_equal_approx(float(awm_bare["speed"]), 918.0), "AWM bare speed == 918 m/s")
+	var fal_bare: Dictionary = STATS_MODEL.compute(&"fal", {})
+	_check(bool(fal_bare["auto"]), "FN FAL bare default_auto_fire == true")
 
 	# ---- 2) 满配 + 天赋黄金基线（验证叠乘、绝对容量、枪机覆盖、瞄具、天赋） ----
 	var akm_full_mods := {
-		"muzzle": "suppressor",   # damage*0.95, spread*0.92, sound*0.55
+		"muzzle": "suppressor",   # speed*1.06, spread*0.92, sound*0.55（不再减伤）
 		"magazine": "mag_drum",   # capacity=75, reload*1.35
 		"core": "tuned",          # fire*0.90, damage*1.05（不含 full_auto 字段，AKM 仍须保持全自动）
 		"stock": "heavy",         # recoil*0.75, spread*0.92
@@ -70,8 +72,9 @@ func _run() -> void:
 	_check(bool(akm_mod["auto"]), "AKM with tuned core preserves default full-auto")
 	_check(is_equal_approx(float(akm_mod["interval"]), 0.09), "AKM tuned interval == 0.09s")
 	_check(is_equal_approx(float(akm_mod["range"]), 44.0), "AKM + 4x scope range == 44.0m")
+	_check(is_equal_approx(float(akm_mod["speed"]), 715.0 * 1.06), "AKM + suppressor speed == 757.9 m/s (+6%)")
 	_check(is_equal_approx(float(akm_mod["sound"]), 14.0 * 0.55), "AKM + suppressor sound == 7.7m")
-	_check(is_equal_approx(float(akm_mod["damage_mul"]), 0.95 * 1.05), "AKM suppressor+tuned damage_mul == 0.9975")
+	_check(is_equal_approx(float(akm_mod["damage_mul"]), 1.05), "AKM suppressor+tuned damage_mul == 1.05 (no suppressor penalty)")
 	_check(is_equal_approx(float(akm_mod["recoil_mul"]), 0.75), "AKM heavy stock recoil_mul == 0.75")
 	_check(is_equal_approx(float(akm_mod["vision_mul"]), 1.75), "AKM 4x scope vision_mul == 1.75")
 	_check(is_equal_approx(float(akm_mod["ads_speed_mul"]), 1.30), "AKM laser ads_speed_mul == 1.30")
@@ -146,6 +149,7 @@ func _run() -> void:
 		_check(is_equal_approx(rig.data.fire_interval, float(model_via_p["interval"])), "WeaponRig2D interval matches WeaponStatsModel")
 		_check(is_equal_approx(rig.data.load_time, float(model_via_p["load_modded"])), "WeaponRig2D load_time matches load_modded")
 		_check(is_equal_approx(rig.data.range_m, float(model_via_p["range"])), "WeaponRig2D range_m matches WeaponStatsModel")
+		_check(is_equal_approx(rig.data.bullet_speed_mps, float(model_via_p["speed"])), "WeaponRig2D bullet_speed_mps matches WeaponStatsModel")
 		_check(is_equal_approx(rig.data.sound_radius, float(model_via_p["sound"])), "WeaponRig2D sound_radius matches WeaponStatsModel")
 		_check(rig.data.auto_fire == bool(model_via_p["auto"]), "WeaponRig2D auto_fire matches WeaponStatsModel")
 		_check(is_equal_approx(rig.damage_mul, float(model_via_p["damage_mul"])), "WeaponRig2D damage_mul matches WeaponStatsModel")

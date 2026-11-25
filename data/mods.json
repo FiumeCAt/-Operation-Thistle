@@ -26,10 +26,10 @@
       {
         "id": "suppressor",
         "name": "消音器",
-        "desc": "伤害 -5% · 散布 -8% · 枪声 -45%",
+        "desc": "弹速 +6% · 散布 -8% · 枪声 -45% · 消音枪声",
         "credits": 90,
         "cost": {"electronic_core": 2, "weapon_parts": 2},
-        "effects": {"damage_mul": 0.95, "spread_mul": 0.92, "sound_mul": 0.55}
+        "effects": {"speed_mul": 1.06, "spread_mul": 0.92, "sound_mul": 0.55}
       },
       {
         "id": "choke",

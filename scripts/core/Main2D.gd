@@ -82,7 +82,7 @@ const WORLD_PER_METER := UNITS.PIXELS_PER_METER
 const INTERACT_RADIUS := INTERACTION_SYSTEM.INTERACT_RADIUS
 const EXIT_RADIUS := INTERACTION_SYSTEM.EXIT_RADIUS
 const SHOT_ORIGIN_OFFSET := Vector2(0, -8)
-const HINT_DEFAULT := "WASD 移动 · 左键开火 · 右键瞄准 · R 换弹 · X 收/拔枪 · TAB 背包 · Alt+滚轮 缩放 · E 交互"
+const HINT_DEFAULT := "WASD 移动 · 左键开火 · 右键瞄准 · B 切模式 · R 换弹 · X 收/拔枪 · TAB 背包 · Alt+滚轮 缩放 · E 交互"
 
 ## 结算标签由 RunHUD2D 构建，测试按名字读取。
 var result_label: Label
@@ -247,6 +247,7 @@ func _ready() -> void:
 	hud.setup(self)
 	hud.return_requested.connect(_return_to_base)
 	hud.restart_requested.connect(func() -> void: get_tree().reload_current_scene())
+	hud.fire_mode_toggle_requested.connect(_on_fire_mode_toggle_requested)
 	feedback_system.setup(self, fx_layer, doll, hud)
 	loot_system = LOOT_SYSTEM.new()
 	loot_system.setup(fx_layer, level, doll, hud, wave_loot_scale, feedback_system.play_sfx, _add_loot)
@@ -353,14 +354,18 @@ func _ready() -> void:
 	feedback_system.warm_combat_fx()
 
 
-## Alt 作为「整体视角缩放」修饰键；运行时注册，避免依赖 project.godot 的输入表。
+## Alt（视角缩放）与 B（开火模式切换）运行时兜底注册，避免依赖 editor 重新保存输入表。
 func _ensure_view_zoom_action() -> void:
-	if InputMap.has_action("view_zoom"):
-		return
-	InputMap.add_action("view_zoom")
-	var key := InputEventKey.new()
-	key.physical_keycode = KEY_ALT
-	InputMap.action_add_event("view_zoom", key)
+	if not InputMap.has_action("view_zoom"):
+		InputMap.add_action("view_zoom")
+		var key := InputEventKey.new()
+		key.physical_keycode = KEY_ALT
+		InputMap.action_add_event("view_zoom", key)
+	if not InputMap.has_action("fire_mode"):
+		InputMap.add_action("fire_mode")
+		var b_key := InputEventKey.new()
+		b_key.physical_keycode = KEY_B
+		InputMap.action_add_event("fire_mode", b_key)
 
 
 ## 通过命令行切换角色表现：
@@ -396,6 +401,8 @@ func _apply_visual_override() -> void:
 		for i in mini(loadout_ids.size(), 2):
 			allowed.append(loadout_ids[i])
 		rig.loadout = allowed
+		rig.fire_input_blocked_fn = hud.is_pointer_over_interactive
+		rig.fire_mode_changed.connect(_on_fire_mode_changed)
 	if rig_style == "" or rig_style == "off":
 		return
 	doll.enable_rig(rig_style)
@@ -423,6 +430,8 @@ func _apply_talents() -> void:
 	view_zoom_pct = clampf(
 		roundf(float(progress.data.get("view_zoom", 100)) / 10.0) * 10.0,
 		VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+	if hud != null and progress.has_method("pickup_merge_window"):
+		hud.set_pickup_merge_window(float(progress.pickup_merge_window()))
 	_view_zoom_visual = view_zoom_pct
 	# 护甲：基础存档值 + 护甲组件 + 护甲强化天赋，进入行动时补满。
 	var armor_mods := ModDB.modifiers(progress.armor_mods_2d(), true)
@@ -456,6 +465,8 @@ func _on_settings_applied() -> void:
 	view_zoom_pct = clampf(
 		roundf(float(progress.data.get("view_zoom", 100)) / 10.0) * 10.0,
 		VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+	if hud != null and progress.has_method("pickup_merge_window"):
+		hud.set_pickup_merge_window(float(progress.pickup_merge_window()))
 
 
 ## 立即套用弹道线条开关：只隐藏枪口到弹丸的长线，弹丸实体与命中不受影响。
@@ -831,6 +842,25 @@ func _default_hint() -> String:
 
 func _flash_hint(text: String) -> void:
 	interaction_system.flash_hint(text)
+
+
+func _on_fire_mode_toggle_requested() -> void:
+	if run_state != RunState.ACTIVE or doll == null or doll.weapon_rig == null:
+		return
+	doll.weapon_rig.toggle_fire_mode()
+
+
+func _on_fire_mode_changed(mode: String, supported: bool) -> void:
+	if hud == null:
+		return
+	if not supported:
+		_flash_hint("当前武器仅支持半自动 (S)")
+	elif mode == "auto":
+		_flash_hint("开火模式：全自动 (F)")
+	else:
+		_flash_hint("开火模式：半自动 (S)")
+	if doll != null:
+		hud.update_weapon(doll.weapon_rig)
 
 
 ## --- 战斗 / 弹道 / 散布 / 后坐力（委托至 CombatSystem2D）----------------------

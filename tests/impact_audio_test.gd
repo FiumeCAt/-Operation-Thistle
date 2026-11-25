@@ -88,12 +88,19 @@ func _run() -> void:
 	await process_frame
 	_check(true, "unknown material falls back without errors")
 
-	# 6) 独立子模块契约：SfxSynth 确定性 32 条音色库、SfxSamples 独立抽样、AudioBusService 总线静音/音量。
+	# 6) 独立子模块契约：SfxSynth 确定性 38 条音色库（含 5 条消音枪声 + 快慢机拨片）、SfxSamples 独立抽样、AudioBusService 总线静音/音量。
 	var bank := SfxSynth.build_all()
-	_check(bank.size() == 32 and bank.has("shotgun") and bank.has("ambient") and bank.has("enemy_alert"),
-		"SfxSynth builds the full deterministic 32-stream bank")
+	_check(bank.size() == 38 and bank.has("shotgun") and bank.has("ambient") and bank.has("enemy_alert")
+		and bank.has("shotgun_sup") and bank.has("pistol_sup") and bank.has("smg_sup")
+		and bank.has("rifle_sup") and bank.has("sniper_sup") and bank.has("fire_select"),
+		"SfxSynth builds the full deterministic 38-stream bank including suppressed shots and fire_select")
 	_check((bank["ambient"] as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD,
 		"SfxSynth sets forward loop mode on ambient stream")
+	before = sfx.get_child_count()
+	sfx.play_2d("rifle_sup", -12.0)
+	sfx.play_2d("fire_select", -12.0)
+	_check(sfx.get_child_count() >= before + 2,
+		"suppressed rifle shot and fire_select click spawn audio players")
 	var samples := SfxSamples.new()
 	_check(samples.pick_for_material("unknown_mat") != null and samples.pick_ricochet() != null,
 		"SfxSamples resolves generic fallback and ricochet stream")

@@ -15,6 +15,7 @@ const STAT_EFFECT := {
 	"换弹时间": "reload_mul",
 	"射速": "fire_mul",
 	"射程": "range_mul",
+	"子弹速度": "speed_mul",
 	"散布": "spread_mul",
 	"枪声范围": "sound_mul",
 	"伤害": "damage_mul",
@@ -207,7 +208,7 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 				var mag_level := int(progress.talent_2d_level(&"magazine"))
 				if mag_level > 0:
 					sources.append("· 战术天赋 · 弹匣扩容 Lv.%d：容量 +%d%%" % [
-						mag_level, mag_level * 8])
+						mag_level, mag_level * 10])
 		elif key == "射速":
 			var core := ModDB.option(
 				"core", String(installed.get("core", "")), false, String(selected))
@@ -228,7 +229,7 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 			var gun_level := int(progress.talent_2d_level(&"gun")) if progress != null else 0
 			if gun_level > 0:
 				sources.append("· 战术天赋 · 枪械精度 Lv.%d：散布 %+.0f%%" % [
-					gun_level, (pow(0.94, float(gun_level)) - 1.0) * 100.0])
+					gun_level, (WeaponStatsModel.gun_accuracy_mul(gun_level) - 1.0) * 100.0])
 		if key == "子弹速度":
 			text += "\n现实枪口初速，已包含弹种与枪管长度差异"
 			var time_scale := float(ammo.bullet_time_scale) if ammo != null else 0.294

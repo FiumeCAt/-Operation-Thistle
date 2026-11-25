@@ -181,14 +181,14 @@ func _sync_light_nodes() -> void:
 		if _light_t > 0.0:
 			var t := clampf(_light_t / LIGHT_LIFE, 0.0, 1.0)
 			var ease_val := pow(t, 1.45)
-			var radius_px := lerpf(360.0, 540.0, clampf(_intensity * 0.72, 0.0, 1.0))
+			var radius_px := lerpf(280.0, 420.0, clampf(_intensity * 0.72, 0.0, 1.0))
 			if _suppressed:
-				radius_px = 140.0
+				radius_px = 110.0
 			_light.visible = true
 			_light.global_position = forward_pos
 			_light.texture_scale = radius_px / half_px
-			_light.energy = (0.36 if _suppressed else minf(1.45 * _intensity, 1.85)) * ease_val
-			_light.color = Color(1.0, lerpf(0.56, 0.76, t), lerpf(0.14, 0.30, t))
+			_light.energy = (0.18 if _suppressed else minf(0.80 * _intensity, 1.05)) * ease_val
+			_light.color = Color(1.0, lerpf(0.56, 0.74, t), lerpf(0.14, 0.28, t))
 		else:
 			_light.visible = false
 			_light.energy = 0.0
@@ -197,17 +197,17 @@ func _sync_light_nodes() -> void:
 		if _bloom_t > 0.0:
 			var t := clampf(_bloom_t / BLOOM_LIFE, 0.0, 1.0)
 			var ease_val := pow(t, 1.40)
-			# 广域暖金色局部照亮光池：覆盖枪口前方与周边地面，柔和点亮环境而不过曝角色。
-			var radius_px := lerpf(340.0, 520.0, clampf(_intensity * 0.72, 0.0, 1.0))
+			# 广域暖金色局部照亮光池：克制亮度（比初版低两档），柔和点亮环境而不过曝角色。
+			var radius_px := lerpf(260.0, 400.0, clampf(_intensity * 0.72, 0.0, 1.0))
 			if _suppressed:
-				radius_px = 115.0
+				radius_px = 95.0
 			var sc := radius_px / half_px
 			_bloom.visible = true
 			_bloom.global_position = forward_pos
 			_bloom.rotation = _angle
-			_bloom.scale = Vector2(sc * 1.22, sc * 0.98)
-			var alpha := (0.07 if _suppressed else clampf(0.25 * _intensity, 0.14, 0.34)) * ease_val
-			_bloom.modulate = Color(1.0, lerpf(0.58, 0.74, t), lerpf(0.14, 0.24, t), alpha)
+			_bloom.scale = Vector2(sc * 1.18, sc * 0.94)
+			var alpha := (0.035 if _suppressed else clampf(0.13 * _intensity, 0.07, 0.18)) * ease_val
+			_bloom.modulate = Color(1.0, lerpf(0.58, 0.72, t), lerpf(0.14, 0.24, t), alpha)
 		else:
 			_bloom.visible = false
 
@@ -215,14 +215,14 @@ func _sync_light_nodes() -> void:
 		if _core_t > 0.0:
 			var t := clampf(_core_t / CORE_BLOOM_LIFE, 0.0, 1.0)
 			var ease_val := pow(t, 1.55)
-			var core_r := 34.0 if _suppressed else lerpf(64.0, 108.0, clampf(_intensity * 0.65, 0.0, 1.0))
+			var core_r := 26.0 if _suppressed else lerpf(48.0, 82.0, clampf(_intensity * 0.65, 0.0, 1.0))
 			var sc := core_r / half_px
 			_core_bloom.visible = true
-			_core_bloom.global_position = _muzzle_pos + dir * 16.0
+			_core_bloom.global_position = _muzzle_pos + dir * 14.0
 			_core_bloom.rotation = _angle
-			_core_bloom.scale = Vector2(sc * 1.25, sc * 0.92)
-			var alpha := (0.14 if _suppressed else clampf(0.38 * _intensity, 0.24, 0.50)) * ease_val
-			_core_bloom.modulate = Color(1.0, 0.88, 0.46, alpha)
+			_core_bloom.scale = Vector2(sc * 1.20, sc * 0.88)
+			var alpha := (0.07 if _suppressed else clampf(0.20 * _intensity, 0.12, 0.28)) * ease_val
+			_core_bloom.modulate = Color(1.0, 0.86, 0.44, alpha)
 		else:
 			_core_bloom.visible = false
 
@@ -302,45 +302,45 @@ func _draw() -> void:
 			])
 			draw_colored_polygon(puff, Color(0.95, 0.86, 0.62, t * 0.55))
 		else:
-			var scale_l := clampf(_intensity, 0.75, 1.60) * _flame_len_mul * lerpf(0.68, 1.12, t)
-			var scale_w := clampf(_intensity, 0.75, 1.50) * _flame_spread_mul * lerpf(0.78, 1.14, t)
-			var main_len := 46.0 * scale_l
-			var main_w := 15.0 * scale_w
-			var skew := sin(_flame_seed) * 2.6
-			# 外层橙金火焰锥（带微锯齿边界）。
+			var scale_l := clampf(_intensity, 0.75, 1.55) * _flame_len_mul * lerpf(0.68, 1.10, t)
+			var scale_w := clampf(_intensity, 0.75, 1.45) * _flame_spread_mul * lerpf(0.76, 1.10, t)
+			var main_len := 36.0 * scale_l
+			var main_w := 12.0 * scale_w
+			var skew := sin(_flame_seed) * 2.2
+			# 外层橙金火焰锥（降两档亮度，克制不刺眼）。
 			var outer := PackedVector2Array([
 				origin + perp * (main_w * 0.34),
-				origin + dir * (main_len * 0.34) + perp * (main_w * 0.95 + skew * 0.4),
+				origin + dir * (main_len * 0.34) + perp * (main_w * 0.92 + skew * 0.4),
 				origin + dir * (main_len * 0.64) + perp * (main_w * 0.42),
 				origin + dir * main_len + perp * skew,
-				origin + dir * (main_len * 0.62) - perp * (main_w * 0.48),
-				origin + dir * (main_len * 0.32) - perp * (main_w * 0.92 - skew * 0.4),
+				origin + dir * (main_len * 0.62) - perp * (main_w * 0.46),
+				origin + dir * (main_len * 0.32) - perp * (main_w * 0.90 - skew * 0.4),
 				origin - perp * (main_w * 0.34),
 			])
-			draw_colored_polygon(outer, Color(1.0, 0.64, 0.16, minf(1.0, t * 1.15)))
+			draw_colored_polygon(outer, Color(0.98, 0.58, 0.14, minf(0.82, t * 0.92)))
 			# 中大口径侧翼制退喷焰。
 			if _intensity >= 0.95:
-				var wing_l := 12.0 * scale_w
+				var wing_l := 9.5 * scale_w
 				var wing_base := origin + dir * 4.0
 				for sgn in [-1.0, 1.0]:
 					var wing := PackedVector2Array([
-						wing_base - dir * 2.5,
-						wing_base + dir * 3.5 + perp * (wing_l * sgn),
-						wing_base + dir * 5.0,
+						wing_base - dir * 2.0,
+						wing_base + dir * 3.0 + perp * (wing_l * sgn),
+						wing_base + dir * 4.5,
 					])
-					draw_colored_polygon(wing, Color(1.0, 0.72, 0.24, t * 0.75))
-			# 内层炽白-淡黄高能焰芯。
-			var inner_len := main_len * 0.64
-			var inner_w := main_w * 0.46
+					draw_colored_polygon(wing, Color(0.98, 0.68, 0.20, t * 0.56))
+			# 内层暖白焰芯。
+			var inner_len := main_len * 0.60
+			var inner_w := main_w * 0.44
 			var inner := PackedVector2Array([
-				origin + perp * (inner_w * 0.38),
+				origin + perp * (inner_w * 0.36),
 				origin + dir * (inner_len * 0.42) + perp * inner_w,
 				origin + dir * inner_len,
 				origin + dir * (inner_len * 0.42) - perp * inner_w,
-				origin - perp * (inner_w * 0.38),
+				origin - perp * (inner_w * 0.36),
 			])
-			draw_colored_polygon(inner, Color(1.0, 0.97, 0.84, minf(1.0, t * 1.30)))
-			draw_circle(origin + dir * 4.0, 4.2 * scale_w, Color(1.0, 0.99, 0.92, t * 0.95))
+			draw_colored_polygon(inner, Color(1.0, 0.92, 0.72, minf(0.86, t * 1.00)))
+			draw_circle(origin + dir * 3.5, 3.0 * scale_w, Color(1.0, 0.95, 0.80, t * 0.70))
 
 
 ## 生成一次平滑半浮点径向柔和衰减贴图（无 8 位暗部色带），供 PointLight2D 与叠加柔光共用。

@@ -30,11 +30,19 @@ func _run() -> void:
 	p.reset_for_test()
 	p.set_loadout_2d(&"m870", &"g17")
 
-	# 1. 定置排序：主副武器置顶，总数与 WeaponDB.WEAPON_ORDER 一致且无重复
+	# 1. 定置排序：主副武器置顶，总数与 WeaponDB.WEAPON_ORDER 一致且无重复；分类筛选时仅保留同分类并保持同分类主/副置顶
 	var order := SERVICE.pinned_weapon_order(&"akm", &"awm")
 	_check(order.size() == WeaponDB.WEAPON_ORDER.size()
 		and order[0] == "akm" and order[1] == "awm",
 		"pinned_weapon_order pins primary and secondary to top")
+	var rifle_order := SERVICE.pinned_weapon_order(&"l85a2", &"g17", &"rifle")
+	_check(rifle_order.size() == 3 and rifle_order[0] == "l85a2"
+		and rifle_order.has("fal") and rifle_order.has("akm") and not rifle_order.has("g17"),
+		"category-filtered pinned_weapon_order pins matching primary and excludes other categories")
+	var dmr_order := SERVICE.pinned_weapon_order(&"m870", &"vss", &"dmr")
+	_check(dmr_order == ["vss", "sr25"], "dmr category pins secondary VSS ahead of SR-25")
+	var sniper_order := SERVICE.pinned_weapon_order(&"m870", &"g17", &"sniper")
+	_check(sniper_order == ["awm"], "sniper category isolates AWM in its own dedicated tab")
 
 	# 2. 装备写档与主副互换
 	var eq1 := SERVICE.equip_weapon(p, &"g17", &"m870", &"g17", true)

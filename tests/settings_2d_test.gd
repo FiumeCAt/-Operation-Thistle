@@ -258,5 +258,27 @@ func _run() -> void:
 	_check(bool(p.data["bullet_trail_enabled"]),
 		"弹道线条开启后重启仍为开启")
 
+	# 拾取合并窗口滑杆：默认 3.0s，支持 0.0s（关闭）至 10.0s 持久化。
+	sm = SettingsMenu2D.new()
+	root.add_child(sm)
+	await process_frame
+	sm.open()
+	_check(sm._pickup_merge_slider != null and _near(sm._pickup_merge_slider.value, 3.0)
+		and sm._pickup_merge_value.text == "3.0s",
+		"pickup merge window defaults to 3.0s in settings menu")
+	sm._pickup_merge_slider.value = 0.0
+	_check(sm._pickup_merge_value.text == "关闭",
+		"pickup merge window displays 关闭 at 0.0s")
+	sm._pickup_merge_slider.value = 5.5
+	_check(sm._pickup_merge_value.text == "5.5s",
+		"pickup merge window displays formatted seconds at 5.5s")
+	await create_timer(0.45).timeout
+	sm.queue_free()
+	await process_frame
+	p.load_data()
+	_check(_near(p.pickup_merge_window(), 5.5),
+		"pickup merge window persists across save reload")
+	p.set_pickup_merge_window(3.0)
+
 	print("\n=== settings 2d: %s (%d ok / %d fail) ===" % ["PASS" if _fail == 0 else "FAIL", _pass, _fail])
 	quit()

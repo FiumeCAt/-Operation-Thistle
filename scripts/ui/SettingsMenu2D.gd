@@ -39,6 +39,8 @@ var _typewriter_speed_slider: HSlider
 var _typewriter_speed_value: Label
 var _typewriter_replay_button: Button
 var _typewriter_preview: RichTextLabel
+var _pickup_merge_slider: HSlider
+var _pickup_merge_value: Label
 var _shake_scale_slider: HSlider
 var _shake_scale_edit: LineEdit
 var _zoom_slider: HSlider
@@ -84,8 +86,8 @@ func _build() -> void:
 	panel.set_anchors_preset(Control.PRESET_CENTER)
 	panel.offset_left = -630
 	panel.offset_right = 630
-	panel.offset_top = -416
-	panel.offset_bottom = 416
+	panel.offset_top = -430
+	panel.offset_bottom = 430
 	add_child(panel)
 
 	var rows := VBoxContainer.new()
@@ -144,7 +146,7 @@ func _column_box(width: float) -> PanelContainer:
 	style.content_margin_bottom = 8
 	panel.add_theme_stylebox_override("panel", style)
 	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 5)
+	rows.add_theme_constant_override("separation", 4)
 	panel.add_child(rows)
 	return panel
 
@@ -314,6 +316,8 @@ func _build_right_column() -> Control:
 		ammo_row.add_child(button)
 		_ammo_buttons[mode] = button
 
+	_add_pickup_merge_row(rows)
+
 	_sep(rows, PixelUI.CYAN)
 	PixelUI.section_bar(rows, "镜头与光学特效", "OPTICS & FX", PixelUI.CYAN)
 
@@ -361,6 +365,35 @@ func _build_right_column() -> Control:
 		"%s 局内随时按 ESC 调整，小地图/音效/视野立即生效" % PixelUI.bb("●", PixelUI.OK),
 		16, PixelUI.DIM, 1)
 	return panel
+
+
+func _add_pickup_merge_row(parent: Node) -> void:
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 10)
+	parent.add_child(line)
+	var label := PixelUI.label(line, "拾取合并窗口", 19, PixelUI.DIM)
+	label.custom_minimum_size.x = 128
+	_pickup_merge_slider = _make_slider()
+	_pickup_merge_slider.min_value = 0.0
+	_pickup_merge_slider.max_value = 10.0
+	_pickup_merge_slider.step = 0.5
+	_pickup_merge_slider.value_changed.connect(_on_pickup_merge_changed)
+	line.add_child(_pickup_merge_slider)
+	_pickup_merge_value = PixelUI.emphasize(PixelUI.label(line, "3.0s", 19, PixelUI.OK), 2, 1)
+	_pickup_merge_value.custom_minimum_size.x = 64
+	_pickup_merge_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+
+func _on_pickup_merge_changed(value: float) -> void:
+	var sec := clampf(roundf(value * 2.0) / 2.0, 0.0, 10.0)
+	if _pickup_merge_value != null:
+		_pickup_merge_value.text = "关闭" if sec <= 0.01 else "%.1fs" % sec
+		_pickup_merge_value.add_theme_color_override(
+			"font_color", PixelUI.DIM if sec <= 0.01 else PixelUI.OK)
+	var p := get_node_or_null("/root/Progress")
+	if p != null:
+		p.data["pickup_merge_window"] = sec
+	_save_timer.start()
 
 
 func _add_typewriter_speed_row(parent: Node) -> void:
@@ -789,6 +822,7 @@ func _load_values() -> void:
 	var mm_zoom := 1.0
 	var tw_enabled := false
 	var tw_speed := 48.0
+	var pickup_merge := 3.0
 	if p != null:
 		master = float(p.data.get("volume", 0.8))
 		sfx = float(p.data.get("sfx_volume", 0.8))
@@ -810,6 +844,7 @@ func _load_values() -> void:
 		mm_zoom = float(p.minimap_zoom()) if p.has_method("minimap_zoom") else 1.0
 		tw_enabled = bool(p.typewriter_enabled()) if p.has_method("typewriter_enabled") else false
 		tw_speed = float(p.typewriter_speed()) if p.has_method("typewriter_speed") else 48.0
+		pickup_merge = float(p.pickup_merge_window()) if p.has_method("pickup_merge_window") else 3.0
 	_set_slider("master", master * 100.0)
 	_set_slider("sfx", sfx * 100.0)
 	_set_slider("music", music * 100.0)
@@ -824,6 +859,12 @@ func _load_values() -> void:
 	_minimap_zoom_value.text = "%.1f×" % mm_zoom
 	_typewriter_speed_slider.set_value_no_signal(tw_speed)
 	_typewriter_speed_value.text = "%d字/s" % int(round(tw_speed))
+	if _pickup_merge_slider != null:
+		_pickup_merge_slider.set_value_no_signal(pickup_merge)
+	if _pickup_merge_value != null:
+		_pickup_merge_value.text = "关闭" if pickup_merge <= 0.01 else "%.1fs" % pickup_merge
+		_pickup_merge_value.add_theme_color_override(
+			"font_color", PixelUI.DIM if pickup_merge <= 0.01 else PixelUI.OK)
 	_refresh_fire_buttons(fire_mode)
 	_refresh_armor_display_buttons(armor_mode)
 	_refresh_ammo_buttons(ammo_mode)
@@ -864,6 +905,8 @@ func _save_settings() -> void:
 	p.data["minimap_zoom"] = clampf(roundf(_minimap_zoom_slider.value / 10.0) * 0.1, bounds.x, bounds.y)
 	if _typewriter_speed_slider != null:
 		p.data["typewriter_speed"] = clampf(roundf(_typewriter_speed_slider.value), 15.0, 140.0)
+	if _pickup_merge_slider != null:
+		p.data["pickup_merge_window"] = clampf(roundf(_pickup_merge_slider.value * 2.0) / 2.0, 0.0, 10.0)
 	p.save_data()
 
 

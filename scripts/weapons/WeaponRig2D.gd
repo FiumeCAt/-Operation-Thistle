@@ -9,6 +9,7 @@ signal fired(muzzle_global: Vector2, direction: Vector2)
 signal weapon_switched(id: StringName)
 signal reload_finished
 signal holstered_changed(stowed: bool)
+signal fire_mode_changed(mode: String, supported: bool)
 
 const UNITS := preload("res://scripts/core/GameUnits.gd")
 const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
@@ -54,6 +55,8 @@ var loadout: Array[StringName]:
 var data: WeaponData
 var aim_world := Vector2.ZERO
 var aim_enabled := true
+## 可选回调：鼠标悬停在 HUD 交互按钮（如快慢机拨片）时拦截左键开火，避免切模式误射。
+var fire_input_blocked_fn: Callable = Callable()
 ## 由 Doll2D 每帧写入：是否处于瞄准姿态、当前身体朝向。
 var aiming := false
 var body_direction := 0
@@ -161,6 +164,7 @@ func _apply_mods() -> void:
 		return
 	var progress := get_node_or_null("/root/Progress")
 	if progress == null or not progress.has_method("weapon_mods_2d"):
+		has_suppressor = weapon_id == &"vss"
 		return
 	var stats: Dictionary = STATS_MODEL.compute_for_progress(weapon_id, progress)
 	damage_mul = float(stats["damage_mul"])
@@ -224,6 +228,7 @@ func setup(id: StringName) -> void:
 	_flash.hframes = 3
 	_flash.scale = Vector2.ONE * FLASH_SCALE
 	_flash.position = Vector2(ARM_LENGTH + _gun_len + 2.0, 0)
+	_flash.modulate = Color(1.0, 0.90, 0.72, 0.16 if has_suppressor else 0.46)
 	_flash.visible = false
 	_pivot.add_child(_flash)
 
@@ -310,13 +315,16 @@ func _process(delta: float) -> void:
 
 	if InputMap.has_action("holster") and Input.is_action_just_pressed("holster"):
 		toggle_holster()
+	if InputMap.has_action("fire_mode") and Input.is_action_just_pressed("fire_mode"):
+		toggle_fire_mode()
 	if InputMap.has_action("reload"):
 		if Input.is_action_just_pressed("reload"):
 			reload()
 		elif Input.is_action_pressed("reload"):
 			process_hold_reload()
-	if InputMap.has_action("fire"):
-		if data.auto_fire:
+	var fire_blocked := fire_input_blocked_fn.is_valid() and bool(fire_input_blocked_fn.call())
+	if InputMap.has_action("fire") and not fire_blocked:
+		if is_auto_mode():
 			if Input.is_action_pressed("fire"):
 				try_fire()
 		elif Input.is_action_just_pressed("fire"):
@@ -420,9 +428,10 @@ func try_fire() -> bool:
 		&"fired":
 			recoil = recoil_mul
 			_kick = -RECOIL_KICK + randf_range(-0.015, 0.015)
-			_flash_timer = FLASH_TIME
-			_flash.visible = true
-			_flash.frame = 0
+			if not has_suppressor:
+				_flash_timer = FLASH_TIME
+				_flash.visible = true
+				_flash.frame = 0
 			fired.emit(get_muzzle_position(), Vector2.from_angle(aim_angle))
 			return true
 		_:
@@ -473,6 +482,34 @@ func is_holstered() -> bool: return feed.holstered
 func is_stowing() -> bool: return feed.is_stowing()
 func is_drawing() -> bool: return feed.is_drawing()
 func is_busy() -> bool: return feed.is_busy()
+func supports_full_auto() -> bool: return feed.supports_full_auto(data)
+func get_fire_mode() -> String: return feed.get_fire_mode(data)
+func is_auto_mode() -> bool: return feed.is_auto_mode(data)
+
+
+func set_fire_mode(mode: String) -> bool:
+	var ok := feed.set_fire_mode(data, mode)
+	if ok:
+		fire_mode_changed.emit(get_fire_mode(), supports_full_auto())
+	return ok
+
+
+func toggle_fire_mode() -> Dictionary:
+	var res := feed.toggle_fire_mode(data)
+	var changed := bool(res.get("changed", false))
+	var supported := bool(res.get("supported", false))
+	_play_fire_select_sfx(1.0 if changed else 0.78)
+	fire_mode_changed.emit(String(res.get("mode", "semi")), supported)
+	return res
+
+
+func _play_fire_select_sfx(pitch := 1.0) -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	var sfx := tree.root.get_node_or_null("Sfx")
+	if sfx != null:
+		sfx.play_2d("fire_select", -8.0, pitch * randf_range(0.96, 1.04))
 func get_ammo_text() -> String: return feed.get_ammo_text(data)
 func get_side_texture() -> Texture2D: return _gun.texture if _gun != null else null
 func get_stow_scale() -> float: return _gun_scale

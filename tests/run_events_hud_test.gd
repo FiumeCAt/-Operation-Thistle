@@ -188,15 +188,46 @@ func _run() -> void:
 	_check(int(ev["loots"]) == 2 and bool(ev["last_adv"]),
 		"loot_gained emits for both basic and advanced items")
 	var feed_start: int = main.hud._feed_items.size()
+	_check(is_equal_approx(main.hud.get_pickup_merge_window(), 3.0),
+		"pickup merge window defaults to 3.0 seconds")
 	main._on_pickup_collected("resource", &"parts", 1)
+	main.hud._feed_items[feed_start]["merge_idle"] = 2.2
 	main._on_pickup_collected("resource", &"parts", 2)
 	_check(main.hud._feed_items.size() == feed_start + 1
-		and int(main.hud._feed_items[feed_start]["amount"]) == 3,
-		"rapid identical pickups merge cleanly into one pill with summed amount")
+		and int(main.hud._feed_items[feed_start]["amount"]) == 3
+		and float(main.hud._feed_items[feed_start]["pulse"]) >= 0.9,
+		"pickups within 3.0s merge into one pill with summed amount and flash pulse")
+	# 超过 3 秒窗口后产生新条；设为 0 秒时关闭合并。
+	main.hud._feed_items[feed_start]["merge_idle"] = 3.2
+	main._on_pickup_collected("resource", &"parts", 1)
+	_check(main.hud._feed_items.size() == feed_start + 2,
+		"pickup arriving after merge window opens a fresh pill")
+	main.hud.set_pickup_merge_window(0.0)
+	main._on_pickup_collected("resource", &"parts", 1)
+	_check(main.hud._feed_items.size() == feed_start + 3,
+		"setting merge window to 0.0s disables pickup merging")
+	main.hud.set_pickup_merge_window(3.0)
 	main._on_pickup_collected("resource", &"electronic_core", 1)
-	_check(main.hud._feed_items.size() == feed_start + 2
-		and bool(main.hud._feed_items[feed_start + 1]["rare"]),
+	_check(main.hud._feed_items.size() == feed_start + 4
+		and bool(main.hud._feed_items[feed_start + 3]["rare"]),
 		"advanced resource pickup renders with rare highlight flag")
+
+	# 快慢机 HUD 拨片点击联动与不支持全自动武器的半自动锁定
+	main.doll.equip_weapon_id(&"fal")
+	main.doll.weapon_rig.fire_input_blocked_fn = main.hud.is_pointer_over_interactive
+	main.doll.weapon_rig.fire_mode_changed.connect(main._on_fire_mode_changed)
+	main.hud.update_weapon(main.doll.weapon_rig)
+	_check(main.hud.fire_selector != null and main.hud.fire_selector.visible
+		and main.hud.fire_selector.supports_auto and main.hud.fire_selector.fire_mode == "auto",
+		"HUD fire selector displays F (full-auto) for FN FAL")
+	main.hud.fire_selector.toggled.emit()
+	_check(main.doll.weapon_rig.get_fire_mode() == "semi"
+		and main.hud.fire_selector.fire_mode == "semi",
+		"clicking HUD fire selector switches FN FAL to semi-auto (S)")
+	main.hud.fire_selector.toggled.emit()
+	_check(main.doll.weapon_rig.get_fire_mode() == "auto"
+		and main.hud.fire_selector.fire_mode == "auto",
+		"clicking HUD fire selector again switches FN FAL back to full-auto (F)")
 
 	# 触发 shot_fired & hit_resolved
 	for e in main.enemies:

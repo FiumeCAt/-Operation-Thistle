@@ -118,9 +118,9 @@ func _run() -> void:
 	fb.play_muzzle_fx(Vector2(200, 150), 0.0, 1.2, false)
 	var bright_energy: float = fb.muzzle_flash.current_light_energy()
 	var bright_bloom: float = fb.muzzle_flash.current_bloom_alpha()
-	_check(fb.muzzle_flash.is_active() and bright_energy > 1.0
-		and bright_bloom > 0.20 and fb.muzzle_flash.spark_count() >= 6,
-		"unsuppressed shot triggers muzzle light (%.2f), local bloom (%.2f), and sparks" % [bright_energy, bright_bloom])
+	_check(fb.muzzle_flash.is_active() and bright_energy > 0.55 and bright_energy < 1.20
+		and bright_bloom > 0.08 and bright_bloom < 0.22 and fb.muzzle_flash.spark_count() >= 6,
+		"unsuppressed shot triggers balanced muzzle light (%.2f), local bloom (%.2f), and sparks" % [bright_energy, bright_bloom])
 	fb.play_muzzle_fx(Vector2(200, 150), 0.0, 1.2, true)
 	var supp_energy: float = fb.muzzle_flash.current_light_energy()
 	var supp_bloom: float = fb.muzzle_flash.current_bloom_alpha()

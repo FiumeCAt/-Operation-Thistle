@@ -95,6 +95,7 @@ static func option(slot: String, option_id: String, is_armor: bool, weapon_id :=
 static func default_modifiers() -> Dictionary:
 	return {
 		"damage_mul": 1.0, "spread_mul": 1.0, "range_mul": 1.0,
+		"speed_mul": 1.0,
 		"mag_mul": 1.0, "reload_mul": 1.0, "fire_mul": 1.0,
 		"sound_mul": 1.0,
 		## 后坐力（连发散布增长/上限/开火震动）、瞄具视野、瞄准过渡速度。

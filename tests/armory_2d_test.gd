@@ -119,6 +119,7 @@ func _run() -> void:
 	await process_frame
 	_check(menu.armory.visible, "armory opens from the base menu")
 	_check(menu.armory._weapon_buttons.size() == 18, "eighteen weapons listed")
+	_check(menu.armory._category_buttons.size() == 7, "armory exposes seven weapon category filter tabs")
 	_check(menu.armory._detail_title.text.contains("M870"), "primary weapon selected by default")
 	# 装备定置：主/副武器固定在列表最前，并标注槽位。
 	_check(menu.armory._weapon_list.get_child(0) == menu.armory._weapon_buttons[&"m870"]
@@ -272,6 +273,36 @@ func _run() -> void:
 	_check(menu.armory._weapon_list.get_child(0) == menu.armory._weapon_buttons[&"g17"]
 		and menu.armory._weapon_list.get_child(1) == menu.armory._weapon_buttons[&"m1014"],
 		"pinned order follows the new loadout after equipping")
+
+	# 分类标签筛选 + 改枪子页切回主武器 + 武器详情「去改枪」直达选中武器 + 消音器弹速绿标验证。
+	menu.armory._select_category(&"sniper")
+	var visible_sniper := 0
+	for wid in WeaponDB.WEAPON_ORDER:
+		if menu.armory._weapon_buttons[wid].visible:
+			visible_sniper += 1
+	_check(visible_sniper == 1 and menu.armory._weapon_buttons[&"awm"].visible
+		and menu.armory._selected == &"awm",
+		"sniper category tab isolates AWM and auto-selects it")
+	# 直接点顶部「配件与组件」子页：强制切到当前主武器 (g17)。
+	menu.armory._show_weapon_sub("mods")
+	_check(menu.armory._mods_page.visible and menu.armory._mod_item == "g17",
+		"switching directly to Mods sub-tab forces selecting the equipped primary weapon")
+	# 回到「武器数据」页选中 AWM，点详细页底部的「去改枪」按钮：直达 AWM 改枪画布。
+	menu.armory._show_weapon_sub("data")
+	menu.armory._select(&"awm")
+	_check(menu.armory._mod_shortcut_button != null and menu.armory._mod_shortcut_button.visible,
+		"weapon detail page exposes a direct '去改枪' shortcut button")
+	menu.armory._mod_shortcut_button.pressed.emit()
+	_check(menu.armory._mods_page.visible and menu.armory._mod_item == "awm",
+		"'去改枪' shortcut opens Mods sub-tab directly on the selected weapon")
+	menu.armory._show_weapon_sub("data")
+	menu.armory._select_category(&"all")
+	p.data["weapon_mods_2d"]["akm"] = {"muzzle": "suppressor"}
+	menu.armory._select(&"akm")
+	_check(menu.armory._detail_deltas["子弹速度"].text.contains("(+43)")
+		and menu.armory._detail_deltas["伤害"].text == "",
+		"suppressor shows green bullet velocity boost and no damage penalty in detail panel")
+	p.data["weapon_mods_2d"]["akm"] = {}
 
 	menu.armory.close_menu()
 	await process_frame

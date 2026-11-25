@@ -1,8 +1,8 @@
 extends RefCounted
 class_name SfxSynth
 ## 运行时确定性程序化音效合成器（纯 PCM 波形生成，不依赖场景树）：
-## 使用固定种子按原定顺序构建全部 33 条基础枪械/命中/UI/敌人/环境 AudioStreamWAV，
-## 保证与拆分前波形逐采样一致。
+## 使用固定种子按原定顺序构建全部 38 条基础枪械（含 5 条消音版）/快慢机/命中/UI/敌人/环境 AudioStreamWAV，
+## 新增条目固定追加在末尾，保证既有 32 条波形逐采样一致。
 
 const SR := 44100
 const SEED := 20261025
@@ -51,6 +51,13 @@ func _build_bank() -> Dictionary:
 	bank["hit_air"] = _build_hit_air()
 	bank["enemy_death"] = _build_enemy_death()
 	bank["enemy_alert"] = _build_enemy_alert()
+	# 追加在既有 32 条之后，保证原有音色 RNG 序列逐采样不变。
+	bank["shotgun_sup"] = _build_shotgun_sup()
+	bank["pistol_sup"] = _build_pistol_sup()
+	bank["smg_sup"] = _build_smg_sup()
+	bank["rifle_sup"] = _build_rifle_sup()
+	bank["sniper_sup"] = _build_sniper_sup()
+	bank["fire_select"] = _build_fire_select()
 	return bank
 
 
@@ -599,4 +606,112 @@ func _build_enemy_alert() -> AudioStreamWAV:
 		if u >= 0.0 and u < 0.08:
 			s += sin(TAU * 990.0 * u) * exp(-u * 28.0) * 0.16
 		a[i] = s
+	return _stream(a)
+
+
+func _build_shotgun_sup() -> AudioStreamWAV:
+	var n := int(0.28 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	var lp2 := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * 0.11
+		lp2 += (lp - lp2) * 0.16
+		var hiss := (wn - lp) * exp(-t * 44.0) * 0.34
+		var thump := sin(TAU * lerpf(92.0, 48.0, clampf(t / 0.18, 0.0, 1.0)) * t) * exp(-t * 20.0) * 0.62
+		var bolt := sin(TAU * 720.0 * t) * exp(-t * 95.0) * 0.14
+		var s := lp2 * exp(-t * 16.0) * 0.58 + thump + hiss + bolt
+		a[i] = s * 0.85
+	return _stream(a)
+
+
+func _build_pistol_sup() -> AudioStreamWAV:
+	var n := int(0.14 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * 0.18
+		var puff := (wn - lp) * exp(-t * 72.0) * 0.36
+		var body := lp * exp(-t * 42.0) * 0.42
+		var thump := sin(TAU * 165.0 * t) * exp(-t * 48.0) * 0.30
+		var mech := sin(TAU * 1350.0 * t) * exp(-t * 140.0) * 0.22
+		a[i] = (puff + body + thump + mech) * 0.85
+	return _stream(a)
+
+
+func _build_smg_sup() -> AudioStreamWAV:
+	var n := int(0.11 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * 0.22
+		var puff := (wn - lp) * exp(-t * 88.0) * 0.40
+		var body := lp * exp(-t * 54.0) * 0.38
+		var thump := sin(TAU * 205.0 * t) * exp(-t * 58.0) * 0.26
+		var bolt := sin(TAU * 1580.0 * t) * exp(-t * 165.0) * 0.24
+		a[i] = (puff + body + thump + bolt) * 0.82
+	return _stream(a)
+
+
+func _build_rifle_sup() -> AudioStreamWAV:
+	var n := int(0.20 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	var lp_mid := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * 0.15
+		lp_mid += (wn - lp_mid) * 0.42
+		var crack := (lp_mid - lp) * exp(-t * 78.0) * 0.56
+		var baffle := lp * exp(-t * 28.0) * 0.50
+		var thump := sin(TAU * 115.0 * t) * exp(-t * 32.0) * 0.42
+		var bolt := sin(TAU * 1120.0 * t) * exp(-t * 120.0) * 0.18
+		a[i] = (crack + baffle + thump + bolt) * 0.86
+	return _stream(a)
+
+
+func _build_sniper_sup() -> AudioStreamWAV:
+	var n := int(0.32 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	var lp_mid := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * 0.11
+		lp_mid += (wn - lp_mid) * 0.34
+		var crack := (lp_mid - lp) * exp(-t * 58.0) * 0.54
+		var baffle := lp * exp(-t * 17.0) * 0.56
+		var thump := sin(TAU * 78.0 * t) * exp(-t * 19.0) * 0.54
+		var zip := sin(TAU * lerpf(1600.0, 620.0, clampf(t / 0.12, 0.0, 1.0)) * t) * exp(-t * 52.0) * 0.12
+		a[i] = (crack + baffle + thump + zip) * 0.86
+	return _stream(a)
+
+
+func _build_fire_select() -> AudioStreamWAV:
+	var n := int(0.08 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		var s := 0.0
+		if t < 0.025:
+			s += (sin(TAU * 1750.0 * t) * 0.28 + wn * 0.18) * exp(-t * 180.0)
+		var u: float = t - 0.024
+		if u >= 0.0 and u < 0.045:
+			s += (sin(TAU * 2450.0 * u) * 0.34 + sin(TAU * 980.0 * u) * 0.20 + wn * 0.14) * exp(-u * 135.0)
+		a[i] = s * 0.9
 	return _stream(a)

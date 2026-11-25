@@ -5,6 +5,7 @@ class_name WeaponData
 
 @export var id: StringName = &"m870"
 @export var slot: int = 1
+@export var category: StringName = &"shotgun"
 @export var display_name: String = "M870 // 12 GAUGE"
 @export var caliber: StringName = &"12gauge"
 ## 面板口径短标与默认弹种；ammo_id 决定使用哪条弹药数据。

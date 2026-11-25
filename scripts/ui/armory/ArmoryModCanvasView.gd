@@ -8,6 +8,7 @@ const STATS_STRIP := preload("res://scripts/ui/armory/ArmoryModStatsStrip.gd")
 
 var page: VBoxContainer
 var mod_item := "m870"
+var items_scroll: ScrollContainer
 var mod_items: VBoxContainer
 var mod_item_buttons: Dictionary = {}
 var mod_choices: Dictionary = {}
@@ -55,7 +56,7 @@ func build(parent: Node, progress_fn: Callable, loadout_fn: Callable) -> void:
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	page.add_child(columns)
 
-	var items_scroll := ScrollContainer.new()
+	items_scroll = ScrollContainer.new()
 	items_scroll.custom_minimum_size.x = 220
 	items_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	items_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -180,6 +181,8 @@ func select_item(item: String) -> void:
 	mod_selected_slot = "muzzle"
 	set_feedback("点击枪身连线或槽位切换 · 安装消耗信用点与进阶资源", PixelUI.DIM)
 	refresh()
+	if items_scroll != null and mod_item_buttons.has(mod_item):
+		items_scroll.call_deferred("ensure_control_visible", mod_item_buttons[mod_item])
 
 
 func select_slot(slot: String) -> void:

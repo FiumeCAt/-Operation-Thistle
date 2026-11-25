@@ -336,8 +336,8 @@ func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 	recoil_roll = clampf(recoil_roll + kick_h * RECOIL_ROLL_SCALE,
 		-RECOIL_ROLL_LIMIT, RECOIL_ROLL_LIMIT)
 
+	var suppressed := bool(_doll.weapon_rig.has_suppressor) if _doll.weapon_rig != null else false
 	if _muzzle_fx_fn.is_valid():
-		var suppressed := bool(_doll.weapon_rig.has_suppressor) if _doll.weapon_rig != null else false
 		var flash_intensity := calc_muzzle_flash_intensity(data, ammo)
 		if _muzzle_fx_fn.get_argument_count() >= 4:
 			_muzzle_fx_fn.call(muzzle, base_dir.angle(), flash_intensity, suppressed)
@@ -387,7 +387,9 @@ func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 		_shake_fn.call(data.shake_amount * ads_mul * lerpf(1.0, 1.35, build),
 			data.shake_roll * ads_mul, data.shake_decay)
 	if _sfx_fn.is_valid():
-		_sfx_fn.call(data.sfx_kind, -3.0)
+		var sfx_kind := data.sfx_kind + "_sup" if suppressed else data.sfx_kind
+		var sfx_db := -4.5 if suppressed else -3.0
+		_sfx_fn.call(sfx_kind, sfx_db)
 	shot_fired.emit(data.id, ammo.id, pellet_count)
 
 

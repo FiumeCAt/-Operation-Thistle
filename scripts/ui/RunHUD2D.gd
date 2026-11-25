@@ -15,13 +15,15 @@ const WEAPON_PLATE_SIZE := Vector2(360, 150)
 ## 右上角小地图：只显示玩家附近敌情，目标点常显。
 signal return_requested
 signal restart_requested
+signal fire_mode_toggle_requested
 
-## 拾取信息在屏幕左侧滚动显示，不占左下状态板。
+## 拾取信息在屏幕左侧滚动显示，不占左下状态板；默认 3 秒内连续拾取同类掉落自动合并计数并轻闪。
 const FEED_LIFE := 3.6
 const FEED_MAX := 6
-const FEED_MERGE_WINDOW := 1.25
+const FEED_MERGE_WINDOW := 3.0
 
 var main: Node2D
+var pickup_merge_window := FEED_MERGE_WINDOW
 
 var hp_label: Label
 var objective_label: Label
@@ -52,6 +54,7 @@ var _count: Label
 var _state: Label
 var _progress: ProgressBar
 var _strip: ShellStrip2D
+var fire_selector: FireSelectorWidget2D
 var _result_panel: PanelContainer
 var _debrief_empty: Label
 var _feed: VBoxContainer
@@ -80,6 +83,17 @@ func _ready() -> void:
 	_build_weapon_panel()
 	_build_minimap()
 	_build_result_panel()
+	var progress := get_node_or_null("/root/Progress")
+	if progress != null and progress.has_method("pickup_merge_window"):
+		set_pickup_merge_window(float(progress.pickup_merge_window()))
+
+
+func set_pickup_merge_window(seconds: float) -> void:
+	pickup_merge_window = clampf(seconds, 0.0, 10.0)
+
+
+func get_pickup_merge_window() -> float:
+	return pickup_merge_window
 
 
 func _build_minimap() -> void:
@@ -171,7 +185,7 @@ func _build_hint() -> void:
 	_hint_bar.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_hint_bar.offset_left = 20
 	_hint_bar.offset_top = 16
-	_hint_bar.offset_right = 920
+	_hint_bar.offset_right = 1040
 	_hint_bar.offset_bottom = 48
 
 	hint_label = PixelUI.label(_hint_bar, "", 19, PixelUI.DIM)
@@ -229,16 +243,18 @@ func push_pickup(text: String, color: Color, opts: Dictionary = {}) -> void:
 	var merge_key := String(opts.get("merge_key", ""))
 	var add_amt := int(opts.get("amount", 0))
 	var merge_fmt := String(opts.get("merge_fmt", ""))
-	if merge_key != "" and add_amt > 0 and merge_fmt != "":
+	var merge_life := maxf(FEED_LIFE, pickup_merge_window + 0.6) if (merge_key != "" and pickup_merge_window > 0.001) else FEED_LIFE
+	if pickup_merge_window > 0.001 and merge_key != "" and add_amt > 0 and merge_fmt != "":
 		for i in range(_feed_items.size() - 1, -1, -1):
 			var existing: Dictionary = _feed_items[i]
 			if String(existing.get("merge_key", "")) != merge_key:
 				continue
-			if float(existing.get("age", 99.0)) > FEED_MERGE_WINDOW:
+			if float(existing.get("merge_idle", 99.0)) > pickup_merge_window:
 				continue
 			var total_amt := int(existing.get("amount", 0)) + add_amt
 			existing["amount"] = total_amt
-			existing["t"] = FEED_LIFE
+			existing["t"] = merge_life
+			existing["merge_idle"] = 0.0
 			existing["pulse"] = 1.0
 			var new_text := merge_fmt % total_amt
 			var rt = existing.get("rich")
@@ -315,8 +331,9 @@ func push_pickup(text: String, color: Color, opts: Dictionary = {}) -> void:
 	_feed_items.append({
 		"label": pill,
 		"rich": rich,
-		"t": FEED_LIFE,
+		"t": merge_life,
 		"age": 0.0,
+		"merge_idle": 0.0,
 		"pulse": 0.0,
 		"merge_key": merge_key,
 		"amount": add_amt,
@@ -412,6 +429,27 @@ func _build_weapon_panel() -> void:
 	_progress.max_value = 100
 	_progress.value = 0
 	rows.add_child(_progress)
+
+	# 武器面板左侧快慢机拨片：参照机匣拨片造型，支持鼠标左键点击与 B 键切换全自动/半自动。
+	fire_selector = FireSelectorWidget2D.new()
+	fire_selector.name = "FireSelector"
+	_root.add_child(fire_selector)
+	fire_selector.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	fire_selector.offset_left = -24 - WEAPON_PLATE_SIZE.x - 10 - 76
+	fire_selector.offset_right = -24 - WEAPON_PLATE_SIZE.x - 10
+	fire_selector.offset_top = -24 - 82
+	fire_selector.offset_bottom = -24
+	fire_selector.toggled.connect(func() -> void: fire_mode_toggle_requested.emit())
+
+
+## 鼠标指针是否正位于 HUD 可点击控件（如快慢机拨片）上，供 WeaponRig2D 拦截误开火。
+func is_pointer_over_interactive() -> bool:
+	if not visible or fire_selector == null or not fire_selector.visible:
+		return false
+	var vp := get_viewport()
+	if vp == null:
+		return false
+	return fire_selector.get_global_rect().has_point(vp.get_mouse_position())
 
 
 ## 结算界面：结构与 TAB 背包一致（左右分栏），但只展示本局带出的物资与战斗统计。
@@ -574,10 +612,10 @@ func set_hint(text: String) -> void:
 		_hint_rich.text = _format_hint_bbcode(text)
 
 
-## 自动将操作提示中的按键（WASD / 左键 / 右键 / R / X / TAB / Alt+滚轮 / E / M）着色加重。
+## 自动将操作提示中的按键（WASD / 左键 / 右键 / B / R / X / TAB / Alt+滚轮 / E / M）着色加重。
 static func _format_hint_bbcode(text: String) -> String:
 	var out := text
-	for key in ["WASD", "Alt+滚轮", "左键", "右键", "TAB", "ESC", " R ", " X ", " E ", " M "]:
+	for key in ["WASD", "Alt+滚轮", "左键", "右键", "TAB", "ESC", " B ", " R ", " X ", " E ", " M "]:
 		var ks := String(key)
 		var trimmed := ks.strip_edges()
 		if out.contains(ks):
@@ -627,8 +665,15 @@ func update_weapon(rig) -> void:
 		_strip.cap = 0
 		_strip.queue_redraw()
 		_progress.value = 0.0
+		if fire_selector != null:
+			fire_selector.visible = false
 		return
 	var data = rig.data
+	if fire_selector != null:
+		fire_selector.visible = true
+		var can_auto := bool(rig.supports_full_auto()) if rig.has_method("supports_full_auto") else bool(data.auto_fire)
+		var mode := String(rig.get_fire_mode()) if rig.has_method("get_fire_mode") else ("auto" if can_auto else "semi")
+		fire_selector.set_state(mode, can_auto)
 	var ammo: AmmoData = WeaponDB.ammo_table().get(data.ammo_id)
 	var short_name: String = String(data.display_name).split(" // ")[0]
 	_title.text = "%s // %s" % [short_name, data.caliber_label]
@@ -782,6 +827,7 @@ func _process(delta: float) -> void:
 	for item in _feed_items:
 		item["t"] = float(item["t"]) - delta
 		item["age"] = float(item.get("age", 0.0)) + delta
+		item["merge_idle"] = float(item.get("merge_idle", 0.0)) + delta
 		var pulse := maxf(float(item.get("pulse", 0.0)) - delta * 4.5, 0.0)
 		item["pulse"] = pulse
 		var line = item["label"]
@@ -822,3 +868,169 @@ class ShellStrip2D extends Control:
 				amber if loaded else Color(0.11, 0.14, 0.17, 0.95), true)
 			draw_rect(Rect2(pos, Vector2(bar_w, bar_h)),
 				Color(0.55, 0.60, 0.64, 0.45), false, 1.0)
+
+
+## 像素机械快慢机拨片（F 全自动 / S 半自动）：置于右下武器面板左侧，支持鼠标点击与 B 键联动。
+class FireSelectorWidget2D extends Control:
+	signal toggled
+
+	const PX := 2.0
+	const PIVOT := Vector2(47.0, 44.0)
+	const ANGLE_SEMI := PI
+	const ANGLE_AUTO := -2.06  # 指向顶部 F 刻槽
+
+	var fire_mode := "semi"
+	var supports_auto := false
+	var _hovered := false
+	var _lever_t := 0.0
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		custom_minimum_size = Vector2(76, 82)
+		mouse_entered.connect(func() -> void:
+			_hovered = true
+			queue_redraw())
+		mouse_exited.connect(func() -> void:
+			_hovered = false
+			queue_redraw())
+
+	func set_state(mode: String, can_auto: bool) -> void:
+		var clean_mode := "auto" if (can_auto and mode == "auto") else "semi"
+		var changed := (fire_mode != clean_mode) or (supports_auto != can_auto)
+		fire_mode = clean_mode
+		supports_auto = can_auto
+		if supports_auto:
+			tooltip_text = "全自动 (F) · 点击或按 B 切换半自动" if fire_mode == "auto" \
+				else "半自动 (S) · 点击或按 B 切换全自动"
+		else:
+			tooltip_text = "半自动 (S) · 当前武器不支持全自动"
+		if changed:
+			queue_redraw()
+
+	func _process(delta: float) -> void:
+		var target := 1.0 if fire_mode == "auto" else 0.0
+		if absf(_lever_t - target) > 0.002:
+			_lever_t = move_toward(_lever_t, target, delta * 14.0)
+			queue_redraw()
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			accept_event()
+			if event.pressed:
+				toggled.emit()
+
+	func _draw() -> void:
+		var is_auto := fire_mode == "auto" and supports_auto
+		# 1. 阶梯像素枪身机匣底座（参照机匣拨片轮廓，右下留出拨杆旋转弧缺口）。
+		var outline := Color(PixelUI.AMBER_BRIGHT, 0.92) if _hovered else Color(0.05, 0.06, 0.07, 0.96)
+		var body := Color(0.11, 0.12, 0.14, 0.96)
+		var bevel := Color(0.20, 0.22, 0.26, 0.90)
+		_draw_stepped_box(Rect2(4, 2, 66, 62), outline, body, bevel)
+
+		# 2. 顶部红色 F 刻槽（全自动）。
+		var f_rect := Rect2(26, 6, 22, 24)
+		var f_border := Color(0.92, 0.26, 0.26) if is_auto else (Color(0.42, 0.16, 0.16) if supports_auto else Color(0.20, 0.22, 0.25))
+		var f_bg := Color(0.18, 0.06, 0.07, 0.96) if is_auto else Color(0.08, 0.08, 0.09, 0.95)
+		var f_glyph := Color(1.0, 0.32, 0.30) if is_auto else (Color(0.76, 0.20, 0.20) if supports_auto else Color(0.30, 0.32, 0.36))
+		draw_rect(f_rect, f_border, true)
+		draw_rect(f_rect.grow(-PX), f_bg, true)
+		_draw_pixel_f(f_rect.position + Vector2(5, 4), f_glyph)
+		if not supports_auto:
+			draw_line(f_rect.position + Vector2(3, f_rect.size.y - 3),
+				f_rect.position + Vector2(f_rect.size.x - 3, 3), Color(0.45, 0.48, 0.52, 0.55), 1.5)
+
+		# 3. 左侧金色 S 刻槽（半自动）。
+		var s_rect := Rect2(8, 34, 20, 24)
+		var s_border := Color(0.92, 0.72, 0.22) if not is_auto else Color(0.44, 0.35, 0.16)
+		var s_bg := Color(0.17, 0.13, 0.05, 0.96) if not is_auto else Color(0.09, 0.08, 0.06, 0.95)
+		var s_glyph := Color(1.0, 0.80, 0.26) if not is_auto else Color(0.74, 0.56, 0.18)
+		draw_rect(s_rect, s_border, true)
+		draw_rect(s_rect.grow(-PX), s_bg, true)
+		_draw_pixel_s(s_rect.position + Vector2(4, 4), s_glyph)
+
+		# 4. 旋转金属拨杆 + 白色指向刻度线（指针指向 F 或 S，拇指尾翼落在右下/右侧）。
+		var ang := lerp_angle(ANGLE_SEMI, ANGLE_AUTO, _lever_t)
+		var dir := Vector2.from_angle(ang)
+		var perp := Vector2(-dir.y, dir.x)
+		var lever_outer := PackedVector2Array([
+			PIVOT + dir * 18.0 + perp * 4.0,
+			PIVOT + dir * 21.0,
+			PIVOT + dir * 18.0 - perp * 4.0,
+			PIVOT + dir * 6.0 - perp * 11.0,
+			PIVOT - dir * 12.0 - perp * 11.0,
+			PIVOT - dir * 21.0 - perp * 7.0,
+			PIVOT - dir * 23.0,
+			PIVOT - dir * 20.0 + perp * 7.0,
+			PIVOT - dir * 8.0 + perp * 11.0,
+			PIVOT + dir * 6.0 + perp * 11.0,
+		])
+		draw_colored_polygon(lever_outer, Color(0.05, 0.06, 0.07, 0.98))
+		var lever_body := PackedVector2Array([
+			PIVOT + dir * 16.0 + perp * 3.0,
+			PIVOT + dir * 18.5,
+			PIVOT + dir * 16.0 - perp * 3.0,
+			PIVOT + dir * 5.0 - perp * 9.0,
+			PIVOT - dir * 11.0 - perp * 9.0,
+			PIVOT - dir * 19.0 - perp * 5.0,
+			PIVOT - dir * 20.5,
+			PIVOT - dir * 18.0 + perp * 5.0,
+			PIVOT - dir * 7.0 + perp * 9.0,
+			PIVOT + dir * 5.0 + perp * 9.0,
+		])
+		var steel := Color(0.24, 0.26, 0.30) if not _hovered else Color(0.30, 0.33, 0.38)
+		draw_colored_polygon(lever_body, steel)
+		# 上缘金属反光面与转轴鼓包。
+		var lever_hi := PackedVector2Array([
+			PIVOT + dir * 14.0 + perp * 1.0,
+			PIVOT + dir * 4.0 - perp * 7.0,
+			PIVOT - dir * 10.0 - perp * 7.0,
+			PIVOT - dir * 15.0 - perp * 2.0,
+			PIVOT - dir * 4.0 + perp * 2.0,
+		])
+		draw_colored_polygon(lever_hi, Color(0.34, 0.37, 0.42, 0.72))
+		draw_circle(PIVOT, 8.5, Color(0.18, 0.20, 0.24))
+		draw_circle(PIVOT, 5.5, Color(0.28, 0.30, 0.35))
+		# 醒目白色指向槽线（复刻参考图中的白色指针标线）。
+		var notch_a := PIVOT + dir * 3.0
+		var notch_b := PIVOT + dir * 17.5
+		draw_line(notch_a + perp * 1.5, notch_b + perp * 1.5, Color(0.06, 0.07, 0.08, 0.9), 2.5)
+		draw_line(notch_a, notch_b, Color(0.94, 0.96, 0.98, 1.0), 2.5)
+
+		# 5. 底部紧凑快捷键提示条（B · 全自动 / B · 半自动）。
+		var tag_rect := Rect2(2, 66, 72, 15)
+		draw_rect(tag_rect, Color(0.04, 0.05, 0.07, 0.88), true)
+		var tag_border := Color(PixelUI.AMBER_BRIGHT, 0.85) if _hovered else Color(0.35, 0.40, 0.46, 0.55)
+		draw_rect(tag_rect, tag_border, false, 1.0)
+		var font: Font = get_theme_default_font()
+		if font == null:
+			font = ThemeDB.fallback_font
+		var mode_tag := "B·全自动" if is_auto else ("B·半自动" if supports_auto else "仅半自动")
+		var mode_col := Color(1.0, 0.44, 0.40) if is_auto else (Color(1.0, 0.82, 0.32) if supports_auto else Color(0.58, 0.62, 0.66))
+		draw_string(font, Vector2(tag_rect.position.x, tag_rect.position.y + 11.5),
+			mode_tag, HORIZONTAL_ALIGNMENT_CENTER, tag_rect.size.x, 11, mode_col)
+
+	func _draw_stepped_box(r: Rect2, outline: Color, fill: Color, bevel: Color) -> void:
+		# 阶梯切角像素外壳（模拟像素图圆角机匣）。
+		draw_rect(Rect2(r.position.x + 6, r.position.y, r.size.x - 12, r.size.y), outline, true)
+		draw_rect(Rect2(r.position.x + 2, r.position.y + 4, r.size.x - 4, r.size.y - 8), outline, true)
+		draw_rect(Rect2(r.position.x, r.position.y + 8, r.size.x, r.size.y - 16), outline, true)
+		draw_rect(Rect2(r.position.x + 8, r.position.y + 2, r.size.x - 16, r.size.y - 4), fill, true)
+		draw_rect(Rect2(r.position.x + 4, r.position.y + 6, r.size.x - 8, r.size.y - 12), fill, true)
+		draw_rect(Rect2(r.position.x + 2, r.position.y + 10, r.size.x - 4, r.size.y - 20), fill, true)
+		draw_rect(Rect2(r.position.x + 8, r.position.y + 2, r.size.x - 16, 2), bevel, true)
+		draw_rect(Rect2(r.position.x + 2, r.position.y + 10, 2, r.size.y - 24), bevel, true)
+
+	func _draw_pixel_f(o: Vector2, col: Color) -> void:
+		draw_rect(Rect2(o + Vector2(0, 0), Vector2(4, 16)), col, true)
+		draw_rect(Rect2(o + Vector2(0, 0), Vector2(12, 3)), col, true)
+		draw_rect(Rect2(o + Vector2(0, 7), Vector2(10, 3)), col, true)
+
+	func _draw_pixel_s(o: Vector2, col: Color) -> void:
+		draw_rect(Rect2(o + Vector2(2, 0), Vector2(8, 3)), col, true)
+		draw_rect(Rect2(o + Vector2(0, 2), Vector2(3, 5)), col, true)
+		draw_rect(Rect2(o + Vector2(2, 6), Vector2(8, 3)), col, true)
+		draw_rect(Rect2(o + Vector2(9, 8), Vector2(3, 6)), col, true)
+		draw_rect(Rect2(o + Vector2(2, 13), Vector2(8, 3)), col, true)
+		draw_rect(Rect2(o + Vector2(0, 11), Vector2(3, 3)), col, true)
+		draw_rect(Rect2(o + Vector2(9, 2), Vector2(3, 2)), col, true)
