@@ -280,5 +280,22 @@ func _run() -> void:
 		"pickup merge window persists across save reload")
 	p.set_pickup_merge_window(3.0)
 
+	# 实验性「真实逐发弹匣」开关：默认关闭，在设置页开启后持久化且跨重启保留。
+	sm = SettingsMenu2D.new()
+	root.add_child(sm)
+	await process_frame
+	sm.open()
+	_check(sm._ammo_exact_buttons.size() == 2 and not p.ammo_exact_rounds()
+		and sm._ammo_exact_buttons[false].text.contains("▶"),
+		"experimental exact-rounds magazine display defaults to off")
+	sm._set_ammo_exact_rounds(true)
+	_check(p.ammo_exact_rounds() and sm._ammo_exact_buttons[true].text.contains("▶"),
+		"experimental exact-rounds toggle saves immediately when enabled")
+	sm.queue_free()
+	await process_frame
+	p.load_data()
+	_check(p.ammo_exact_rounds(), "experimental exact-rounds setting persists across reload")
+	p.set_ammo_exact_rounds(false)
+
 	print("\n=== settings 2d: %s (%d ok / %d fail) ===" % ["PASS" if _fail == 0 else "FAIL", _pass, _fail])
 	quit()

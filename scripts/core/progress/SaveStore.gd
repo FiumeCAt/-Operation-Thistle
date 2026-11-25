@@ -78,6 +78,7 @@ static func defaults() -> Dictionary:
 		"minimap_zoom_max": DEFAULT_MINIMAP_ZOOM_MAX,
 		"typewriter_enabled": false,
 		"typewriter_speed": DEFAULT_TYPEWRITER_SPEED,
+		"ammo_exact_rounds": false,
 		"pickup_merge_window": DEFAULT_PICKUP_MERGE_WINDOW,
 		"motion_blur": true,
 		"scope_motion_blur": true,
@@ -331,6 +332,7 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 	data["typewriter_enabled"] = bool(data.get("typewriter_enabled", false))
 	data["typewriter_speed"] = clampf(
 		roundf(float(data.get("typewriter_speed", DEFAULT_TYPEWRITER_SPEED))), 15.0, 140.0)
+	data["ammo_exact_rounds"] = bool(data.get("ammo_exact_rounds", false))
 	data["pickup_merge_window"] = clampf(
 		roundf(float(data.get("pickup_merge_window", DEFAULT_PICKUP_MERGE_WINDOW)) * 2.0) / 2.0,
 		PICKUP_MERGE_MIN, PICKUP_MERGE_MAX)

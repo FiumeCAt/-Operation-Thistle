@@ -304,6 +304,30 @@ func _run() -> void:
 	_check(main.hud.get_ammo_display_mode() == "both" and p.ammo_display() == "both",
 		"J-key ammo display cycle wraps back to both and persists to Progress")
 
+	# 实验性「真实逐发弹匣」：默认关闭（抽象 8~16 格），开启后逐颗 1:1 渲染（30/50/75/100 精确匹配）
+	_check(not p.ammo_exact_rounds() and not main.hud.get_ammo_exact_rounds(),
+		"experimental exact-rounds display is disabled by default in HUD")
+	_check(ac_script.visual_slots(30, &"curved_mag", true) == 30
+		and ac_script.visual_slots(50, &"top_mag", true) == 50
+		and ac_script.visual_slots(75, &"drum", true) == 75
+		and ac_script.visual_slots(100, &"box", true) == 100
+		and ac_script.filled_slots(47, 75, 75, true) == 47,
+		"AmmoContainer2D exact_rounds=true maps every bullet 1:1 across curved/top/drum/box")
+	p.set_ammo_exact_rounds(true)
+	main._on_settings_applied()
+	p.data["weapon_mods_2d"]["akm"] = {"magazine": "mag_drum"}
+	main.doll.equip_weapon_id(&"akm")
+	main.doll.weapon_rig.mag = 61
+	main.hud.update_weapon(main.doll.weapon_rig)
+	_check(main.hud.get_ammo_exact_rounds()
+		and main.hud.ammo_container.exact_rounds
+		and main.hud.ammo_container.get_visual_slot_count() == 75
+		and main.hud.ammo_container.get_filled_slot_count() == 61,
+		"enabling exact-rounds syncs live to RunHUD2D and renders exact 61/75 drum rounds")
+	p.data["weapon_mods_2d"]["akm"] = {}
+	p.set_ammo_exact_rounds(false)
+	main._on_settings_applied()
+
 	# 触发 shot_fired & hit_resolved
 	for e in main.enemies:
 		if is_instance_valid(e):

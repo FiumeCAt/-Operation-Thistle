@@ -477,6 +477,13 @@ func set_typewriter_speed(speed: float) -> bool:
 	PixelUI.set_typewriter_config(typewriter_enabled(), typewriter_speed())
 	return save_data()
 
+func ammo_exact_rounds() -> bool:
+	return SETTINGS_STORE.ammo_exact_rounds(data)
+
+func set_ammo_exact_rounds(enabled: bool) -> bool:
+	SETTINGS_STORE.set_ammo_exact_rounds(data, enabled)
+	return save_data()
+
 func pickup_merge_window() -> float:
 	return SETTINGS_STORE.pickup_merge_window(data)
 

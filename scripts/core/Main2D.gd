@@ -442,6 +442,10 @@ func _apply_talents() -> void:
 			hud.set_ammo_display_mode(String(progress.ammo_display()))
 		elif progress.data is Dictionary:
 			hud.set_ammo_display_mode(String(progress.data.get("ammo_display", "both")))
+		if progress.has_method("ammo_exact_rounds"):
+			hud.set_ammo_exact_rounds(bool(progress.ammo_exact_rounds()))
+		elif progress.data is Dictionary:
+			hud.set_ammo_exact_rounds(bool(progress.data.get("ammo_exact_rounds", false)))
 	_view_zoom_visual = view_zoom_pct
 	# 护甲：基础存档值 + 护甲组件 + 护甲强化天赋，进入行动时补满。
 	var armor_mods := ModDB.modifiers(progress.armor_mods_2d(), true)
@@ -482,6 +486,10 @@ func _on_settings_applied() -> void:
 			hud.set_ammo_display_mode(String(progress.ammo_display()))
 		elif progress.data is Dictionary:
 			hud.set_ammo_display_mode(String(progress.data.get("ammo_display", "both")))
+		if progress.has_method("ammo_exact_rounds"):
+			hud.set_ammo_exact_rounds(bool(progress.ammo_exact_rounds()))
+		elif progress.data is Dictionary:
+			hud.set_ammo_exact_rounds(bool(progress.data.get("ammo_exact_rounds", false)))
 
 
 ## 立即套用弹道线条开关：只隐藏枪口到弹丸的长线，弹丸实体与命中不受影响。

@@ -39,6 +39,7 @@ var _typewriter_speed_slider: HSlider
 var _typewriter_speed_value: Label
 var _typewriter_replay_button: Button
 var _typewriter_preview: RichTextLabel
+var _ammo_exact_buttons: Dictionary = {}
 var _pickup_merge_slider: HSlider
 var _pickup_merge_value: Label
 var _shake_scale_slider: HSlider
@@ -357,6 +358,11 @@ func _build_right_column() -> Control:
 	_typewriter_preview = PixelUI.rich_label(tw_box,
 		PixelUI.bb(TYPEWRITER_SAMPLE, PixelUI.CYAN), 16, PixelUI.TEXT, 1)
 	_typewriter_preview.custom_minimum_size.y = 24
+
+	_add_toggle_row(rows, "真实逐发弹匣", _ammo_exact_buttons, _set_ammo_exact_rounds)
+	var exact_hint := PixelUI.label(
+		rows, "默认关闭 · 开启后按双排交错 / 螺旋弹鼓逐颗显示全部实弹", 14, PixelUI.DIM)
+	exact_hint.clip_text = true
 
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -822,6 +828,7 @@ func _load_values() -> void:
 	var mm_zoom := 1.0
 	var tw_enabled := false
 	var tw_speed := 48.0
+	var ammo_exact := false
 	var pickup_merge := 3.0
 	if p != null:
 		master = float(p.data.get("volume", 0.8))
@@ -844,6 +851,7 @@ func _load_values() -> void:
 		mm_zoom = float(p.minimap_zoom()) if p.has_method("minimap_zoom") else 1.0
 		tw_enabled = bool(p.typewriter_enabled()) if p.has_method("typewriter_enabled") else false
 		tw_speed = float(p.typewriter_speed()) if p.has_method("typewriter_speed") else 48.0
+		ammo_exact = bool(p.ammo_exact_rounds()) if p.has_method("ammo_exact_rounds") else false
 		pickup_merge = float(p.pickup_merge_window()) if p.has_method("pickup_merge_window") else 3.0
 	_set_slider("master", master * 100.0)
 	_set_slider("sfx", sfx * 100.0)
@@ -877,6 +885,7 @@ func _load_values() -> void:
 	_refresh_hit_fx_buttons(hit_fx_level)
 	_refresh_minimap_shape_buttons(mm_shape)
 	_refresh_typewriter_buttons(tw_enabled)
+	_refresh_ammo_exact_buttons(ammo_exact)
 	_sync_minimap_preview()
 	_replay_typewriter_preview()
 
@@ -929,6 +938,13 @@ func _set_ammo_display(mode: String) -> void:
 	if p != null:
 		p.set_ammo_display(mode)
 	_refresh_ammo_buttons(mode)
+
+
+func _set_ammo_exact_rounds(enabled: bool) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_ammo_exact_rounds"):
+		p.set_ammo_exact_rounds(enabled)
+	_refresh_ammo_exact_buttons(enabled)
 
 
 func _set_screen_shake(enabled: bool) -> void:
@@ -997,6 +1013,10 @@ func _refresh_minimap_shape_buttons(shape: String) -> void:
 
 func _refresh_typewriter_buttons(enabled: bool) -> void:
 	_refresh_toggle_buttons(_typewriter_buttons, enabled)
+
+
+func _refresh_ammo_exact_buttons(enabled: bool) -> void:
+	_refresh_toggle_buttons(_ammo_exact_buttons, enabled)
 
 
 func _refresh_shake_buttons(enabled: bool) -> void:

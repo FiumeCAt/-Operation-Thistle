@@ -64,6 +64,7 @@ var _progress: ProgressBar
 var _ammo_well: PanelContainer
 var ammo_container: Control
 var ammo_display_mode := "both"
+var ammo_exact_rounds := false
 var fire_selector: FireSelectorWidget2D
 var _result_panel: PanelContainer
 var _debrief_empty: Label
@@ -101,6 +102,20 @@ func _ready() -> void:
 			set_ammo_display_mode(String(progress.ammo_display()))
 		elif progress.data is Dictionary:
 			set_ammo_display_mode(String(progress.data.get("ammo_display", "both")))
+		if progress.has_method("ammo_exact_rounds"):
+			set_ammo_exact_rounds(bool(progress.ammo_exact_rounds()))
+		elif progress.data is Dictionary:
+			set_ammo_exact_rounds(bool(progress.data.get("ammo_exact_rounds", false)))
+
+
+func set_ammo_exact_rounds(enabled: bool) -> void:
+	ammo_exact_rounds = enabled
+	if ammo_container != null and ammo_container.has_method("set_exact_rounds"):
+		ammo_container.set_exact_rounds(ammo_exact_rounds)
+
+
+func get_ammo_exact_rounds() -> bool:
+	return ammo_exact_rounds
 
 
 func set_ammo_display_mode(mode: String) -> void:
@@ -754,7 +769,7 @@ func update_weapon(rig) -> void:
 		_count.text = "--"
 		_state.text = ""
 		if ammo_container != null:
-			ammo_container.configure(0, 0, &"stick_mag", 1.0, false)
+			ammo_container.configure(0, 0, &"stick_mag", 1.0, false, ammo_exact_rounds)
 		_progress.value = 0.0
 		if fire_selector != null:
 			fire_selector.visible = false
@@ -784,7 +799,7 @@ func update_weapon(rig) -> void:
 	if ammo_container != null:
 		var style: StringName = data.mag_style if ("mag_style" in data) else WeaponDB.mag_style(data.id)
 		var scale_ratio: float = float(data.mag_scale) if ("mag_scale" in data) else 1.0
-		ammo_container.configure(rig.mag, data.mag_capacity, style, scale_ratio, reloading)
+		ammo_container.configure(rig.mag, data.mag_capacity, style, scale_ratio, reloading, ammo_exact_rounds)
 	var switching: bool = rig.switch_t > 0.0
 	var state_color := PixelUI.OK
 	if rig.is_drawing():

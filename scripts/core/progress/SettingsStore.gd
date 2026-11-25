@@ -206,6 +206,14 @@ static func set_typewriter_speed(data: Dictionary, speed: float) -> void:
 	data["typewriter_speed"] = clampf(roundf(speed), 15.0, 140.0)
 
 
+static func ammo_exact_rounds(data: Dictionary) -> bool:
+	return bool(data.get("ammo_exact_rounds", false))
+
+
+static func set_ammo_exact_rounds(data: Dictionary, enabled: bool) -> void:
+	data["ammo_exact_rounds"] = enabled
+
+
 static func pickup_merge_window(data: Dictionary) -> float:
 	return clampf(
 		roundf(float(data.get("pickup_merge_window", SAVE_STORE.DEFAULT_PICKUP_MERGE_WINDOW)) * 2.0) / 2.0,

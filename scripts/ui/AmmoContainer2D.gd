@@ -4,6 +4,8 @@ class_name AmmoContainer2D
 ## 透明/深黑底 + 清晰亮白外轮廓 + 内部黄铜金色子弹条（低弹量橙红预警，空发暗灰），
 ## 与容器边缘保持明确内边距，支持 6 种实装供弹形态 + 预留弹箱样式：
 ## curved_mag / stick_mag / tube / cylinder / top_mag / drum / box。
+## 默认模式：容量 <=12 发 1:1 显示，>12 发抽象为 8~16 格清晰分段；
+## 实验性「真实逐发弹匣」开启时（exact_rounds=true）：按双排交错/螺旋弹鼓/双层顶置/多列弹链逐颗绘制全部实弹。
 
 const OUTLINE_NORMAL := Color(0.93, 0.95, 0.98, 0.96)
 const OUTLINE_EMPTY := Color(0.96, 0.46, 0.42, 0.96)
@@ -11,6 +13,7 @@ const FILL_DARK := Color(0.016, 0.020, 0.028, 0.84)
 const BRASS_TOP := Color(1.00, 0.80, 0.28, 0.98)
 const BRASS_BOT := Color(0.88, 0.66, 0.24, 0.98)
 const BRASS_SPEC := Color(1.00, 0.92, 0.62, 0.90)
+const COPPER_TIP := Color(0.92, 0.54, 0.24, 0.98)
 const LOW_TOP := Color(1.00, 0.42, 0.22, 0.98)
 const LOW_BOT := Color(0.88, 0.24, 0.16, 0.98)
 const LOW_SPEC := Color(1.00, 0.72, 0.52, 0.90)
@@ -26,6 +29,7 @@ var cap := 0
 var mag_style: StringName = &"stick_mag"
 var mag_scale := 1.0
 var reloading := false
+var exact_rounds := false
 var _pulse_t := 0.0
 
 
@@ -35,24 +39,32 @@ func _init() -> void:
 
 
 func configure(current_mag: int, capacity: int, style: StringName,
-		scale_ratio := 1.0, is_reloading := false) -> void:
+		scale_ratio := 1.0, is_reloading := false, use_exact := false) -> void:
 	var clean_cap := maxi(capacity, 0)
 	var clean_mag := clampi(current_mag, 0, clean_cap)
 	var clean_style := style if WeaponDB.MAG_STYLES.has(style) else &"stick_mag"
 	var clean_scale := clampf(scale_ratio, 0.75, 1.45)
 	var changed := (mag != clean_mag) or (cap != clean_cap) \
 		or (mag_style != clean_style) or (absf(mag_scale - clean_scale) > 0.005) \
-		or (reloading != is_reloading)
+		or (reloading != is_reloading) or (exact_rounds != use_exact)
 	mag = clean_mag
 	cap = clean_cap
 	mag_style = clean_style
 	mag_scale = clean_scale
 	reloading = is_reloading
+	exact_rounds = use_exact
 	set_process(reloading)
 	if not reloading:
 		_pulse_t = 0.0
 	if changed:
 		queue_redraw()
+
+
+func set_exact_rounds(enabled: bool) -> void:
+	if exact_rounds == enabled:
+		return
+	exact_rounds = enabled
+	queue_redraw()
 
 
 func _process(delta: float) -> void:
@@ -63,10 +75,15 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
-## 容量 <= 12 发逐发 1:1 显示；容量 > 12 发抽象为 8~16 格清晰横条/圆弧段，避免挤成色块。
-static func visual_slots(capacity: int, style: StringName) -> int:
+## 默认模式：容量 <= 12 发逐发 1:1 显示；容量 > 12 发抽象为 8~16 格清晰横条/圆弧段；
+## 实验性真实模式（exact=true）：返回真实总发数，每颗子弹独立绘制。
+static func visual_slots(capacity: int, style: StringName, exact := false) -> int:
 	if capacity <= 0:
 		return 0
+	if exact:
+		if style == &"cylinder":
+			return clampi(capacity, 5, 12)
+		return capacity
 	if style == &"cylinder":
 		return clampi(capacity, 5, 8)
 	if capacity <= 12:
@@ -90,23 +107,23 @@ static func visual_slots(capacity: int, style: StringName) -> int:
 	return 16
 
 
-## 按剩余弹量计算点亮格数：<=12 发精确 1:1；>12 发向上取整确保剩 1 发仍点亮 1 格。
-static func filled_slots(current_mag: int, capacity: int, slots: int) -> int:
+## 按剩余弹量计算点亮格数：真实模式或 <=12 发精确 1:1；抽象模式向上取整确保剩 1 发仍点亮 1 格。
+static func filled_slots(current_mag: int, capacity: int, slots: int, exact := false) -> int:
 	if capacity <= 0 or slots <= 0 or current_mag <= 0:
 		return 0
 	if current_mag >= capacity:
 		return slots
-	if capacity <= 12 and slots == capacity:
+	if exact or (capacity <= 12 and slots == capacity):
 		return clampi(current_mag, 0, slots)
 	return clampi(int(ceil(float(current_mag) / float(capacity) * float(slots))), 1, slots)
 
 
 func get_visual_slot_count() -> int:
-	return visual_slots(cap, mag_style)
+	return visual_slots(cap, mag_style, exact_rounds)
 
 
 func get_filled_slot_count() -> int:
-	return filled_slots(mag, cap, get_visual_slot_count())
+	return filled_slots(mag, cap, get_visual_slot_count(), exact_rounds)
 
 
 func is_low_ammo() -> bool:
@@ -135,7 +152,7 @@ func _draw() -> void:
 	if cap <= 0 or size.x < 16.0 or size.y < 16.0:
 		return
 	var slots := get_visual_slot_count()
-	var filled := filled_slots(mag, cap, slots)
+	var filled := filled_slots(mag, cap, slots, exact_rounds)
 	var low := is_low_ammo()
 	var outline := _outline_color()
 	match mag_style:
@@ -158,17 +175,17 @@ func _draw() -> void:
 
 
 ## 1) 弯弧弹匣（AKM / L85A2 / VSS / Saiga-12K）：
-## 上平下弯向右下展开、底部斜切，内部横向黄铜子弹条与白线轮廓保持清晰内边距。
+## 抽象模式绘制清晰黄铜横条；真实逐发模式在 >14 发时采用真实双排交错（或 3 排）逐颗排布。
 func _draw_curved_mag(slots: int, filled: int, low: bool, outline: Color) -> void:
 	var w := size.x
 	var h := size.y
-	var base_ratio := 0.78 if cap <= 12 else 0.87
+	var base_ratio := 0.78 if cap <= 12 else 0.88
 	var h_ratio := clampf(base_ratio * mag_scale, 0.72, 0.94)
 	var body_h := (h - 8.0) * h_ratio
 	var y_top := (h - body_h) * 0.5
 	var y_bot := y_top + body_h
-	var mag_w := clampf(w * 0.50, 24.0, 38.0)
-	var bend := clampf(w * 0.30, 14.0, 25.0) * clampf(mag_scale, 0.92, 1.20)
+	var mag_w := clampf(w * (0.52 if (exact_rounds and slots > 14) else 0.50), 24.0, 40.0)
+	var bend := clampf(w * 0.28, 13.0, 24.0) * clampf(mag_scale, 0.92, 1.20)
 	var cx_top := (w - bend) * 0.48
 
 	var steps := 14
@@ -188,26 +205,52 @@ func _draw_curved_mag(slots: int, filled: int, low: bool, outline: Color) -> voi
 		poly.append(right_pts[i])
 	draw_colored_polygon(poly, FILL_DARK)
 
-	# 内部子弹条：自底向上计数（剩余子弹稳落底部，射击从顶部递减），与左右白壁留 5px 明确间距。
-	var pad_x := 5.2
-	var half_bar_w := maxf(mag_w * 0.5 - pad_x, 4.0)
-	var t_bot := 0.89
-	var t_top := 0.11
+	var t_bot := 0.90
+	var t_top := 0.10
 	var usable_len := body_h * (t_bot - t_top)
-	var pitch := usable_len / float(maxi(slots, 1))
-	var bar_h := clampf(pitch * 0.54, 2.2, 6.2)
 
-	for i in range(slots):
-		var frac := 0.5 if slots <= 1 else float(i) / float(slots - 1)
-		var t := lerpf(t_bot, t_top, frac)
-		var c := _curved_spine(cx_top, y_top, y_bot, bend, t)
-		var n := _curved_normal(cx_top, y_top, y_bot, bend, t)
-		var tang := Vector2(-n.y, n.x)
-		var loaded := i < filled
-		var col := _bullet_color(frac, low) if loaded else EMPTY_SLOT
-		_draw_oriented_bar(c, n, tang, half_bar_w, bar_h * 0.5, col, loaded, low)
+	if exact_rounds and slots > 14:
+		var cols := 2 if slots <= 44 else 3
+		var rows := int(ceil(float(slots) / float(cols)))
+		var pad_x := 4.4
+		var inner_w := maxf(mag_w - pad_x * 2.0, 12.0)
+		var col_gap := 2.0
+		var cell_w := maxf((inner_w - col_gap * float(cols - 1)) / float(cols), 3.0)
+		var pitch := usable_len / float(maxi(rows, 1))
+		var bar_h := clampf(pitch * 0.56, 1.6, 3.8)
+		for i in range(slots):
+			var row := int(floor(float(i) / float(cols)))
+			var col := i % cols
+			var stagger := (float(col) / float(cols)) * 0.55
+			var row_pos := (float(row) + stagger) / maxf(float(rows) - 0.15, 1.0)
+			var frac := clampf(row_pos, 0.0, 1.0)
+			var t := lerpf(t_bot, t_top, frac)
+			var c := _curved_spine(cx_top, y_top, y_bot, bend, t)
+			var n := _curved_normal(cx_top, y_top, y_bot, bend, t)
+			var tang := Vector2(-n.y, n.x)
+			var lane_x := -inner_w * 0.5 + cell_w * 0.5 + float(col) * (cell_w + col_gap)
+			var center := c + n * lane_x
+			var loaded := i < filled
+			var col_fill := _bullet_color(frac, low) if loaded else EMPTY_SLOT
+			_draw_oriented_cartridge(center, n, tang, cell_w * 0.5, bar_h * 0.5, col_fill, loaded, low)
+	else:
+		var pad_x := 5.0
+		var half_bar_w := maxf(mag_w * 0.5 - pad_x, 4.0)
+		var pitch := usable_len / float(maxi(slots, 1))
+		var bar_h := clampf(pitch * 0.54, 2.0, 6.2)
+		for i in range(slots):
+			var frac := 0.5 if slots <= 1 else float(i) / float(slots - 1)
+			var t := lerpf(t_bot, t_top, frac)
+			var c := _curved_spine(cx_top, y_top, y_bot, bend, t)
+			var n := _curved_normal(cx_top, y_top, y_bot, bend, t)
+			var tang := Vector2(-n.y, n.x)
+			var loaded := i < filled
+			var col_fill := _bullet_color(frac, low) if loaded else EMPTY_SLOT
+			if exact_rounds:
+				_draw_oriented_cartridge(c, n, tang, half_bar_w, bar_h * 0.5, col_fill, loaded, low)
+			else:
+				_draw_oriented_bar(c, n, tang, half_bar_w, bar_h * 0.5, col_fill, loaded, low)
 
-	# 清晰白色外轮廓 + 底部弹匣底板强调线。
 	_draw_closed_outline(poly, outline, OUTLINE_WIDTH)
 	var b_l := left_pts[steps]
 	var b_r := right_pts[steps]
@@ -228,16 +271,17 @@ static func _curved_normal(cx_top: float, y_top: float, y_bot: float, bend: floa
 
 
 ## 2) 直/微斜条匣（手枪 / MP7 / TMP / UMP45 / FAL / SR-25 / AWM）：
-## 加长弹匣按 mag_scale 明显拉长，带底座托板与顶部供弹唇倒角。
+## 加长弹匣按 mag_scale 明显拉长；真实逐发模式按单排(<=14) / 双排交错(15~44) / 三排(>44)逐颗排布。
 func _draw_stick_mag(slots: int, filled: int, low: bool, outline: Color) -> void:
 	var w := size.x
 	var h := size.y
-	var base_ratio := 0.66 if cap <= 7 else (0.76 if cap <= 18 else 0.83)
+	var base_ratio := 0.66 if cap <= 7 else (0.76 if cap <= 18 else 0.84)
 	var h_ratio := clampf(base_ratio * mag_scale, 0.62, 0.94)
 	var body_h := (h - 10.0) * h_ratio
 	var y_top := (h - body_h) * 0.5
 	var y_bot := y_top + body_h
-	var mag_w := clampf(w * 0.45, 22.0, 34.0)
+	var width_frac := 0.54 if (exact_rounds and slots > 44) else (0.48 if (exact_rounds and slots > 14) else 0.45)
+	var mag_w := clampf(w * width_frac, 22.0, 38.0)
 	var slant := 4.5 if cap > 10 else 2.0
 	var cx_top := (w - slant) * 0.5
 
@@ -251,28 +295,52 @@ func _draw_stick_mag(slots: int, filled: int, low: bool, outline: Color) -> void
 	])
 	draw_colored_polygon(poly, FILL_DARK)
 
-	var pad_x := 4.8
-	var half_bar_w := maxf(mag_w * 0.5 - pad_x, 4.0)
-	var pad_y := 6.0
+	var pad_y := 5.5
 	var usable_h := maxf(body_h - pad_y * 2.0, 12.0)
-	var pitch := usable_h / float(maxi(slots, 1))
-	var bar_h := clampf(pitch * 0.54, 2.2, 6.8)
 
-	for i in range(slots):
-		var frac := 0.5 if slots <= 1 else float(i) / float(slots - 1)
-		var y := lerpf(y_bot - pad_y - bar_h * 0.5, y_top + pad_y + bar_h * 0.5, frac)
-		var t := (y - y_top) / maxf(body_h, 1.0)
-		var cx := cx_top + slant * t
-		var loaded := i < filled
-		var col := _bullet_color(frac, low) if loaded else EMPTY_SLOT
-		var rect := Rect2(Vector2(cx - half_bar_w, y - bar_h * 0.5), Vector2(half_bar_w * 2.0, bar_h))
-		draw_rect(rect, col, true)
-		if loaded and bar_h >= 3.0:
-			draw_rect(Rect2(rect.position, Vector2(rect.size.x, 1.0)),
-				LOW_SPEC if low else BRASS_SPEC, true)
+	if exact_rounds and slots > 14:
+		var cols := 2 if slots <= 44 else 3
+		var rows := int(ceil(float(slots) / float(cols)))
+		var pad_x := 4.2
+		var inner_w := maxf(mag_w - pad_x * 2.0, 12.0)
+		var col_gap := 2.0 if cols == 2 else 1.5
+		var cell_w := maxf((inner_w - col_gap * float(cols - 1)) / float(cols), 3.0)
+		var pitch := usable_h / float(maxi(rows, 1))
+		var bar_h := clampf(pitch * 0.58, 1.5, 4.0)
+		for i in range(slots):
+			var row := int(floor(float(i) / float(cols)))
+			var col := i % cols
+			var stagger := (float(col) / float(cols)) * 0.55
+			var frac := clampf((float(row) + stagger) / maxf(float(rows) - 0.15, 1.0), 0.0, 1.0)
+			var y := lerpf(y_bot - pad_y - bar_h * 0.5, y_top + pad_y + bar_h * 0.5, frac)
+			var t := (y - y_top) / maxf(body_h, 1.0)
+			var cx := cx_top + slant * t
+			var bx := cx - inner_w * 0.5 + float(col) * (cell_w + col_gap)
+			var loaded := i < filled
+			var col_fill := _bullet_color(frac, low) if loaded else EMPTY_SLOT
+			_draw_rect_cartridge(Rect2(bx, y - bar_h * 0.5, cell_w, bar_h), col_fill, loaded, low)
+	else:
+		var pad_x := 4.8
+		var half_bar_w := maxf(mag_w * 0.5 - pad_x, 4.0)
+		var pitch := usable_h / float(maxi(slots, 1))
+		var bar_h := clampf(pitch * 0.54, 2.0, 6.8)
+		for i in range(slots):
+			var frac := 0.5 if slots <= 1 else float(i) / float(slots - 1)
+			var y := lerpf(y_bot - pad_y - bar_h * 0.5, y_top + pad_y + bar_h * 0.5, frac)
+			var t := (y - y_top) / maxf(body_h, 1.0)
+			var cx := cx_top + slant * t
+			var loaded := i < filled
+			var col_fill := _bullet_color(frac, low) if loaded else EMPTY_SLOT
+			var rect := Rect2(Vector2(cx - half_bar_w, y - bar_h * 0.5), Vector2(half_bar_w * 2.0, bar_h))
+			if exact_rounds:
+				_draw_rect_cartridge(rect, col_fill, loaded, low)
+			else:
+				draw_rect(rect, col_fill, true)
+				if loaded and bar_h >= 3.0:
+					draw_rect(Rect2(rect.position, Vector2(rect.size.x, 1.0)),
+						LOW_SPEC if low else BRASS_SPEC, true)
 
 	_draw_closed_outline(poly, outline, OUTLINE_WIDTH)
-	# 底部加宽弹匣底板托脚。
 	draw_line(bl + Vector2(-3.0, 1.5), br + Vector2(3.0, 1.5), outline, OUTLINE_WIDTH + 1.0, true)
 
 
@@ -303,7 +371,7 @@ func _draw_tube(slots: int, filled: int, low: bool, outline: Color) -> void:
 	var inner_bot := y_bot - 5.5
 	var usable_h := maxf(inner_bot - inner_top, 14.0)
 	var pitch := usable_h / float(maxi(slots, 1))
-	var shell_h := clampf(pitch * 0.62, 3.0, 8.2)
+	var shell_h := clampf(pitch * 0.62, 2.2, 8.2)
 	var shell_w := maxf(tube_w - 9.0, 10.0)
 	var rim_w := maxf(shell_w * 0.28, 3.5)
 
@@ -325,7 +393,6 @@ func _draw_tube(slots: int, filled: int, low: bool, outline: Color) -> void:
 			draw_rect(Rect2(sx, sy, shell_w, shell_h), EMPTY_SLOT, true)
 
 	_draw_closed_outline(poly, outline, OUTLINE_WIDTH)
-	# 管仓顶部堵头横缝 + 中上部管箍凸耳 + 底部进弹口凸缘。
 	draw_line(Vector2(cx - r + 1.0, cap_cy), Vector2(cx + r - 1.0, cap_cy),
 		Color(outline, 0.45), 1.2, true)
 	var clamp_y := lerpf(y_top, y_bot, 0.34)
@@ -336,26 +403,24 @@ func _draw_tube(slots: int, filled: int, low: bool, outline: Color) -> void:
 
 
 ## 4) 左轮圆形弹巢（Python 6 发）：
-## 带外圈减重凹槽轮廓、中心转轴销、以及 6 个环形弹膛（实弹黄铜底缘+底火点，空膛暗孔）。
+## 带外圈减重凹槽轮廓、中心转轴销、以及逐膛环形弹巢（实弹黄铜底缘+底火点，空膛暗孔）。
 func _draw_cylinder(slots: int, filled: int, low: bool, outline: Color) -> void:
 	var center := size * 0.5
 	var outer_r := minf(size.x, size.y) * 0.43
 	var n := maxi(slots, 5)
 	draw_circle(center, outer_r, FILL_DARK)
 	draw_arc(center, outer_r, 0.0, TAU, 36, outline, OUTLINE_WIDTH, true)
-	# 外圈 6 处轻微凹槽刻度，强化左轮转轮辨识度。
 	for i in range(n):
 		var mid_a := -PI * 0.5 + (float(i) + 0.5) * (TAU / float(n))
 		var p_in := center + Vector2.from_angle(mid_a) * (outer_r - 2.2)
 		var p_out := center + Vector2.from_angle(mid_a) * (outer_r + 0.5)
 		draw_line(p_in, p_out, Color(outline, 0.72), 2.0, true)
 
-	# 中心转轴销。
 	draw_circle(center, outer_r * 0.16, Color(0.10, 0.12, 0.15, 0.95))
 	draw_arc(center, outer_r * 0.16, 0.0, TAU, 16, Color(outline, 0.80), 1.4, true)
 
 	var ring_r := outer_r * 0.57
-	var ch_r := outer_r * 0.21
+	var ch_r := minf(outer_r * 0.21, (TAU * ring_r / float(n)) * 0.36)
 	for i in range(n):
 		var a := -PI * 0.5 + float(i) * (TAU / float(n))
 		var pos := center + Vector2.from_angle(a) * ring_r
@@ -372,12 +437,12 @@ func _draw_cylinder(slots: int, filled: int, low: bool, outline: Color) -> void:
 
 
 ## 5) P90 顶置平放弹匣：
-## 水平扁长透明匣身 + 左端旋转供弹斜坡 + 内部横向竖排 5.7×28 弹列。
+## 抽象模式绘制 10 根清晰竖条；真实逐发模式还原真枪双层交错横置弹列（25×2 = 50 颗实弹）。
 func _draw_top_mag(slots: int, filled: int, low: bool, outline: Color) -> void:
 	var w := size.x
 	var h := size.y
 	var body_w := w - 6.0
-	var body_h := clampf(h * 0.46, 36.0, 48.0)
+	var body_h := clampf(h * (0.50 if exact_rounds else 0.46), 36.0, 52.0)
 	var x0 := (w - body_w) * 0.5
 	var y0 := (h - body_h) * 0.5
 	var x1 := x0 + body_w
@@ -396,34 +461,54 @@ func _draw_top_mag(slots: int, filled: int, low: bool, outline: Color) -> void:
 	])
 	draw_colored_polygon(poly, FILL_DARK)
 
-	# 左侧供弹旋盘示意线。
 	var ramp_x := x0 + nose + 2.0
 	draw_line(Vector2(ramp_x, y0 + 3.0), Vector2(ramp_x, y1 - 3.0), Color(outline, 0.36), 1.2, true)
 	draw_arc(Vector2(x0 + nose * 0.55, (y0 + y1) * 0.5), body_h * 0.16, 0.0, TAU, 12,
 		Color(outline, 0.50), 1.1, true)
 
-	# 内部竖条子弹：从左（供弹端）向右排列，射击时从右尾端递减，还原透明顶置弹匣观感。
-	var inner_l := ramp_x + 4.0
-	var inner_r := x1 - 5.0
-	var pad_y := 5.5
-	var bar_h := maxf(body_h - pad_y * 2.0, 14.0)
+	var inner_l := ramp_x + 3.5
+	var inner_r := x1 - 4.5
+	var pad_y := 5.0
 	var usable_w := maxf(inner_r - inner_l, 16.0)
-	var pitch := usable_w / float(maxi(slots, 1))
-	var bar_w := clampf(pitch * 0.56, 1.8, 4.2)
 
-	for i in range(slots):
-		var frac := 0.5 if slots <= 1 else float(i) / float(slots - 1)
-		var x := lerpf(inner_l + bar_w * 0.5, inner_r - bar_w * 0.5, frac)
-		var loaded := i < filled
-		var col := _bullet_color(1.0 - frac * 0.35, low) if loaded else EMPTY_SLOT
-		var rect := Rect2(Vector2(x - bar_w * 0.5, y0 + pad_y), Vector2(bar_w, bar_h))
-		draw_rect(rect, col, true)
-		if loaded:
-			draw_rect(Rect2(rect.position, Vector2(rect.size.x, 2.0)),
-				LOW_SPEC if low else BRASS_SPEC, true)
+	if exact_rounds and slots > 16:
+		var rows := 2 if slots <= 56 else 3
+		var cols := int(ceil(float(slots) / float(rows)))
+		var row_gap := 2.4
+		var inner_h := maxf(body_h - pad_y * 2.0, 16.0)
+		var bar_h := maxf((inner_h - row_gap * float(rows - 1)) / float(rows), 5.0)
+		var pitch := usable_w / float(maxi(cols, 1))
+		var bar_w := clampf(pitch * 0.62, 1.1, 2.8)
+		for i in range(slots):
+			var col := int(floor(float(i) / float(rows)))
+			var row := i % rows
+			var stagger_x := (float(row) / float(rows)) * pitch * 0.45
+			var x := inner_l + bar_w * 0.5 + float(col) * pitch + stagger_x
+			x = minf(x, inner_r - bar_w * 0.5)
+			var y := y0 + pad_y + float(row) * (bar_h + row_gap)
+			var frac := 1.0 - float(col) / float(maxi(cols - 1, 1)) * 0.35
+			var loaded := i < filled
+			var col_fill := _bullet_color(frac, low) if loaded else EMPTY_SLOT
+			draw_rect(Rect2(x - bar_w * 0.5, y, bar_w, bar_h), col_fill, true)
+			if loaded:
+				draw_rect(Rect2(x - bar_w * 0.5, y, bar_w, minf(2.0, bar_h * 0.25)),
+					LOW_SPEC if low else COPPER_TIP, true)
+	else:
+		var bar_h := maxf(body_h - pad_y * 2.0, 14.0)
+		var pitch := usable_w / float(maxi(slots, 1))
+		var bar_w := clampf(pitch * 0.56, 1.8, 4.2)
+		for i in range(slots):
+			var frac := 0.5 if slots <= 1 else float(i) / float(slots - 1)
+			var x := lerpf(inner_l + bar_w * 0.5, inner_r - bar_w * 0.5, frac)
+			var loaded := i < filled
+			var col_fill := _bullet_color(1.0 - frac * 0.35, low) if loaded else EMPTY_SLOT
+			var rect := Rect2(Vector2(x - bar_w * 0.5, y0 + pad_y), Vector2(bar_w, bar_h))
+			draw_rect(rect, col_fill, true)
+			if loaded:
+				draw_rect(Rect2(rect.position, Vector2(rect.size.x, 2.0)),
+					LOW_SPEC if low else BRASS_SPEC, true)
 
 	_draw_closed_outline(poly, outline, OUTLINE_WIDTH)
-	# 顶部与底部透明导轨细线。
 	draw_line(Vector2(inner_l - 1.0, y0 + 3.0), Vector2(inner_r + 1.0, y0 + 3.0),
 		Color(outline, 0.25), 1.0)
 	draw_line(Vector2(inner_l - 1.0, y1 - 3.0), Vector2(inner_r + 1.0, y1 - 3.0),
@@ -431,14 +516,15 @@ func _draw_top_mag(slots: int, filled: int, low: bool, outline: Color) -> void:
 
 
 ## 6) 圆形弹鼓 + 顶部供弹颈（AKM 75 发 / G17·G18 50 发 / Saiga-12K 20 发）：
-## 连续一体白色轮廓，中心发条轴心 + 外环 12~16 格清晰放射圆弧弹段。
+## 抽象模式绘制 12~16 格放射圆弧弹段；
+## 真实逐发模式按等面积阿基米德螺旋弹道逐颗绘制全部子弹（20/50/75 发清晰可辨，随开火逐颗退空）。
 func _draw_drum(slots: int, filled: int, low: bool, outline: Color) -> void:
 	var w := size.x
 	var h := size.y
 	var cx := w * 0.5
-	var outer_r := minf(w * 0.44, h * 0.34)
-	var neck_w := clampf(outer_r * 0.62, 14.0, 22.0)
-	var neck_h := clampf(h * 0.22, 14.0, 22.0)
+	var outer_r := minf(w * 0.45, h * 0.35)
+	var neck_w := clampf(outer_r * 0.60, 14.0, 22.0)
+	var neck_h := clampf(h * 0.21, 14.0, 22.0)
 	var total_h := neck_h + outer_r * 2.0
 	var y_top := (h - total_h) * 0.5
 	var center := Vector2(cx, y_top + neck_h + outer_r)
@@ -463,54 +549,97 @@ func _draw_drum(slots: int, filled: int, low: bool, outline: Color) -> void:
 	poly.append(join_l)
 	draw_colored_polygon(poly, FILL_DARK)
 
-	# 供弹颈内 2 发顶弹示意条（空仓时变暗）。
 	var neck_pad := 4.0
 	var nb_w := maxf(neck_w - neck_pad * 2.0, 5.0)
 	for k in range(2):
 		var ny := y_top + 4.5 + float(k) * 5.2
-		var n_loaded := filled > 0
-		draw_rect(Rect2(cx - nb_w * 0.5, ny, nb_w, 2.8),
+		var n_loaded := filled > k
+		draw_rect(Rect2(cx - nb_w * 0.5, ny, nb_w, 2.6),
 			(LOW_TOP if low else BRASS_TOP) if n_loaded else EMPTY_SLOT, true)
 
-	# 弹鼓环形弹道分段（与内外圈壁各保留 4.2px 清晰间距）。
-	var hub_r := outer_r * 0.30
-	var r_in := hub_r + 4.2
-	var r_out := outer_r - 4.4
-	var n := maxi(slots, 8)
-	var step_ang := TAU / float(n)
-	var gap_ang := clampf(step_ang * 0.24, 0.06, 0.14)
-	for i in range(n):
-		var a0 := -PI * 0.5 + float(i) * step_ang + gap_ang * 0.5
-		var a1 := -PI * 0.5 + float(i + 1) * step_ang - gap_ang * 0.5
-		var frac := 1.0 - float(i) / float(maxi(n - 1, 1))
-		var loaded := i < filled
-		var col := _bullet_color(frac, low) if loaded else EMPTY_SLOT
-		var seg := PackedVector2Array([
-			center + Vector2.from_angle(a0) * r_in,
-			center + Vector2.from_angle(a0) * r_out,
-			center + Vector2.from_angle(a1) * r_out,
-			center + Vector2.from_angle(a1) * r_in,
-		])
-		draw_colored_polygon(seg, col)
-
-	# 中心鼓轴与发条十字刻线。
-	draw_circle(center, hub_r, Color(0.06, 0.07, 0.09, 0.96))
-	draw_arc(center, hub_r, 0.0, TAU, 20, Color(outline, 0.82), 1.5, true)
-	draw_line(center + Vector2(-hub_r * 0.45, 0), center + Vector2(hub_r * 0.45, 0),
-		Color(outline, 0.45), 1.2)
-	draw_line(center + Vector2(0, -hub_r * 0.45), center + Vector2(0, hub_r * 0.45),
-		Color(outline, 0.45), 1.2)
+	if exact_rounds:
+		var hub_r := outer_r * 0.16
+		var r_max := outer_r - 4.0
+		var r_min := hub_r + 3.0
+		var n := maxi(slots, 1)
+		var positions := _drum_spiral_positions(center, n, r_min, r_max)
+		var annular_area := PI * maxf(r_max * r_max - r_min * r_min, 16.0)
+		var step := sqrt(annular_area / float(n))
+		var dot_r := clampf(step * 0.34, 1.25, 2.75) if n > 22 else clampf((TAU * ((r_max + r_min) * 0.5 + 2.5) / float(n)) * 0.34, 1.8, 3.0)
+		for i in range(n):
+			var pos: Vector2 = positions[i]
+			var frac := 1.0 - float(i) / float(maxi(n - 1, 1))
+			var loaded := i < filled
+			if loaded:
+				draw_circle(pos, dot_r, _bullet_color(frac, low))
+				if dot_r >= 1.8:
+					draw_circle(pos, dot_r * 0.36, LOW_SPEC if low else BRASS_SPEC)
+			else:
+				draw_circle(pos, dot_r * 0.92, EMPTY_SLOT)
+		draw_circle(center, hub_r, Color(0.06, 0.07, 0.09, 0.96))
+		draw_arc(center, hub_r, 0.0, TAU, 16, Color(outline, 0.80), 1.3, true)
+	else:
+		var hub_r := outer_r * 0.30
+		var r_in := hub_r + 4.2
+		var r_out := outer_r - 4.4
+		var n := maxi(slots, 8)
+		var step_ang := TAU / float(n)
+		var gap_ang := clampf(step_ang * 0.24, 0.06, 0.14)
+		for i in range(n):
+			var a0 := -PI * 0.5 + float(i) * step_ang + gap_ang * 0.5
+			var a1 := -PI * 0.5 + float(i + 1) * step_ang - gap_ang * 0.5
+			var frac := 1.0 - float(i) / float(maxi(n - 1, 1))
+			var loaded := i < filled
+			var col_fill := _bullet_color(frac, low) if loaded else EMPTY_SLOT
+			var seg := PackedVector2Array([
+				center + Vector2.from_angle(a0) * r_in,
+				center + Vector2.from_angle(a0) * r_out,
+				center + Vector2.from_angle(a1) * r_out,
+				center + Vector2.from_angle(a1) * r_in,
+			])
+			draw_colored_polygon(seg, col_fill)
+		draw_circle(center, hub_r, Color(0.06, 0.07, 0.09, 0.96))
+		draw_arc(center, hub_r, 0.0, TAU, 20, Color(outline, 0.82), 1.5, true)
+		draw_line(center + Vector2(-hub_r * 0.45, 0), center + Vector2(hub_r * 0.45, 0),
+			Color(outline, 0.45), 1.2)
+		draw_line(center + Vector2(0, -hub_r * 0.45), center + Vector2(0, hub_r * 0.45),
+			Color(outline, 0.45), 1.2)
 
 	_draw_closed_outline(poly, outline, OUTLINE_WIDTH)
 
 
+## 等面积阿基米德螺旋排布：外圈 12 点钟（紧贴供弹颈）顺时针向内盘绕，
+## 保证任意发数（20 / 50 / 75 / 100+）径向与切向间距均匀，绝不重叠粘连。
+static func _drum_spiral_positions(center: Vector2, count: int, r_min: float, r_max: float) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	if count <= 0:
+		return out
+	if count <= 22:
+		var ring_r := clampf((r_min + r_max) * 0.5 + 2.5, r_min, r_max)
+		for i in range(count):
+			var a := -PI * 0.5 + float(i) * (TAU / float(count))
+			out.append(center + Vector2.from_angle(a) * ring_r)
+		return out
+	var r_max_sq := r_max * r_max
+	var r_min_sq := r_min * r_min
+	var area := PI * maxf(r_max_sq - r_min_sq, 16.0)
+	var step := sqrt(area / float(count)) * 0.92
+	var theta := -PI * 0.5
+	for i in range(count):
+		var s := float(i) / float(maxi(count - 1, 1))
+		var r := sqrt(lerpf(r_max_sq, r_min_sq, s))
+		out.append(center + Vector2.from_angle(theta) * r)
+		theta += step / maxf(r, 4.0)
+	return out
+
+
 ## 7) 预留弹箱样式（box：供未来轻机枪 / 弹链箱武器使用）：
-## 切角战术弹药箱 + 顶部供弹槽 + 内部横向双列/宽幅黄铜弹链条。
+## 抽象模式为宽幅黄铜条；真实逐发模式按多列弹链矩阵逐颗排布（如 100 发 = 5×20）。
 func _draw_box_mag(slots: int, filled: int, low: bool, outline: Color) -> void:
 	var w := size.x
 	var h := size.y
-	var box_w := clampf(w - 12.0, 36.0, 56.0)
-	var box_h := clampf(h * 0.72, 48.0, 74.0)
+	var box_w := clampf(w - 10.0, 38.0, 58.0)
+	var box_h := clampf(h * 0.74, 48.0, 76.0)
 	var x0 := (w - box_w) * 0.5
 	var y0 := (h - box_h) * 0.5 + 3.0
 	var x1 := x0 + box_w
@@ -531,23 +660,40 @@ func _draw_box_mag(slots: int, filled: int, low: bool, outline: Color) -> void:
 	])
 	draw_colored_polygon(poly, FILL_DARK)
 
-	var pad_x := 6.0
-	var pad_y := 6.5
+	var pad_x := 5.0
+	var pad_y := 5.5
 	var inner_w := maxf(box_w - pad_x * 2.0, 16.0)
 	var inner_h := maxf(box_h - pad_y * 2.0, 20.0)
-	var pitch := inner_h / float(maxi(slots, 1))
-	var bar_h := clampf(pitch * 0.56, 2.2, 5.5)
 
-	for i in range(slots):
-		var frac := 0.5 if slots <= 1 else float(i) / float(slots - 1)
-		var y := lerpf(y1 - pad_y - bar_h * 0.5, y0 + pad_y + bar_h * 0.5, frac)
-		var loaded := i < filled
-		var col := _bullet_color(frac, low) if loaded else EMPTY_SLOT
-		var rect := Rect2(Vector2(x0 + pad_x, y - bar_h * 0.5), Vector2(inner_w, bar_h))
-		draw_rect(rect, col, true)
-		if loaded and bar_h >= 3.0:
-			draw_rect(Rect2(rect.position, Vector2(rect.size.x, 1.0)),
-				LOW_SPEC if low else BRASS_SPEC, true)
+	if exact_rounds and slots > 14:
+		var cols := 2 if slots <= 30 else (4 if slots <= 64 else (5 if slots <= 120 else 6))
+		var rows := int(ceil(float(slots) / float(cols)))
+		var col_gap := 1.8
+		var cell_w := maxf((inner_w - col_gap * float(cols - 1)) / float(cols), 3.0)
+		var pitch := inner_h / float(maxi(rows, 1))
+		var bar_h := clampf(pitch * 0.58, 1.4, 3.6)
+		for i in range(slots):
+			var row := int(floor(float(i) / float(cols)))
+			var col := i % cols
+			var frac := 0.5 if rows <= 1 else float(row) / float(rows - 1)
+			var y := lerpf(y1 - pad_y - bar_h * 0.5, y0 + pad_y + bar_h * 0.5, frac)
+			var bx := x0 + pad_x + float(col) * (cell_w + col_gap)
+			var loaded := i < filled
+			var col_fill := _bullet_color(frac, low) if loaded else EMPTY_SLOT
+			_draw_rect_cartridge(Rect2(bx, y - bar_h * 0.5, cell_w, bar_h), col_fill, loaded, low)
+	else:
+		var pitch := inner_h / float(maxi(slots, 1))
+		var bar_h := clampf(pitch * 0.56, 2.2, 5.5)
+		for i in range(slots):
+			var frac := 0.5 if slots <= 1 else float(i) / float(slots - 1)
+			var y := lerpf(y1 - pad_y - bar_h * 0.5, y0 + pad_y + bar_h * 0.5, frac)
+			var loaded := i < filled
+			var col_fill := _bullet_color(frac, low) if loaded else EMPTY_SLOT
+			var rect := Rect2(Vector2(x0 + pad_x, y - bar_h * 0.5), Vector2(inner_w, bar_h))
+			draw_rect(rect, col_fill, true)
+			if loaded and bar_h >= 3.0:
+				draw_rect(Rect2(rect.position, Vector2(rect.size.x, 1.0)),
+					LOW_SPEC if low else BRASS_SPEC, true)
 
 	_draw_closed_outline(poly, outline, OUTLINE_WIDTH)
 
@@ -566,6 +712,48 @@ func _draw_oriented_bar(center: Vector2, axis_x: Vector2, axis_y: Vector2,
 	if loaded and half_h >= 1.4:
 		draw_line(center - dx - dy, center + dx - dy,
 			LOW_SPEC if low else BRASS_SPEC, 1.0, true)
+
+
+## 真实逐发模式专用：黄铜弹壳身 + 右端略收尖的紫铜弹头提示。
+func _draw_oriented_cartridge(center: Vector2, axis_x: Vector2, axis_y: Vector2,
+		half_w: float, half_h: float, col: Color, loaded: bool, low: bool) -> void:
+	var dx := axis_x * half_w
+	var dy := axis_y * half_h
+	if not loaded:
+		var empty_quad := PackedVector2Array([
+			center - dx - dy,
+			center + dx - dy,
+			center + dx + dy,
+			center - dx + dy,
+		])
+		draw_colored_polygon(empty_quad, col)
+		return
+	var split := center + dx * 0.42
+	var case_quad := PackedVector2Array([
+		center - dx - dy,
+		split - dy,
+		split + dy,
+		center - dx + dy,
+	])
+	draw_colored_polygon(case_quad, col)
+	var tip_poly := PackedVector2Array([
+		split - dy,
+		center + dx - dy * 0.32,
+		center + dx + dy * 0.32,
+		split + dy,
+	])
+	draw_colored_polygon(tip_poly, LOW_SPEC if low else COPPER_TIP)
+
+
+func _draw_rect_cartridge(rect: Rect2, col: Color, loaded: bool, low: bool) -> void:
+	if not loaded or rect.size.x < 4.0:
+		draw_rect(rect, col, true)
+		return
+	var tip_w := clampf(rect.size.x * 0.28, 1.6, 4.0)
+	var case_w := maxf(rect.size.x - tip_w, 1.0)
+	draw_rect(Rect2(rect.position, Vector2(case_w, rect.size.y)), col, true)
+	draw_rect(Rect2(rect.position + Vector2(case_w, 0.0), Vector2(tip_w, rect.size.y)),
+		LOW_SPEC if low else COPPER_TIP, true)
 
 
 func _draw_closed_outline(poly: PackedVector2Array, col: Color, width: float) -> void:
