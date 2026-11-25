@@ -50,12 +50,36 @@ func _run() -> void:
 	_check(int(m870_bare["pellets"]) == 8, "M870 bare pellets == 8")
 	_check(is_equal_approx(float(m870_bare["damage"]), 64.0), "M870 bare total damage == 64.0 (8*8)")
 	_check(is_equal_approx(float(m870_bare["range"]), 33.0), "M870 bare range == 33.0m")
+	_check(is_equal_approx(float(m870_bare["cycle_time"]), 0.28 + 0.35),
+		"M870 pump-action cycle_time includes pump_time (0.63s)")
+	_check(absf(float(m870_bare["burst_dps"]) - 64.0 / 0.63) < 0.05,
+		"M870 burst DPS uses true pump cycle (%.1f /s, not fake 64/0.28)" % float(m870_bare["burst_dps"]))
+	_check(float(m870_bare["sustained_dps"]) > 0.0 and float(m870_bare["sustained_dps"]) < float(m870_bare["burst_dps"]),
+		"M870 sustained DPS factors in shell-by-shell reload (%.1f < %.1f)" % [
+			float(m870_bare["sustained_dps"]), float(m870_bare["burst_dps"])])
+	_check(is_equal_approx(float(m870_bare["mag_damage"]), 64.0 * 5.0), "M870 single-mag total damage == 320")
 
 	var awm_bare: Dictionary = STATS_MODEL.compute(&"awm", {})
 	_check(int(awm_bare["mag"]) == 5, "AWM bare mag == 5")
 	_check(is_equal_approx(float(awm_bare["damage"]), 110.0), "AWM bare damage == 110.0")
 	_check(is_equal_approx(float(awm_bare["range"]), 70.5), "AWM bare range == 70.5m")
 	_check(is_equal_approx(float(awm_bare["speed"]), 918.0), "AWM bare speed == 918 m/s")
+	_check(absf(float(awm_bare["burst_dps"]) - 110.0 / 0.70) < 0.05
+		and is_equal_approx(float(awm_bare["mag_damage"]), 550.0)
+		and float(awm_bare["sustained_dps"]) < float(awm_bare["burst_dps"]),
+		"AWM burst/sustained DPS and mag total damage match formula")
+	_check(float(g17_bare["ads_time"]) < float(akm_bare["ads_time"])
+		and float(akm_bare["ads_time"]) < float(awm_bare["ads_time"]),
+		"ADS time scales by weapon class (G17 %.2fs < AKM %.2fs < AWM %.2fs)" % [
+			float(g17_bare["ads_time"]), float(akm_bare["ads_time"]), float(awm_bare["ads_time"])])
+	var awm_8x: Dictionary = STATS_MODEL.compute(&"awm", {"sight": "sniper_8x"})
+	_check(float(awm_8x["ads_time"]) > float(awm_bare["ads_time"]) * 1.30,
+		"8x sniper scope slows AWM ads_time (%.2fs -> %.2fs)" % [
+			float(awm_bare["ads_time"]), float(awm_8x["ads_time"])])
+	var g17_laser: Dictionary = STATS_MODEL.compute(&"g17", {"grip": "laser"})
+	_check(float(g17_laser["ads_time"]) < float(g17_bare["ads_time"]),
+		"underbarrel laser speeds up G17 ads_time (%.2fs -> %.2fs)" % [
+			float(g17_bare["ads_time"]), float(g17_laser["ads_time"])])
 	var fal_bare: Dictionary = STATS_MODEL.compute(&"fal", {})
 	_check(bool(fal_bare["auto"]), "FN FAL bare default_auto_fire == true")
 
@@ -165,6 +189,7 @@ func _run() -> void:
 		_check(is_equal_approx(rig.recoil_mul, float(model_via_p["recoil_mul"])), "WeaponRig2D recoil_mul matches WeaponStatsModel")
 		_check(is_equal_approx(rig.vision_mul, float(model_via_p["vision_mul"])), "WeaponRig2D vision_mul matches WeaponStatsModel")
 		_check(is_equal_approx(rig.ads_speed_mul, float(model_via_p["ads_speed_mul"])), "WeaponRig2D ads_speed_mul matches WeaponStatsModel")
+		_check(is_equal_approx(rig.ads_time, float(model_via_p["ads_time"])), "WeaponRig2D ads_time matches WeaponStatsModel")
 		_check(rig.has_laser == bool(model_via_p["has_laser"]), "WeaponRig2D has_laser matches WeaponStatsModel")
 		_check(rig.has_scope_sight == bool(model_via_p["has_scope_sight"]), "WeaponRig2D has_scope_sight matches WeaponStatsModel")
 

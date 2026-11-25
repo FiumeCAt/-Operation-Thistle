@@ -78,18 +78,18 @@
       {
         "id": "heavy",
         "name": "重型后托",
-        "desc": "后坐 -25% · 散布 -8%",
+        "desc": "后坐 -25% · 散布 -8% · 开镜 +8%",
         "credits": 70,
         "cost": {"weapon_parts": 2, "military_alloy": 1},
-        "effects": {"recoil_mul": 0.75, "spread_mul": 0.92}
+        "effects": {"recoil_mul": 0.75, "spread_mul": 0.92, "ads_time_mul": 1.08}
       },
       {
         "id": "light",
         "name": "轻量化后托",
-        "desc": "后坐 -15% · 散布 -5%",
+        "desc": "后坐 -15% · 散布 -5% · 开镜 -8%",
         "credits": 55,
         "cost": {"weapon_parts": 2},
-        "effects": {"recoil_mul": 0.85, "spread_mul": 0.95}
+        "effects": {"recoil_mul": 0.85, "spread_mul": 0.95, "ads_time_mul": 0.92}
       }
     ],
     "grip": [
@@ -104,10 +104,10 @@
       {
         "id": "vertical",
         "name": "垂直握把",
-        "desc": "后坐 -20% · 散布 -10%",
+        "desc": "后坐 -20% · 散布 -10% · 开镜 -4%",
         "credits": 65,
         "cost": {"weapon_parts": 2},
-        "effects": {"recoil_mul": 0.80, "spread_mul": 0.90}
+        "effects": {"recoil_mul": 0.80, "spread_mul": 0.90, "ads_time_mul": 0.96}
       },
       {
         "id": "laser",
@@ -250,73 +250,73 @@
   "weapon_magazines": {
     "m870": [
       {"id": "tube_std", "name": "标准管仓", "desc": "5 发 · 原厂管式弹仓", "mag_style": "tube", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 5}},
-      {"id": "tube_long", "name": "加长管仓", "desc": "7 发 · 换弹略慢", "mag_style": "tube", "mag_scale": 1.15, "credits": 70, "cost": {"weapon_parts": 2}, "effects": {"capacity": 7, "reload_mul": 1.10}},
-      {"id": "tube_xlong", "name": "超长管仓", "desc": "9 发 · 换弹更慢", "mag_style": "tube", "mag_scale": 1.28, "credits": 110, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 9, "reload_mul": 1.20}}
+      {"id": "tube_long", "name": "加长管仓", "desc": "7 发 · 换弹略慢 · 开镜 +5%", "mag_style": "tube", "mag_scale": 1.15, "credits": 70, "cost": {"weapon_parts": 2}, "effects": {"capacity": 7, "reload_mul": 1.10, "ads_time_mul": 1.05}},
+      {"id": "tube_xlong", "name": "超长管仓", "desc": "9 发 · 换弹更慢 · 开镜 +8%", "mag_style": "tube", "mag_scale": 1.28, "credits": 110, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 9, "reload_mul": 1.20, "ads_time_mul": 1.08}}
     ],
     "m1014": [
       {"id": "tube_std", "name": "标准管仓", "desc": "6 发 · 原厂管式弹仓", "mag_style": "tube", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 6}},
-      {"id": "tube_long", "name": "加长管仓", "desc": "8 发 · 换弹略慢", "mag_style": "tube", "mag_scale": 1.15, "credits": 70, "cost": {"weapon_parts": 2}, "effects": {"capacity": 8, "reload_mul": 1.10}},
-      {"id": "tube_xlong", "name": "超长管仓", "desc": "10 发 · 换弹更慢", "mag_style": "tube", "mag_scale": 1.28, "credits": 110, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 10, "reload_mul": 1.20}}
+      {"id": "tube_long", "name": "加长管仓", "desc": "8 发 · 换弹略慢 · 开镜 +5%", "mag_style": "tube", "mag_scale": 1.15, "credits": 70, "cost": {"weapon_parts": 2}, "effects": {"capacity": 8, "reload_mul": 1.10, "ads_time_mul": 1.05}},
+      {"id": "tube_xlong", "name": "超长管仓", "desc": "10 发 · 换弹更慢 · 开镜 +8%", "mag_style": "tube", "mag_scale": 1.28, "credits": 110, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 10, "reload_mul": 1.20, "ads_time_mul": 1.08}}
     ],
     "saiga12k": [
       {"id": "mag_std", "name": "5 发弹匣", "desc": "5 发 · 原厂弹匣", "mag_style": "curved_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 5}},
-      {"id": "mag_long", "name": "10 发长弹匣", "desc": "10 发 · 换弹略慢", "mag_style": "curved_mag", "mag_scale": 1.24, "credits": 90, "cost": {"weapon_parts": 2, "military_alloy": 1}, "effects": {"capacity": 10, "reload_mul": 1.10}},
-      {"id": "mag_drum", "name": "20 发弹鼓", "desc": "20 发 · 换弹更慢", "mag_style": "drum", "mag_scale": 1.0, "credits": 150, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 20, "reload_mul": 1.30}}
+      {"id": "mag_long", "name": "10 发长弹匣", "desc": "10 发 · 换弹略慢 · 开镜 +5%", "mag_style": "curved_mag", "mag_scale": 1.24, "credits": 90, "cost": {"weapon_parts": 2, "military_alloy": 1}, "effects": {"capacity": 10, "reload_mul": 1.10, "ads_time_mul": 1.05}},
+      {"id": "mag_drum", "name": "20 发弹鼓", "desc": "20 发 · 换弹更慢 · 开镜 +15%", "mag_style": "drum", "mag_scale": 1.0, "credits": 150, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 20, "reload_mul": 1.30, "ads_time_mul": 1.15}}
     ],
     "g17": [
       {"id": "mag_std", "name": "17 发弹匣", "desc": "17 发 · 原厂弹匣", "mag_style": "stick_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 17}},
-      {"id": "mag_long", "name": "33 发长弹匣", "desc": "33 发 · 换弹略慢", "mag_style": "stick_mag", "mag_scale": 1.25, "credits": 80, "cost": {"weapon_parts": 2}, "effects": {"capacity": 33, "reload_mul": 1.10}},
-      {"id": "mag_drum", "name": "50 发弹鼓", "desc": "50 发 · 换弹更慢", "mag_style": "drum", "mag_scale": 1.0, "credits": 140, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 50, "reload_mul": 1.30}}
+      {"id": "mag_long", "name": "33 发长弹匣", "desc": "33 发 · 换弹略慢 · 开镜 +6%", "mag_style": "stick_mag", "mag_scale": 1.25, "credits": 80, "cost": {"weapon_parts": 2}, "effects": {"capacity": 33, "reload_mul": 1.10, "ads_time_mul": 1.06}},
+      {"id": "mag_drum", "name": "50 发弹鼓", "desc": "50 发 · 换弹更慢 · 开镜 +15%", "mag_style": "drum", "mag_scale": 1.0, "credits": 140, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 50, "reload_mul": 1.30, "ads_time_mul": 1.15}}
     ],
     "g18": [
       {"id": "mag_std", "name": "17 发弹匣", "desc": "17 发 · 原厂弹匣", "mag_style": "stick_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 17}},
-      {"id": "mag_long", "name": "33 发长弹匣", "desc": "33 发 · 换弹略慢", "mag_style": "stick_mag", "mag_scale": 1.25, "credits": 80, "cost": {"weapon_parts": 2}, "effects": {"capacity": 33, "reload_mul": 1.10}},
-      {"id": "mag_drum", "name": "50 发弹鼓", "desc": "50 发 · 换弹更慢", "mag_style": "drum", "mag_scale": 1.0, "credits": 140, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 50, "reload_mul": 1.30}}
+      {"id": "mag_long", "name": "33 发长弹匣", "desc": "33 发 · 换弹略慢 · 开镜 +6%", "mag_style": "stick_mag", "mag_scale": 1.25, "credits": 80, "cost": {"weapon_parts": 2}, "effects": {"capacity": 33, "reload_mul": 1.10, "ads_time_mul": 1.06}},
+      {"id": "mag_drum", "name": "50 发弹鼓", "desc": "50 发 · 换弹更慢 · 开镜 +15%", "mag_style": "drum", "mag_scale": 1.0, "credits": 140, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 50, "reload_mul": 1.30, "ads_time_mul": 1.15}}
     ],
     "m1911": [
       {"id": "mag_std", "name": "7 发弹匣", "desc": "7 发 · 原厂弹匣", "mag_style": "stick_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 7}},
-      {"id": "mag_ext", "name": "10 发加长弹匣", "desc": "10 发 · 略重", "mag_style": "stick_mag", "mag_scale": 1.18, "credits": 70, "cost": {"weapon_parts": 2}, "effects": {"capacity": 10, "reload_mul": 1.08}}
+      {"id": "mag_ext", "name": "10 发加长弹匣", "desc": "10 发 · 略重 · 开镜 +4%", "mag_style": "stick_mag", "mag_scale": 1.18, "credits": 70, "cost": {"weapon_parts": 2}, "effects": {"capacity": 10, "reload_mul": 1.08, "ads_time_mul": 1.04}}
     ],
     "fn57": [
       {"id": "mag_std", "name": "20 发弹匣", "desc": "20 发 · 原厂弹匣", "mag_style": "stick_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 20}},
-      {"id": "mag_ext", "name": "30 发加长弹匣", "desc": "30 发 · 略重", "mag_style": "stick_mag", "mag_scale": 1.20, "credits": 80, "cost": {"weapon_parts": 2}, "effects": {"capacity": 30, "reload_mul": 1.08}}
+      {"id": "mag_ext", "name": "30 发加长弹匣", "desc": "30 发 · 略重 · 开镜 +4%", "mag_style": "stick_mag", "mag_scale": 1.20, "credits": 80, "cost": {"weapon_parts": 2}, "effects": {"capacity": 30, "reload_mul": 1.08, "ads_time_mul": 1.04}}
     ],
     "python": [
       {"id": "cyl_std", "name": "标准弹巢", "desc": "6 发 · 原厂弹巢", "mag_style": "cylinder", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 6}}
     ],
     "mp7": [
       {"id": "mag_std", "name": "40 发弹匣", "desc": "40 发 · 原厂弹匣", "mag_style": "stick_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 40}},
-      {"id": "mag_ext", "name": "60 发加长弹匣", "desc": "60 发 · 换弹略慢", "mag_style": "stick_mag", "mag_scale": 1.22, "credits": 100, "cost": {"weapon_parts": 3}, "effects": {"capacity": 60, "reload_mul": 1.12}}
+      {"id": "mag_ext", "name": "60 发加长弹匣", "desc": "60 发 · 换弹略慢 · 开镜 +5%", "mag_style": "stick_mag", "mag_scale": 1.22, "credits": 100, "cost": {"weapon_parts": 3}, "effects": {"capacity": 60, "reload_mul": 1.12, "ads_time_mul": 1.05}}
     ],
     "tmp": [
       {"id": "mag_std", "name": "15 发弹匣", "desc": "15 发 · 原厂弹匣", "mag_style": "stick_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 15}},
-      {"id": "mag_long", "name": "30 发长弹匣", "desc": "30 发 · 略重", "mag_style": "stick_mag", "mag_scale": 1.24, "credits": 70, "cost": {"weapon_parts": 2}, "effects": {"capacity": 30, "reload_mul": 1.10}}
+      {"id": "mag_long", "name": "30 发长弹匣", "desc": "30 发 · 略重 · 开镜 +5%", "mag_style": "stick_mag", "mag_scale": 1.24, "credits": 70, "cost": {"weapon_parts": 2}, "effects": {"capacity": 30, "reload_mul": 1.10, "ads_time_mul": 1.05}}
     ],
     "p90": [
       {"id": "mag_std", "name": "50 发顶置弹匣", "desc": "50 发 · 原厂顶置弹匣", "mag_style": "top_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 50}}
     ],
     "ump45": [
       {"id": "mag_std", "name": "25 发弹匣", "desc": "25 发 · 原厂弹匣", "mag_style": "stick_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 25}},
-      {"id": "mag_ext", "name": "40 发加长弹匣", "desc": "40 发 · 换弹略慢", "mag_style": "stick_mag", "mag_scale": 1.22, "credits": 90, "cost": {"weapon_parts": 3}, "effects": {"capacity": 40, "reload_mul": 1.12}}
+      {"id": "mag_ext", "name": "40 发加长弹匣", "desc": "40 发 · 换弹略慢 · 开镜 +5%", "mag_style": "stick_mag", "mag_scale": 1.22, "credits": 90, "cost": {"weapon_parts": 3}, "effects": {"capacity": 40, "reload_mul": 1.12, "ads_time_mul": 1.05}}
     ],
     "fal": [
       {"id": "mag_std", "name": "20 发弹匣", "desc": "20 发 · 原厂弹匣", "mag_style": "stick_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 20}},
-      {"id": "mag_ext", "name": "30 发加长弹匣", "desc": "30 发 · 换弹略慢", "mag_style": "stick_mag", "mag_scale": 1.20, "credits": 110, "cost": {"weapon_parts": 3}, "effects": {"capacity": 30, "reload_mul": 1.12}}
+      {"id": "mag_ext", "name": "30 发加长弹匣", "desc": "30 发 · 换弹略慢 · 开镜 +5%", "mag_style": "stick_mag", "mag_scale": 1.20, "credits": 110, "cost": {"weapon_parts": 3}, "effects": {"capacity": 30, "reload_mul": 1.12, "ads_time_mul": 1.05}}
     ],
     "akm": [
       {"id": "mag_std", "name": "30 发弹匣", "desc": "30 发 · 原厂弹匣", "mag_style": "curved_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 30}},
-      {"id": "mag_drum", "name": "75 发弹鼓", "desc": "75 发 · 换弹更慢", "mag_style": "drum", "mag_scale": 1.0, "credits": 150, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 75, "reload_mul": 1.35}}
+      {"id": "mag_drum", "name": "75 发弹鼓", "desc": "75 发 · 换弹更慢 · 开镜 +15%", "mag_style": "drum", "mag_scale": 1.0, "credits": 150, "cost": {"weapon_parts": 3, "military_alloy": 2}, "effects": {"capacity": 75, "reload_mul": 1.35, "ads_time_mul": 1.15}}
     ],
     "l85a2": [
       {"id": "mag_std", "name": "30 发弹匣", "desc": "30 发 · 原厂弹匣", "mag_style": "curved_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 30}}
     ],
     "sr25": [
       {"id": "mag_std", "name": "20 发弹匣", "desc": "20 发 · 原厂弹匣", "mag_style": "stick_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 20}},
-      {"id": "mag_ext", "name": "25 发加长弹匣", "desc": "25 发 · 换弹略慢", "mag_style": "stick_mag", "mag_scale": 1.15, "credits": 120, "cost": {"weapon_parts": 3}, "effects": {"capacity": 25, "reload_mul": 1.10}}
+      {"id": "mag_ext", "name": "25 发加长弹匣", "desc": "25 发 · 换弹略慢 · 开镜 +4%", "mag_style": "stick_mag", "mag_scale": 1.15, "credits": 120, "cost": {"weapon_parts": 3}, "effects": {"capacity": 25, "reload_mul": 1.10, "ads_time_mul": 1.04}}
     ],
     "vss": [
       {"id": "mag_std", "name": "10 发弹匣", "desc": "10 发 · 原厂弹匣", "mag_style": "curved_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 10}},
-      {"id": "mag_ext", "name": "20 发加长弹匣", "desc": "20 发 · 换弹略慢", "mag_style": "curved_mag", "mag_scale": 1.22, "credits": 110, "cost": {"weapon_parts": 2, "military_alloy": 1}, "effects": {"capacity": 20, "reload_mul": 1.15}}
+      {"id": "mag_ext", "name": "20 发加长弹匣", "desc": "20 发 · 换弹略慢 · 开镜 +5%", "mag_style": "curved_mag", "mag_scale": 1.22, "credits": 110, "cost": {"weapon_parts": 2, "military_alloy": 1}, "effects": {"capacity": 20, "reload_mul": 1.15, "ads_time_mul": 1.05}}
     ],
     "awm": [
       {"id": "mag_std", "name": "5 发弹匣", "desc": "5 发 · 原厂弹匣", "mag_style": "stick_mag", "mag_scale": 1.0, "credits": 0, "cost": {}, "effects": {"capacity": 5}}

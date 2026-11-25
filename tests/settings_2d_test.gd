@@ -297,5 +297,25 @@ func _run() -> void:
 	_check(p.ammo_exact_rounds(), "experimental exact-rounds setting persists across reload")
 	p.set_ammo_exact_rounds(false)
 
+	# Phase 2: 开枪火光三档（full / partial / off），默认 partial 且持久化生效。
+	sm = SettingsMenu2D.new()
+	root.add_child(sm)
+	await process_frame
+	sm.open()
+	_check(sm._muzzle_flash_buttons.size() == 3 and p.muzzle_flash_mode() == "partial"
+		and sm._muzzle_flash_buttons["partial"].text.contains("▶"),
+		"muzzle flash setting exposes 3 modes and defaults to partial")
+	sm._set_muzzle_flash_mode("full")
+	_check(p.muzzle_flash_mode() == "full" and sm._muzzle_flash_buttons["full"].text.contains("▶"),
+		"muzzle flash switches to full immediately")
+	sm._set_muzzle_flash_mode("off")
+	_check(p.muzzle_flash_mode() == "off" and sm._muzzle_flash_buttons["off"].text.contains("▶"),
+		"muzzle flash switches to off immediately")
+	sm.queue_free()
+	await process_frame
+	p.load_data()
+	_check(p.muzzle_flash_mode() == "off", "muzzle flash mode persists across save reload")
+	p.set_muzzle_flash_mode("partial")
+
 	print("\n=== settings 2d: %s (%d ok / %d fail) ===" % ["PASS" if _fail == 0 else "FAIL", _pass, _fail])
 	quit()

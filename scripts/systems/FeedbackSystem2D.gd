@@ -16,6 +16,7 @@ const MUZZLE_FLASH := preload("res://scripts/fx/MuzzleFlash2D.gd")
 var screen_shake := true
 var hitstop_enabled := false
 var shake_scale := 1.0
+var muzzle_flash_mode := "partial"
 
 ## 镜头抖动状态
 var shake := 0.0
@@ -72,6 +73,18 @@ func apply_settings(progress: Node) -> void:
 	hitstop_enabled = bool(progress.data.get("hitstop_enabled", false))
 	shake_scale = clampf(float(progress.data.get("shake_scale", 100.0)) / 100.0, 0.0, 10.0) \
 		* _cfg_float(&"shake_scale_base", SHAKE_SCALE_BASE)
+	var mode := String(progress.muzzle_flash_mode()) if progress.has_method("muzzle_flash_mode") \
+		else String(progress.data.get("muzzle_flash_mode", "partial"))
+	set_muzzle_flash_mode(mode)
+
+
+func set_muzzle_flash_mode(mode: String) -> void:
+	muzzle_flash_mode = mode if ["full", "partial", "off"].has(mode) else "partial"
+	if muzzle_flash != null and is_instance_valid(muzzle_flash):
+		muzzle_flash.set_flash_mode(muzzle_flash_mode)
+	if muzzle_flash_mode == "off" and muzzle_fx != null and is_instance_valid(muzzle_fx):
+		muzzle_fx.stop()
+		muzzle_fx.modulate.a = 0.0
 
 
 ## 顿帧计时器与受击红屏只建一次，避免每次命中都新建节点。
@@ -191,6 +204,7 @@ func warm_muzzle_fx() -> void:
 		muzzle_flash = MUZZLE_FLASH.new()
 		muzzle_flash.name = "MuzzleFlash2D"
 		_fx_layer.add_child(muzzle_flash)
+	muzzle_flash.set_flash_mode(muzzle_flash_mode)
 	muzzle_fx = Shot2D.pixel_fx(_fx_layer, "projectiles/muzzle-pistol",
 		Vector2.ZERO, 0.0, 60, 1.0, PixelFx2D.Mode.BAKED)
 	if muzzle_fx == null:
@@ -206,9 +220,10 @@ func play_muzzle_fx(pos: Vector2, angle: float, intensity := 1.0, suppressed := 
 	if muzzle_flash == null or not is_instance_valid(muzzle_flash):
 		warm_muzzle_fx()
 	if muzzle_flash != null and is_instance_valid(muzzle_flash):
+		muzzle_flash.set_flash_mode(muzzle_flash_mode)
 		muzzle_flash.trigger(pos, angle, intensity, suppressed)
 	if muzzle_fx != null and is_instance_valid(muzzle_fx):
-		if suppressed:
+		if suppressed or muzzle_flash_mode == "off":
 			muzzle_fx.stop()
 			muzzle_fx.modulate.a = 0.0
 		else:
@@ -216,7 +231,7 @@ func play_muzzle_fx(pos: Vector2, angle: float, intensity := 1.0, suppressed := 
 			muzzle_fx.rotation = angle
 			muzzle_fx.scale = Vector2.ONE * clampf(intensity * 0.85, 0.65, 1.25)
 			muzzle_fx.play()
-			muzzle_fx.modulate.a = 0.45
+			muzzle_fx.modulate.a = 0.65 if muzzle_flash_mode == "full" else 0.45
 			_muzzle_stop_ms = Time.get_ticks_msec() + 260
 
 

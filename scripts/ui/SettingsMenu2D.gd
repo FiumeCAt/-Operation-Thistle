@@ -25,6 +25,7 @@ var _scope_distortion_buttons: Dictionary = {}
 var _hitstop_buttons: Dictionary = {}
 var _sample_buttons: Dictionary = {}
 var _hit_fx_buttons: Dictionary = {}
+var _muzzle_flash_buttons: Dictionary = {}
 var _minimap_shape_buttons: Dictionary = {}
 var _minimap_scale_slider: HSlider
 var _minimap_scale_value: Label
@@ -173,6 +174,7 @@ func _build_left_column() -> Control:
 	_add_hitstop_row(rows)
 	_add_sample_row(rows)
 	_add_hit_fx_row(rows)
+	_add_muzzle_flash_row(rows)
 	_add_shake_scale_row(rows)
 
 	_sep(rows, PixelUI.OK)
@@ -467,6 +469,21 @@ func _add_hit_fx_row(parent: Node) -> void:
 		button.pressed.connect(func() -> void: _set_hit_fx_level(level))
 		line.add_child(button)
 		_hit_fx_buttons[level] = button
+
+
+func _add_muzzle_flash_row(parent: Node) -> void:
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 8)
+	parent.add_child(line)
+	var label := PixelUI.label(line, "开枪火光", 19, PixelUI.DIM)
+	label.custom_minimum_size.x = 116
+	for entry in [["full", "完全"], ["partial", "部分"], ["off", "关闭"]]:
+		var mode := String(entry[0])
+		var button := _option_button(String(entry[1]))
+		button.custom_minimum_size.x = 76
+		button.pressed.connect(func() -> void: _set_muzzle_flash_mode(mode))
+		line.add_child(button)
+		_muzzle_flash_buttons[mode] = button
 
 
 func _add_shake_scale_row(parent: Node) -> void:
@@ -788,6 +805,13 @@ func _set_hit_fx_level(level: int) -> void:
 	_refresh_hit_fx_buttons(level)
 
 
+func _set_muzzle_flash_mode(mode: String) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_muzzle_flash_mode"):
+		p.set_muzzle_flash_mode(mode)
+	_refresh_muzzle_flash_buttons(mode)
+
+
 func open() -> void:
 	visible = true
 	move_to_front()
@@ -823,6 +847,7 @@ func _load_values() -> void:
 	var shake_scale := 100.0
 	var sample_impacts := true
 	var hit_fx_level := 1
+	var muzzle_flash_mode := "partial"
 	var mm_shape := "square"
 	var mm_scale := 1.0
 	var mm_zoom := 1.0
@@ -846,6 +871,7 @@ func _load_values() -> void:
 		shake_scale = clampf(float(p.data.get("shake_scale", 100.0)), 0.0, 1000.0)
 		sample_impacts = bool(p.data.get("sample_impacts", true))
 		hit_fx_level = clampi(int(p.data.get("hit_fx_level", 1)), 0, 2)
+		muzzle_flash_mode = String(p.muzzle_flash_mode()) if p.has_method("muzzle_flash_mode") else "partial"
 		mm_shape = String(p.minimap_shape()) if p.has_method("minimap_shape") else "square"
 		mm_scale = float(p.minimap_scale()) if p.has_method("minimap_scale") else 1.0
 		mm_zoom = float(p.minimap_zoom()) if p.has_method("minimap_zoom") else 1.0
@@ -883,6 +909,7 @@ func _load_values() -> void:
 	_refresh_hitstop_buttons(hitstop)
 	_refresh_sample_buttons(sample_impacts)
 	_refresh_hit_fx_buttons(hit_fx_level)
+	_refresh_muzzle_flash_buttons(muzzle_flash_mode)
 	_refresh_minimap_shape_buttons(mm_shape)
 	_refresh_typewriter_buttons(tw_enabled)
 	_refresh_ammo_exact_buttons(ammo_exact)
@@ -1058,6 +1085,16 @@ func _refresh_hit_fx_buttons(level: int) -> void:
 		var button: Button = _hit_fx_buttons[key]
 		var active := int(key) == level
 		button.text = ("▶ " if active else "   ") + String(names.get(int(key), "关"))
+		button.add_theme_color_override(
+			"font_color", PixelUI.AMBER_BRIGHT if active else PixelUI.TEXT)
+
+
+func _refresh_muzzle_flash_buttons(mode: String) -> void:
+	var names := {"full": "完全", "partial": "部分", "off": "关闭"}
+	for key in _muzzle_flash_buttons:
+		var button: Button = _muzzle_flash_buttons[key]
+		var active := String(key) == mode
+		button.text = ("▶ " if active else "   ") + String(names.get(String(key), "部分"))
 		button.add_theme_color_override(
 			"font_color", PixelUI.AMBER_BRIGHT if active else PixelUI.TEXT)
 

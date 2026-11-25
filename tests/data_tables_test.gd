@@ -94,10 +94,30 @@ func _run() -> void:
 		and is_equal_approx(WeaponDB.get_weapon(&"sr25").bullet_speed_mps, 890.0),
 		"武器子弹速度：G17 380 / TMP 334 / SR-25 890 m/s")
 	var all_weapons_have_speed := true
+	var all_weapons_ads_valid := true
 	for wid in WeaponDB.WEAPON_ORDER:
-		if float(WeaponDB.get_weapon(wid).bullet_speed_mps) <= 0.0:
+		var wd := WeaponDB.get_weapon(wid)
+		if float(wd.bullet_speed_mps) <= 0.0:
 			all_weapons_have_speed = false
+		var ads_t := float(wd.ads_time)
+		match wd.category:
+			&"pistol":
+				if ads_t < 0.12 or ads_t > 0.16:
+					all_weapons_ads_valid = false
+			&"smg":
+				if ads_t < 0.18 or ads_t > 0.22:
+					all_weapons_ads_valid = false
+			&"shotgun", &"rifle":
+				if ads_t < 0.24 or ads_t > 0.30:
+					all_weapons_ads_valid = false
+			&"dmr":
+				if ads_t < 0.30 or ads_t > 0.34:
+					all_weapons_ads_valid = false
+			&"sniper":
+				if ads_t < 0.42 or ads_t > 0.48:
+					all_weapons_ads_valid = false
 	_check(all_weapons_have_speed, "18 把武器都配置了子弹速度")
+	_check(all_weapons_ads_valid, "18 把武器均按枪类配置了合理开镜时间 ads_time")
 	_check(WeaponDB.weapons_in_category(&"pistol").size() == 5
 		and WeaponDB.weapons_in_category(&"smg").size() == 4
 		and WeaponDB.weapons_in_category(&"shotgun").size() == 3

@@ -100,6 +100,7 @@ static func get_weapon(id: StringName) -> WeaponData:
 	w.pump_time = float(rec.get("pump_time", 0.0))
 	w.load_time = float(rec.get("load_time", 0.35))
 	w.fire_interval = float(rec.get("fire_interval", 0.28))
+	w.ads_time = clampf(float(rec.get("ads_time", _default_ads_time(w.category))), 0.05, 1.50)
 	w.range_m = float(rec.get("range", 26.0))
 	w.visual_length = float(rec.get("visual_length", 0.9))
 	w.base_spread = float(rec.get("base_spread", 0.0))
@@ -122,6 +123,24 @@ static func mag_style(id: StringName) -> StringName:
 
 static func auto_cycle(id: StringName) -> bool:
 	return bool(_weapon_record(id).get("auto_cycle", id != &"m870"))
+
+
+static func _default_ads_time(category: StringName) -> float:
+	match category:
+		&"pistol":
+			return 0.14
+		&"smg":
+			return 0.20
+		&"shotgun":
+			return 0.28
+		&"rifle":
+			return 0.27
+		&"dmr":
+			return 0.32
+		&"sniper":
+			return 0.45
+		_:
+			return 0.24
 
 
 ## 按武器音色给出打击感档位：霰弹/狙击重而慢收，冲锋枪轻而快收。

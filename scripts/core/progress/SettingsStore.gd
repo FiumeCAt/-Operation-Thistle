@@ -6,6 +6,7 @@ const SAVE_STORE := preload("res://scripts/core/progress/SaveStore.gd")
 const DEFAULT_LASER_COLOR := SAVE_STORE.DEFAULT_LASER_COLOR
 const DEFAULT_RETICLE_COLOR := SAVE_STORE.DEFAULT_RETICLE_COLOR
 const AMMO_DISPLAY_MODES := SAVE_STORE.AMMO_DISPLAY_MODES
+const MUZZLE_FLASH_MODES := SAVE_STORE.MUZZLE_FLASH_MODES
 
 
 static func laser_color(data: Dictionary) -> Color:
@@ -114,6 +115,18 @@ static func set_sample_impacts(data: Dictionary, enabled: bool) -> void:
 
 static func set_hit_fx_level(data: Dictionary, level: int) -> void:
 	data["hit_fx_level"] = clampi(level, 0, 2)
+
+
+static func muzzle_flash_mode(data: Dictionary) -> String:
+	var mode := String(data.get("muzzle_flash_mode", "partial"))
+	return mode if MUZZLE_FLASH_MODES.has(mode) else "partial"
+
+
+static func set_muzzle_flash_mode(data: Dictionary, mode: String) -> bool:
+	if not MUZZLE_FLASH_MODES.has(mode):
+		return false
+	data["muzzle_flash_mode"] = mode
+	return true
 
 
 static func set_view_zoom(data: Dictionary, value: float) -> void:

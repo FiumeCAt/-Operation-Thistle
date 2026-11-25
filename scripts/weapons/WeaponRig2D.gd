@@ -74,6 +74,8 @@ var spread_mul := 1.0
 var recoil_mul := 1.0
 var vision_mul := 1.0
 var ads_speed_mul := 1.0
+var ads_time := 0.24
+var muzzle_flash_mode := "partial"
 var has_laser := false
 var has_suppressor := false
 var sight_magnification := 1.0
@@ -152,6 +154,7 @@ func _apply_mods() -> void:
 	recoil_mul = 1.0
 	vision_mul = 1.0
 	ads_speed_mul = 1.0
+	ads_time = clampf(data.ads_time, 0.05, 1.50) if data != null else 0.24
 	has_laser = false
 	has_suppressor = false
 	sight_magnification = 1.0
@@ -163,6 +166,11 @@ func _apply_mods() -> void:
 	if data == null:
 		return
 	var progress := get_node_or_null("/root/Progress")
+	if progress != null:
+		if progress.has_method("muzzle_flash_mode"):
+			muzzle_flash_mode = String(progress.muzzle_flash_mode())
+		elif progress.data is Dictionary:
+			muzzle_flash_mode = String(progress.data.get("muzzle_flash_mode", "partial"))
 	if progress == null or not progress.has_method("weapon_mods_2d"):
 		has_suppressor = weapon_id == &"vss"
 		return
@@ -172,6 +180,7 @@ func _apply_mods() -> void:
 	recoil_mul = float(stats["recoil_mul"])
 	vision_mul = float(stats["vision_mul"])
 	ads_speed_mul = float(stats["ads_speed_mul"])
+	ads_time = float(stats["ads_time"])
 	sight_ads_time_mul = float(stats["sight_ads_time_mul"])
 	has_laser = bool(stats["has_laser"])
 	has_suppressor = bool(stats.get("has_suppressor", false))
@@ -228,7 +237,7 @@ func setup(id: StringName) -> void:
 	_flash.hframes = 3
 	_flash.scale = Vector2.ONE * FLASH_SCALE
 	_flash.position = Vector2(ARM_LENGTH + _gun_len + 2.0, 0)
-	_flash.modulate = Color(1.0, 0.90, 0.72, 0.16 if has_suppressor else 0.46)
+	_apply_flash_modulate()
 	_flash.visible = false
 	_pivot.add_child(_flash)
 
@@ -309,8 +318,11 @@ func _process(delta: float) -> void:
 		if _flash_timer <= 0.0:
 			_flash.visible = false
 	_update_layer()
-	_ads_t = move_toward(_ads_t, 1.0 if ads and not holstered else 0.0,
-		ADS_BLEND_SPEED * ads_speed_mul / maxf(sight_ads_time_mul, 0.2) * delta)
+	var ads_rate := get_ads_rate()
+	var dbg_progress := get_node_or_null("/root/Progress")
+	if dbg_progress != null and dbg_progress.has_method("debug_mul"):
+		ads_rate *= float(dbg_progress.debug_mul("ads"))
+	_ads_t = move_toward(_ads_t, 1.0 if ads and not holstered else 0.0, ads_rate * delta)
 	_apply_pose()
 
 	if InputMap.has_action("holster") and Input.is_action_just_pressed("holster"):
@@ -367,6 +379,28 @@ func _arm_length() -> float:
 
 func get_ads_blend() -> float:
 	return _ads_t
+
+
+## 统一的开镜过渡速率（1 / 最终开镜秒数），供举枪姿态与 Main2D 镜头/散布共用。
+func get_ads_rate() -> float:
+	return 1.0 / maxf(ads_time, 0.05)
+
+
+func set_muzzle_flash_mode(mode: String) -> void:
+	muzzle_flash_mode = mode if ["full", "partial", "off"].has(mode) else "partial"
+	_apply_flash_modulate()
+	if muzzle_flash_mode == "off":
+		_flash_timer = 0.0
+		if _flash != null:
+			_flash.visible = false
+
+
+func _apply_flash_modulate() -> void:
+	if _flash == null:
+		return
+	var alpha := 0.0 if muzzle_flash_mode == "off" \
+		else (0.16 if has_suppressor else (0.72 if muzzle_flash_mode == "full" else 0.46))
+	_flash.modulate = Color(1.0, 0.90, 0.72, alpha)
 
 
 func _current_anchor() -> Vector2:
@@ -428,7 +462,7 @@ func try_fire() -> bool:
 		&"fired":
 			recoil = recoil_mul
 			_kick = -RECOIL_KICK + randf_range(-0.015, 0.015)
-			if not has_suppressor:
+			if not has_suppressor and muzzle_flash_mode != "off":
 				_flash_timer = FLASH_TIME
 				_flash.visible = true
 				_flash.frame = 0

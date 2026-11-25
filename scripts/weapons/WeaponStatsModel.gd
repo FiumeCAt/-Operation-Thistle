@@ -53,22 +53,25 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 	var recoil_mul := clampf(float(mods["recoil_mul"]), 0.2, 1.5)
 	var vision_mul := clampf(float(mods["vision_mul"]), 1.0, 2.2)
 	var ads_speed_mul := clampf(float(mods["ads_speed_mul"]), 1.0, 2.0)
-	var sight_ads_time_mul := clampf(float(mods.get("ads_time_mul", 1.0)), 1.0, 2.0)
+	var total_ads_time_mul := clampf(float(mods.get("ads_time_mul", 1.0)), 0.5, 2.5)
 	var has_laser := bool(mods.get("laser", false))
 	var has_suppressor := String(installed.get("muzzle", "")) == "suppressor" or weapon_id == &"vss"
 
-	# 瞄具元数据（标定倍率/前探倍率/准星样式/是否高倍镜窗）不参与 ModDB 倍率叠乘。
+	# 瞄具元数据（标定倍率/前探倍率/准星样式/是否高倍镜窗/瞄具自身开镜倍率）独立提取。
 	var sight_id := String(installed.get("sight", ""))
 	var sight := ModDB.option("sight", sight_id, false, wid)
 	var sight_magnification := 1.0
 	var sight_look_ahead_mul := 1.0
 	var sight_reticle := "iron"
+	var sight_ads_time_mul := 1.0
 	var has_scope_sight := false
 	if not sight.is_empty():
 		sight_magnification = clampf(float(sight.get("magnification", 1.0)), 1.0, 8.0)
 		sight_look_ahead_mul = clampf(float(sight.get("look_ahead_mul", 1.0)), 1.0, 8.0)
 		sight_reticle = String(sight.get("reticle", "iron"))
 		has_scope_sight = bool(sight.get("scope", false))
+		var sight_fx: Dictionary = sight.get("effects", {})
+		sight_ads_time_mul = clampf(float(sight_fx.get("ads_time_mul", 1.0)), 0.5, 2.0)
 		if reticle_resolver.is_valid():
 			sight_reticle = String(reticle_resolver.call(sight_id, sight_reticle))
 
@@ -113,12 +116,13 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 	var speed_mul := float(mods.get("speed_mul", 1.0))
 	var speed := float(base.bullet_speed_mps) * speed_mul
 
-	# 弹药派生：单丸伤害、总伤害、穿甲与腰射基础/最终散布。
+	# 弹药派生：单丸伤害、总伤害、穿甲、腰射散布与真实 DPS（爆发 / 持续 / 单匣总伤）。
 	var ammo = WeaponDB.ammo_table().get(base.ammo_id)
 	var pellets := 0
 	var ap := 0.0
 	var base_pellet_damage := 0.0
 	var pellet_damage := 0.0
+	var base_total_damage := 0.0
 	var total_damage := 0.0
 	var base_spread := 0.0
 	var spread := 0.0
@@ -127,10 +131,29 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		ap = float(ammo.ap)
 		base_pellet_damage = float(ammo.damage)
 		pellet_damage = base_pellet_damage * damage_mul
+		base_total_damage = base_pellet_damage * float(pellets)
 		total_damage = pellet_damage * float(pellets)
 		base_spread = float(ammo.spread) + float(base.base_spread)
 		var attach_scale := clampf(float(ammo.attachment_spread_scale), 0.0, 1.0)
 		spread = base_spread * lerpf(1.0, spread_mul, attach_scale) * accuracy
+
+	# 真实射击循环周期：泵动/手动循环武器（如 M870）计入 pump_time，避免虚高假 DPS。
+	var manual_cycle_extra := base.pump_time if (not base.auto_cycle and base.pump_time > 0.0) else 0.0
+	var base_cycle_time := maxf(0.03, base.fire_interval + manual_cycle_extra)
+	var cycle_time := maxf(0.03, interval + manual_cycle_extra)
+	var base_burst_dps := base_total_damage / base_cycle_time
+	var burst_dps := total_damage / cycle_time
+	var base_mag_damage := base_total_damage * float(base.mag_capacity)
+	var mag_damage := total_damage * float(mag)
+	var base_reload_full := base.load_time * float(base.mag_capacity) if base.feed_mode == &"shell" else base.load_time
+	var reload_full := load_effective * float(mag) if base.feed_mode == &"shell" else load_effective
+	var base_sustained_dps := base_mag_damage / maxf(float(base.mag_capacity) * base_cycle_time + base_reload_full, 0.05)
+	var sustained_dps := mag_damage / maxf(float(mag) * cycle_time + reload_full, 0.05)
+
+	# 真实开镜时间（秒）：综合武器基础开镜耗时、高倍镜/后托/握把/扩容弹匣手感倍率与下挂激光加速。
+	var base_ads_time := clampf(float(base.ads_time), 0.05, 1.50)
+	var ads_time := clampf(base_ads_time * total_ads_time_mul / maxf(ads_speed_mul, 0.2), 0.05, 1.50)
+	var ads_rate := 1.0 / ads_time
 
 	return {
 		"base": base,
@@ -140,6 +163,8 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"mag_style": mag_style,
 		"mag_scale": mag_scale,
 		"interval": interval,
+		"base_cycle_time": base_cycle_time,
+		"cycle_time": cycle_time,
 		"load_modded": load_modded,
 		"load": load_effective,
 		"range": range_m,
@@ -152,7 +177,11 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"recoil_mul": recoil_mul,
 		"vision_mul": vision_mul,
 		"ads_speed_mul": ads_speed_mul,
+		"ads_time_mul": total_ads_time_mul,
 		"sight_ads_time_mul": sight_ads_time_mul,
+		"base_ads_time": base_ads_time,
+		"ads_time": ads_time,
+		"ads_rate": ads_rate,
 		"has_laser": has_laser,
 		"has_suppressor": has_suppressor,
 		"sight_magnification": sight_magnification,
@@ -166,6 +195,12 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"base_pellet_damage": base_pellet_damage,
 		"pellet_damage": pellet_damage,
 		"damage": total_damage,
+		"base_burst_dps": base_burst_dps,
+		"burst_dps": burst_dps,
+		"base_sustained_dps": base_sustained_dps,
+		"sustained_dps": sustained_dps,
+		"base_mag_damage": base_mag_damage,
+		"mag_damage": mag_damage,
 		"pellets": pellets,
 		"ap": ap,
 		"base_spread": base_spread,
@@ -208,6 +243,7 @@ static func apply_to_weapon_data(data: WeaponData, stats: Dictionary) -> void:
 		return
 	data.load_time = float(stats["load_modded"])
 	data.fire_interval = float(stats["interval"])
+	data.ads_time = float(stats.get("ads_time", data.ads_time))
 	data.range_m = float(stats["range"])
 	data.bullet_speed_mps = float(stats["speed"])
 	data.sound_radius = float(stats["sound"])

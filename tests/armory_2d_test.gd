@@ -225,6 +225,20 @@ func _run() -> void:
 	_check(menu.armory._detail_values["弹匣容量"].text.contains("17"), "G17 magazine stat shown")
 	_check(menu.armory._detail_values["子弹速度"].text == "380 m/s",
 		"G17 bullet speed stat shown in m/s")
+	_check(menu.armory._detail_values["爆发 DPS"].text.ends_with("/s"),
+		"armory detail panel displays Burst DPS")
+	_check(menu.armory._detail_tips["爆发 DPS"].contains("持续 DPS")
+		and menu.armory._detail_tips["爆发 DPS"].contains("单匣总伤害"),
+		"Burst DPS tooltip displays Sustained DPS and single-mag total damage")
+	_check(menu.armory._detail_values["瞄准速度"].text == "0.13s",
+		"armory detail panel displays G17 ADS speed in seconds (0.13s)")
+	menu.armory._select(&"awm")
+	_check(menu.armory._detail_values["瞄准速度"].text == "0.45s",
+		"armory detail panel displays AWM ADS speed in seconds (0.45s)")
+	menu.armory._select(&"m870")
+	_check(menu.armory._detail_tips["爆发 DPS"].contains("含泵动"),
+		"M870 Burst DPS tooltip explicitly notes pump cycle time")
+	menu.armory._select(&"g17")
 	_check(menu.armory._weapon_buttons[&"g17"].text.contains("弹速 380 m/s"),
 		"weapon list updates bullet speed per weapon")
 	_check(menu.armory._loadout_label.text.contains("M870")

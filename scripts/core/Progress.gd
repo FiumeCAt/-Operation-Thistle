@@ -423,6 +423,12 @@ func set_hit_fx_level(level: int) -> bool:
 	SETTINGS_STORE.set_hit_fx_level(data, level)
 	return save_data()
 
+func muzzle_flash_mode() -> String:
+	return SETTINGS_STORE.muzzle_flash_mode(data)
+
+func set_muzzle_flash_mode(mode: String) -> bool:
+	return save_data() if SETTINGS_STORE.set_muzzle_flash_mode(data, mode) else false
+
 func set_view_zoom(value: float) -> bool:
 	SETTINGS_STORE.set_view_zoom(data, value)
 	return save_data()

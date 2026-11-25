@@ -19,8 +19,8 @@ const COLOR_PRESETS: Array[Color] = [
 const STAT_DEFS: Array = [
 	["mag", "弹匣"], ["rate", "射速"], ["load", "换弹"], ["range", "射程"],
 	["speed", "弹速"], ["spread", "散布"], ["sound", "枪声"], ["damage", "伤害"],
-	["ap", "穿甲"], ["mode", "模式"], ["slots", "槽位"], ["recoil", "后坐"],
-	["vision", "视野"], ["ads", "瞄准"],
+	["dps", "爆发DPS"], ["ap", "穿甲"], ["mode", "模式"], ["slots", "槽位"],
+	["recoil", "后坐"], ["vision", "视野"], ["ads", "瞄准"],
 ]
 
 var stats_panel: PanelContainer
@@ -223,6 +223,8 @@ func refresh_stats(weapon_id: StringName, current_installed: Dictionary,
 		float(pre["sound"]) - float(cur["sound"]), false, 0)
 	_set_stat("damage", "%.1f" % float(pre["damage"]),
 		float(pre["damage"]) - float(cur["damage"]), true, 1)
+	_set_stat("dps", "%.0f/s" % float(pre["burst_dps"]),
+		float(pre["burst_dps"]) - float(cur["burst_dps"]), true, 0)
 	var mode_label: Label = stat_values["mode"]
 	mode_label.text = "全自动" if bool(pre["auto"]) else "单发"
 	mode_label.add_theme_color_override("font_color",
@@ -238,8 +240,8 @@ func refresh_stats(weapon_id: StringName, current_installed: Dictionary,
 		(float(pre["recoil"]) - float(cur["recoil"])) * 100.0, true, 0)
 	_set_stat("vision", "+%d%%" % int(round(float(pre["vision"]) * 100.0)),
 		(float(pre["vision"]) - float(cur["vision"])) * 100.0, true, 0)
-	_set_stat("ads", "+%d%%" % int(round(float(pre["ads"]) * 100.0)),
-		(float(pre["ads"]) - float(cur["ads"])) * 100.0, true, 0)
+	_set_stat("ads", "%.2fs" % float(pre["ads_time"]),
+		float(pre["ads_time"]) - float(cur["ads_time"]), false, 2)
 
 
 func _set_stat(key: String, text: String, delta: float,

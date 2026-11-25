@@ -26,6 +26,8 @@ class_name WeaponData
 @export var fire_interval: float = 0.28
 @export var pump_time: float = 0.35
 @export var load_time: float = 0.30
+## 基础开镜耗时（秒）：手枪最快，狙击最慢；由 WeaponStatsModel 叠加配件后驱动举枪与镜头/散布。
+@export var ads_time: float = 0.24
 @export var range_m: float = 28.0
 @export var base_spread: float = 0.0
 ## 该武器的现实枪口初速（m/s），已包含弹种基准与枪管长度差异。

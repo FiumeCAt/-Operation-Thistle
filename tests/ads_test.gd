@@ -147,6 +147,37 @@ func _run() -> void:
 	await _wait(30)
 	_check(absf(_main.camera.zoom.x - zoom_hip) < 0.02, "clearing the scope returns to base zoom")
 
+	# --- Phase 2: 差异化瞄准速度（手枪 vs 狙击 + 高倍镜同步减速 Main2D._ads_t 与 WeaponRig2D._ads_t） ---
+	var p = root.get_node_or_null("Progress")
+	if p != null:
+		p.reset_for_test()
+		rig.setup(&"g17")
+		_main._ads_t = 0.0
+		rig._ads_t = 0.0
+		Input.action_press("aim")
+		await _wait(6)
+		var g17_main_t: float = _main._ads_t
+		var g17_rig_t: float = rig.get_ads_blend()
+		Input.action_release("aim")
+		_check(absf(g17_main_t - g17_rig_t) < 0.08,
+			"G17 Main2D._ads_t (%.2f) and WeaponRig2D._ads_t (%.2f) advance in lockstep" % [g17_main_t, g17_rig_t])
+
+		p.data["weapon_mods_2d"]["awm"] = {"sight": "sniper_8x"}
+		rig.setup(&"awm")
+		_main._ads_t = 0.0
+		rig._ads_t = 0.0
+		Input.action_press("aim")
+		await _wait(6)
+		var awm_main_t: float = _main._ads_t
+		var awm_rig_t: float = rig.get_ads_blend()
+		Input.action_release("aim")
+		_check(awm_main_t < g17_main_t * 0.45 and awm_rig_t < g17_rig_t * 0.45,
+			"AWM+8x scope ADS (main=%.2f, rig=%.2f) is much slower than G17 (main=%.2f, rig=%.2f)" % [
+				awm_main_t, awm_rig_t, g17_main_t, g17_rig_t])
+		_check(absf(awm_main_t - awm_rig_t) < 0.08,
+			"AWM+8x Main2D._ads_t and WeaponRig2D._ads_t stay synchronized under scope ads_time_mul")
+		p.reset_for_test()
+
 	# --- 头身接缝：头部不再独立旋转/横移 ---
 	var pivot: Node2D = doll._head_pivot
 	_check(absf(pivot.rotation) < 0.001, "head does not rotate independently")

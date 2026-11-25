@@ -461,6 +461,8 @@ func _apply_talents() -> void:
 	talent_scavenge = 1.0 + float(progress.talent_2d_level(&"scavenge")) * 0.10
 	# 屏幕震动 / 顿帧 / 震动倍率同步至 FeedbackSystem2D。
 	feedback_system.apply_settings(progress)
+	if doll != null and doll.weapon_rig != null:
+		doll.weapon_rig.set_muzzle_flash_mode(feedback_system.muzzle_flash_mode)
 	hit_fx_level = clampi(int(progress.data.get("hit_fx_level", 1)), 0, 2)
 	bullet_trail_enabled = bool(progress.data.get("bullet_trail_enabled", true))
 	_apply_bullet_trail_setting()
@@ -508,6 +510,8 @@ func _on_settings_applied() -> void:
 	if progress == null:
 		return
 	feedback_system.apply_settings(progress)
+	if doll != null and doll.weapon_rig != null:
+		doll.weapon_rig.set_muzzle_flash_mode(feedback_system.muzzle_flash_mode)
 	hit_fx_level = clampi(int(progress.data.get("hit_fx_level", 1)), 0, 2)
 	bullet_trail_enabled = bool(progress.data.get("bullet_trail_enabled", true))
 	_apply_bullet_trail_setting()
@@ -673,10 +677,10 @@ func _process(delta: float) -> void:
 	if run_state == RunState.ACTIVE:
 		run_elapsed += delta
 	# 右键瞄准只负责前探视野与散布收紧；整体缩放由 Alt+滚轮独立控制。
+	# 与 WeaponRig2D._ads_t 共用同一套开镜速率（1 / ads_time），高倍镜与枪型手感完全同步。
 	var want_ads := 1.0 if (doll.ads and run_state == RunState.ACTIVE) else 0.0
-	var ads_speed := _cam_float(&"ads_zoom_speed", ADS_ZOOM_SPEED)
-	if doll.weapon_rig != null:
-		ads_speed *= doll.weapon_rig.ads_speed_mul
+	var ads_speed := doll.weapon_rig.get_ads_rate() if doll.weapon_rig != null \
+		else _cam_float(&"ads_zoom_speed", ADS_ZOOM_SPEED)
 	var dbg_progress := get_node_or_null("/root/Progress")
 	if dbg_progress != null:
 		ads_speed *= float(dbg_progress.debug_mul("ads"))

@@ -7,7 +7,7 @@ const TIP_WIDTH := 520.0
 
 const STAT_KEYS: Array[String] = [
 	"口径", "弹匣容量", "供弹方式", "换弹时间", "射速", "射程", "子弹速度", "散布",
-	"枪声范围", "弹药", "弹丸数", "穿甲", "伤害",
+	"枪声范围", "弹药", "弹丸数", "穿甲", "伤害", "爆发 DPS",
 	"后坐抑制", "垂直后坐", "水平后坐", "视野倍率", "瞄准速度",
 ]
 
@@ -153,7 +153,12 @@ static func _is_ascii_char(ch: String) -> bool:
 
 ## 悬浮提示：基础值 → 实际值，再列出参与该数值的配件与战术天赋。
 func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent: float,
-		ammo, detail_base: Dictionary, detail_values: Dictionary, progress: Node) -> void:
+		ammo, detail_base: Dictionary, detail_values: Dictionary, progress: Node,
+		stats_override: Dictionary = {}) -> void:
+	var stats: Dictionary = stats_override
+	if stats.is_empty():
+		stats = WeaponStatsModel.compute_for_progress(selected, progress, installed)
+	var base_w: WeaponData = stats.get("base", null)
 	for key in STAT_KEYS:
 		var text := key
 		if detail_base.has(key) and String(detail_base[key]) != "":
@@ -182,7 +187,58 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 			continue
 		var effect_key := String(STAT_EFFECT.get(key, ""))
 		var sources: Array[String] = []
-		if effect_key != "":
+		if key == "爆发 DPS":
+			var cycle_time := float(stats.get("cycle_time", 0.1))
+			var sustained_dps := float(stats.get("sustained_dps", 0.0))
+			var base_sustained_dps := float(stats.get("base_sustained_dps", 0.0))
+			var mag_damage := float(stats.get("mag_damage", 0.0))
+			var base_mag_damage := float(stats.get("base_mag_damage", 0.0))
+			var mag_cnt := int(stats.get("mag", 0))
+			if base_w != null and not base_w.auto_cycle and base_w.pump_time > 0.0:
+				text += "\n真实射击循环：%.2fs（含泵动 %.2fs）" % [cycle_time, base_w.pump_time]
+			else:
+				text += "\n射击循环：%.2fs / 发" % cycle_time
+			text += "\n持续 DPS（含换弹）：%.0f /s（基础 %.0f /s）" % [sustained_dps, base_sustained_dps]
+			text += "\n单匣总伤害：%.0f（基础 %.0f · %d 发）" % [mag_damage, base_mag_damage, mag_cnt]
+			for slot_def in ModDB.WEAPON_SLOTS:
+				var slot := String(slot_def["id"])
+				var option_id := String(installed.get(slot, ""))
+				if option_id == "":
+					continue
+				var entry := ModDB.option(slot, option_id, false, String(selected))
+				if entry.is_empty():
+					continue
+				var fx: Dictionary = entry.get("effects", {})
+				if fx.has("damage_mul") or fx.has("fire_mul") or fx.has("fire_interval_set") \
+						or fx.has("reload_mul") or (slot == "magazine" and fx.has("capacity")):
+					sources.append("· %s · %s：%s" % [
+						String(slot_def["name"]), String(entry["name"]), String(entry["desc"])])
+			if progress != null:
+				var mag_level := int(progress.talent_2d_level(&"magazine"))
+				if mag_level > 0:
+					sources.append("· 战术天赋 · 弹匣扩容 Lv.%d：容量 +%d%%（提升持续 DPS 与单匣总伤）" % [
+						mag_level, mag_level * 10])
+			if reload_talent < 0.999:
+				sources.append("· 战术天赋 · 快速换弹：换弹时间 %+.0f%%（提升持续 DPS）" % [
+					(reload_talent - 1.0) * 100.0])
+		elif key == "瞄准速度":
+			text += "\n开镜耗时越短，举枪姿态、镜头前探与散布收紧越快"
+			for slot_def in ModDB.WEAPON_SLOTS:
+				var slot := String(slot_def["id"])
+				var option_id := String(installed.get(slot, ""))
+				if option_id == "":
+					continue
+				var entry := ModDB.option(slot, option_id, false, String(selected))
+				if entry.is_empty():
+					continue
+				var fx: Dictionary = entry.get("effects", {})
+				if not fx.has("ads_speed_mul") and not fx.has("ads_time_mul"):
+					continue
+				var summary := ModInstallService.sight_stats_line(entry) \
+					if slot == "sight" else String(entry["desc"])
+				sources.append("· %s · %s：%s" % [
+					String(slot_def["name"]), String(entry["name"]), summary])
+		elif effect_key != "":
 			for slot_def in ModDB.WEAPON_SLOTS:
 				var slot := String(slot_def["id"])
 				var option_id := String(installed.get(slot, ""))

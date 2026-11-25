@@ -143,14 +143,14 @@ func _build_stat_row(parent: Node, key: String) -> void:
 	var line := HBoxContainer.new()
 	line.mouse_filter = Control.MOUSE_FILTER_STOP
 	parent.add_child(line)
-	var name_label := PixelUI.label(line, key, 18, PixelUI.DIM)
+	var name_label := PixelUI.label(line, key, 17, PixelUI.DIM)
 	name_label.custom_minimum_size.x = 124
-	var value := PixelUI.label(line, "-", 18, PixelUI.TEXT)
+	var value := PixelUI.label(line, "-", 17, PixelUI.TEXT)
 	value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	detail_values[key] = value
 	# 增减标注单独一列右对齐，避免绿/红数字把基础数值挤得跳动。
-	var delta := PixelUI.label(line, "", 18, PixelUI.OK)
+	var delta := PixelUI.label(line, "", 17, PixelUI.OK)
 	delta.custom_minimum_size.x = 104
 	delta.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	detail_deltas[key] = delta
@@ -282,7 +282,10 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 	_set_plain_stat("水平后坐", "基 %.0f / 限 %.0f" % [
 		base.recoil_horizontal, base.recoil_max_horizontal])
 	_set_plain_stat("视野倍率", "+%d%%" % int(round(float(stats["vision"]) * 100.0)))
-	_set_plain_stat("瞄准速度", "+%d%%" % int(round(float(stats["ads"]) * 100.0)))
+	var base_ads_time: float = float(stats["base_ads_time"])
+	var ads_time: float = float(stats["ads_time"])
+	set_stat("瞄准速度", "%.2fs" % ads_time, "%.2fs" % base_ads_time,
+		ads_time - base_ads_time, false, 2)
 	set_stat("枪声范围", "%.0fm" % sound, "%.0fm" % base.sound_radius,
 		sound - base.sound_radius, false, 0)
 	if ammo == null:
@@ -290,6 +293,7 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 		_set_plain_stat("弹丸数", "-")
 		_set_plain_stat("穿甲", "-")
 		_set_plain_stat("伤害", "-")
+		_set_plain_stat("爆发 DPS", "-")
 	else:
 		var ammo_text: String = ammo.display_name
 		if ammo.pellets > 1:
@@ -303,6 +307,10 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 			"%d × %.1f = %.1f" % [ammo.pellets, damage, float(stats["damage"])],
 			"%d × %.1f = %.1f" % [ammo.pellets, base_damage, base_damage * pellets],
 			(damage - base_damage) * pellets, true, 1)
+		var base_burst_dps: float = float(stats["base_burst_dps"])
+		var burst_dps: float = float(stats["burst_dps"])
+		set_stat("爆发 DPS", "%.0f /s" % burst_dps, "%.0f /s" % base_burst_dps,
+			burst_dps - base_burst_dps, true, 0)
 
 	for id in WeaponDB.WEAPON_ORDER:
 		var button: Button = weapon_buttons[id]
@@ -326,7 +334,7 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 
 	if tooltip_view != null:
 		tooltip_view.refresh_tooltips(selected, installed, reload_talent, ammo,
-			detail_base, detail_values, progress)
+			detail_base, detail_values, progress, stats)
 
 
 func _set_plain_stat(key: String, text: String) -> void:

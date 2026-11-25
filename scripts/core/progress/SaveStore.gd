@@ -22,6 +22,7 @@ const PICKUP_MERGE_MIN := 0.0
 const PICKUP_MERGE_MAX := 10.0
 
 const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
+const MUZZLE_FLASH_MODES := ["full", "partial", "off"]
 const WEAPON_IDS := [
 	"m870", "m1014", "saiga12k", "g17",
 	"g18", "m1911", "fn57", "python",
@@ -70,6 +71,7 @@ static func defaults() -> Dictionary:
 		"shake_scale": 100.0,
 		"sample_impacts": true,
 		"hit_fx_level": 1,
+		"muzzle_flash_mode": "partial",
 		"view_zoom": 100,
 		"minimap_shape": "square",
 		"minimap_scale": 1.0,
@@ -311,6 +313,8 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 	data["shake_scale"] = clampf(float(data.get("shake_scale", 100.0)), 0.0, 1000.0)
 	data["sample_impacts"] = bool(data.get("sample_impacts", true))
 	data["hit_fx_level"] = clampi(int(data.get("hit_fx_level", 1)), 0, 2)
+	var flash_mode := String(data.get("muzzle_flash_mode", "partial"))
+	data["muzzle_flash_mode"] = flash_mode if MUZZLE_FLASH_MODES.has(flash_mode) else "partial"
 	data["view_zoom"] = clampf(
 		roundf(float(data.get("view_zoom", 100)) / 10.0) * 10.0, 20.0, 200.0)
 	var mm_shape := String(data.get("minimap_shape", "square"))

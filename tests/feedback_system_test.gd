@@ -127,6 +127,30 @@ func _run() -> void:
 	_check(supp_energy < bright_energy * 0.45 and supp_bloom < bright_bloom * 0.45,
 		"suppressor strongly dampens muzzle flash light and bloom")
 
+	# 9. Phase 2 火光三档对比（full > partial > off == 0）以及 WeaponRig2D 旧 _flash 同步关闭
+	fb.set_muzzle_flash_mode("full")
+	fb.play_muzzle_fx(Vector2(200, 150), 0.0, 1.2, false)
+	var full_energy: float = fb.muzzle_flash.current_light_energy()
+	var full_bloom: float = fb.muzzle_flash.current_bloom_alpha()
+	_check(full_energy > bright_energy * 1.25 and full_bloom > bright_bloom * 1.25,
+		"full muzzle flash mode boosts light (%.2f > %.2f) and bloom (%.2f > %.2f)" % [
+			full_energy, bright_energy, full_bloom, bright_bloom])
+	fb.set_muzzle_flash_mode("off")
+	fb.play_muzzle_fx(Vector2(200, 150), 0.0, 1.2, false)
+	_check(_near(fb.muzzle_flash.current_light_energy(), 0.0)
+		and _near(fb.muzzle_flash.current_bloom_alpha(), 0.0)
+		and fb.muzzle_flash.spark_count() == 0,
+		"off muzzle flash mode suppresses light, bloom, and sparks completely")
+	var rig := WeaponRig2D.new()
+	rig.weapon_id = &"akm"
+	owner.add_child(rig)
+	await process_frame
+	rig.set_muzzle_flash_mode("off")
+	rig.try_fire()
+	_check(not rig._flash.visible and _near(rig._flash.modulate.a, 0.0),
+		"off muzzle flash mode suppresses legacy WeaponRig2D _flash sprite")
+	rig.queue_free()
+
 	owner.queue_free()
 	await process_frame
 	print("\n=== feedback system: %s (%d ok / %d fail) ===" % [
