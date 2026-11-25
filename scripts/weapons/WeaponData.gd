@@ -47,6 +47,9 @@ class_name WeaponData
 ## 供弹方式
 @export var auto_cycle: bool = false        # true=半自动自动上膛，false=需手动泵动
 @export var feed_mode: StringName = &"shell" # shell=逐发压入管仓，mag=整匣更换
+## 图形化弹药容器样式（curved_mag / stick_mag / tube / cylinder / top_mag / drum / box）与加长比例。
+@export var mag_style: StringName = &"stick_mag"
+@export var mag_scale: float = 1.0
 ## 全自动射击：由「全自动改件」写入，按住左键持续开火。
 @export var auto_fire: bool = false
 ## 武器自带全自动（如 G18 / AKM），改件只在基础上追加。

@@ -10,6 +10,9 @@ static var AMMO_ORDER: Array[StringName] = _load_ammo_order()
 const WEAPON_CATEGORIES: Array[StringName] = [
 	&"all", &"pistol", &"smg", &"shotgun", &"rifle", &"dmr", &"sniper",
 ]
+const MAG_STYLES: Array[StringName] = [
+	&"curved_mag", &"stick_mag", &"tube", &"cylinder", &"top_mag", &"drum", &"box",
+]
 const WEAPON_CATEGORY_NAMES := {
 	&"all": "全部",
 	&"pistol": "手枪",
@@ -105,7 +108,16 @@ static func get_weapon(id: StringName) -> WeaponData:
 	w.model_kind = id
 	w.auto_cycle = bool(rec.get("auto_cycle", id != &"m870"))
 	w.feed_mode = StringName(rec.get("feed", "shell"))
+	w.mag_style = mag_style(id)
+	w.mag_scale = 1.0
 	return w
+
+
+static func mag_style(id: StringName) -> StringName:
+	var rec := _weapon_record(id)
+	var fallback := "tube" if String(rec.get("feed", "mag")) == "shell" else "stick_mag"
+	var raw := StringName(rec.get("mag_style", fallback))
+	return raw if MAG_STYLES.has(raw) else StringName(fallback)
 
 
 static func auto_cycle(id: StringName) -> bool:

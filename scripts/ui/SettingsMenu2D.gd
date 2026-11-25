@@ -304,7 +304,7 @@ func _build_right_column() -> Control:
 		armor_disp_row.add_child(button)
 		_armor_display_buttons[mode] = button
 
-	PixelUI.label(rows, "弹药显示", 19, PixelUI.DIM)
+	PixelUI.label(rows, "弹药显示（局内 J 键切换）", 19, PixelUI.DIM)
 	var ammo_row := HBoxContainer.new()
 	ammo_row.add_theme_constant_override("separation", 8)
 	rows.add_child(ammo_row)

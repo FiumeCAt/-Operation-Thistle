@@ -229,6 +229,81 @@ func _run() -> void:
 		and main.hud.fire_selector.fire_mode == "auto",
 		"clicking HUD fire selector again switches FN FAL back to full-auto (F)")
 
+	# 图形化弹药容器（6 种实装供弹轮廓 + 预留 box 样式）与 ammo_display 三模式 + J 键切换
+	var ac_script := preload("res://scripts/ui/AmmoContainer2D.gd")
+	_check(ac_script.visual_slots(5, &"stick_mag") == 5
+		and ac_script.visual_slots(6, &"cylinder") == 6
+		and ac_script.visual_slots(9, &"tube") == 9
+		and ac_script.visual_slots(12, &"curved_mag") == 12,
+		"AmmoContainer2D maps capacity <= 12 strictly 1:1")
+	_check(ac_script.visual_slots(17, &"stick_mag") >= 8 and ac_script.visual_slots(17, &"stick_mag") <= 16
+		and ac_script.visual_slots(30, &"curved_mag") == 12
+		and ac_script.visual_slots(50, &"top_mag") == 10
+		and ac_script.visual_slots(75, &"drum") == 16,
+		"AmmoContainer2D abstracts capacity > 12 into 8..16 clear bars/arcs")
+	_check(ac_script.filled_slots(0, 75, 16) == 0
+		and ac_script.filled_slots(1, 75, 16) == 1
+		and ac_script.filled_slots(75, 75, 16) == 16,
+		"AmmoContainer2D keeps at least 1 segment lit for 1 remaining round and 0 when empty")
+
+	var ac_probe: Control = ac_script.new()
+	ac_probe.size = Vector2(68, 106)
+	root.add_child(ac_probe)
+	for st in WeaponDB.MAG_STYLES:
+		ac_probe.configure(3, 10, st, 1.15, false)
+	ac_probe.configure(2, 10, &"curved_mag", 1.0, false)
+	_check(ac_probe.is_low_ammo(), "AmmoContainer2D flags low ammo at <= 25%")
+	ac_probe.configure(5, 10, &"box", 1.0, false)
+	_check(ac_probe.mag_style == &"box" and not ac_probe.is_low_ammo(),
+		"AmmoContainer2D supports reserved box style and normal ammo state")
+	ac_probe.queue_free()
+
+	# 实机武器切换驱动 6 种容器轮廓（含弹鼓配件动态覆盖）
+	var style_cases := [
+		[&"g17", {}, &"stick_mag"],
+		[&"akm", {}, &"curved_mag"],
+		[&"akm", {"magazine": "mag_drum"}, &"drum"],
+		[&"m870", {}, &"tube"],
+		[&"python", {}, &"cylinder"],
+		[&"p90", {}, &"top_mag"],
+	]
+	var all_hud_styles_ok := true
+	for entry in style_cases:
+		var wid: StringName = entry[0]
+		var wmods: Dictionary = entry[1]
+		var want_style: StringName = entry[2]
+		p.data["weapon_mods_2d"][String(wid)] = wmods.duplicate()
+		main.doll.equip_weapon_id(wid)
+		main.hud.update_weapon(main.doll.weapon_rig)
+		if main.hud.ammo_container == null or main.hud.ammo_container.mag_style != want_style:
+			all_hud_styles_ok = false
+	_check(all_hud_styles_ok,
+		"RunHUD2D dynamically matches all 6 container styles (stick/curved/drum/tube/cylinder/top_mag)")
+	p.data["weapon_mods_2d"]["akm"] = {}
+
+	# 设置页与 J 键打通 ammo_display（both / numeric / graphic）
+	p.set_ammo_display("both")
+	main._on_settings_applied()
+	var w_both: float = main.hud.ammo_container.custom_minimum_size.x
+	_check(main.hud.get_ammo_display_mode() == "both"
+		and main.hud._ammo_well.visible and main.hud._count.visible and main.hud._reserve.visible,
+		"ammo_display=both displays both graphic container and numeric count")
+	p.set_ammo_display("numeric")
+	main._on_settings_applied()
+	_check(main.hud.get_ammo_display_mode() == "numeric"
+		and not main.hud._ammo_well.visible and main.hud._count.visible,
+		"ammo_display=numeric hides graphic container and shows numeric count")
+	p.set_ammo_display("graphic")
+	main._on_settings_applied()
+	_check(main.hud.get_ammo_display_mode() == "graphic"
+		and main.hud._ammo_well.visible and not main.hud._count.visible
+		and main.hud._reserve.visible and main.hud._state.visible
+		and main.hud.ammo_container.custom_minimum_size.x > w_both,
+		"ammo_display=graphic emphasizes graphic container and hides exact mag count while keeping reserve/state")
+	main._cycle_ammo_display()
+	_check(main.hud.get_ammo_display_mode() == "both" and p.ammo_display() == "both",
+		"J-key ammo display cycle wraps back to both and persists to Progress")
+
 	# 触发 shot_fired & hit_resolved
 	for e in main.enemies:
 		if is_instance_valid(e):

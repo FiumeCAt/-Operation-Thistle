@@ -72,13 +72,24 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		if reticle_resolver.is_valid():
 			sight_reticle = String(reticle_resolver.call(sight_id, sight_reticle))
 
-	# 弹匣配件提供绝对容量，最后再叠「弹匣扩容」天赋。
+	# 弹匣配件提供绝对容量与容器样式/加长比例，最后再叠「弹匣扩容」天赋。
 	var raw_capacity: int = base.mag_capacity
+	var mag_style: StringName = base.mag_style
+	var mag_scale := 1.0
 	var magazine := ModDB.option("magazine", String(installed.get("magazine", "")), false, wid)
 	if not magazine.is_empty():
 		var mag_fx: Dictionary = magazine.get("effects", {})
 		if mag_fx.has("capacity"):
 			raw_capacity = int(mag_fx["capacity"])
+		var style_raw := String(magazine.get("mag_style", mag_fx.get("mag_style", "")))
+		if style_raw != "" and WeaponDB.MAG_STYLES.has(StringName(style_raw)):
+			mag_style = StringName(style_raw)
+		if magazine.has("mag_scale"):
+			mag_scale = clampf(float(magazine["mag_scale"]), 0.75, 1.45)
+		elif mag_fx.has("mag_scale"):
+			mag_scale = clampf(float(mag_fx["mag_scale"]), 0.75, 1.45)
+		elif raw_capacity > base.mag_capacity and mag_style != &"drum":
+			mag_scale = clampf(1.0 + (float(raw_capacity) / maxf(1.0, float(base.mag_capacity)) - 1.0) * 0.28, 1.0, 1.32)
 	var mag := maxi(1, int(round(float(raw_capacity) * talent_mag)))
 
 	# 射速与全自动：先乘 fire_mul，再应用枪机专属改件；武器自带全自动（AKM/G18 等）不被非全自动枪机清掉。
@@ -126,6 +137,8 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"mods": mods,
 		"ammo": ammo,
 		"mag": mag,
+		"mag_style": mag_style,
+		"mag_scale": mag_scale,
 		"interval": interval,
 		"load_modded": load_modded,
 		"load": load_effective,
@@ -202,4 +215,6 @@ static func apply_to_weapon_data(data: WeaponData, stats: Dictionary) -> void:
 	data.spread_max = float(stats["spread_max"])
 	data.shake_amount = float(stats["shake_amount"])
 	data.mag_capacity = int(stats["mag"])
+	data.mag_style = StringName(stats.get("mag_style", data.mag_style))
+	data.mag_scale = float(stats.get("mag_scale", 1.0))
 	data.auto_fire = bool(stats["auto"])

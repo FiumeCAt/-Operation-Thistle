@@ -49,6 +49,11 @@ static func set_ui_theme_color(data: Dictionary, color: Color) -> void:
 	data["ui_theme_color"] = "#" + color.to_html(false)
 
 
+static func ammo_display(data: Dictionary) -> String:
+	var mode := String(data.get("ammo_display", "both"))
+	return mode if AMMO_DISPLAY_MODES.has(mode) else "both"
+
+
 static func set_ammo_display(data: Dictionary, mode: String) -> bool:
 	if not AMMO_DISPLAY_MODES.has(mode):
 		return false

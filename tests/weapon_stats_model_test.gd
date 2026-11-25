@@ -30,6 +30,8 @@ func _run() -> void:
 	# ---- 1) 裸枪黄金基线（AKM / G17 / M870 / AWM） ----
 	var akm_bare: Dictionary = STATS_MODEL.compute(&"akm", {})
 	_check(int(akm_bare["mag"]) == 30, "AKM bare mag == 30")
+	_check(akm_bare["mag_style"] == &"curved_mag" and is_equal_approx(float(akm_bare["mag_scale"]), 1.0),
+		"AKM bare mag_style == curved_mag (scale 1.0)")
 	_check(is_equal_approx(float(akm_bare["interval"]), 0.10), "AKM bare fire_interval == 0.10")
 	_check(is_equal_approx(float(akm_bare["range"]), 40.0), "AKM bare range == 40.0m")
 	_check(is_equal_approx(float(akm_bare["speed"]), 715.0), "AKM bare bullet_speed == 715 m/s")
@@ -69,6 +71,7 @@ func _run() -> void:
 	var talents := {"magazine": 2, "reload": 3, "gun": 2}
 	var akm_mod: Dictionary = STATS_MODEL.compute(&"akm", akm_full_mods, talents)
 	_check(int(akm_mod["mag"]) == int(round(75.0 * 1.20)), "AKM drum + mag lv2 == %d" % int(akm_mod["mag"]))
+	_check(akm_mod["mag_style"] == &"drum", "AKM drum mod overrides mag_style to drum")
 	_check(bool(akm_mod["auto"]), "AKM with tuned core preserves default full-auto")
 	_check(is_equal_approx(float(akm_mod["interval"]), 0.09), "AKM tuned interval == 0.09s")
 	_check(is_equal_approx(float(akm_mod["range"]), 44.0), "AKM + 4x scope range == 44.0m")
@@ -108,6 +111,10 @@ func _run() -> void:
 	_check(bool(g17_auto["auto"]), "G17 auto kit enables full-auto")
 	_check(is_equal_approx(float(g17_auto["interval"]), 0.10), "G17 auto kit fixes interval to 0.10s")
 	_check(int(g17_auto["mag"]) == 50, "G17 drum mag == 50")
+	_check(g17_auto["mag_style"] == &"drum", "G17 drum mag resolves to drum style")
+	var g17_long: Dictionary = STATS_MODEL.compute(&"g17", {"magazine": "mag_long"})
+	_check(g17_long["mag_style"] == &"stick_mag" and float(g17_long["mag_scale"]) > 1.15,
+		"G17 33rd extended mag keeps stick_mag with elongated mag_scale")
 	_check(String(g17_auto["sight_reticle"]) == "mildot", "reticle_resolver overrides default sight reticle")
 
 	# 不可变隔离：build_weapon_data 克隆新实例，绝不原地修改基础模板
@@ -146,6 +153,7 @@ func _run() -> void:
 
 		var model_via_p: Dictionary = STATS_MODEL.compute_for_progress(&"akm", p)
 		_check(rig.data.mag_capacity == int(model_via_p["mag"]), "WeaponRig2D mag matches WeaponStatsModel")
+		_check(rig.data.mag_style == &"drum", "WeaponRig2D inherits drum mag_style from installed mod")
 		_check(is_equal_approx(rig.data.fire_interval, float(model_via_p["interval"])), "WeaponRig2D interval matches WeaponStatsModel")
 		_check(is_equal_approx(rig.data.load_time, float(model_via_p["load_modded"])), "WeaponRig2D load_time matches load_modded")
 		_check(is_equal_approx(rig.data.range_m, float(model_via_p["range"])), "WeaponRig2D range_m matches WeaponStatsModel")

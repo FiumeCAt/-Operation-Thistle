@@ -112,6 +112,29 @@ func _run() -> void:
 		"SR-25/VSS 为射手步枪、AWM 独立狙击步枪页、FAL 为步枪")
 	_check(WeaponDB.get_weapon(&"fal").default_auto_fire,
 		"FN FAL 默认支持全自动开火模式")
+	var all_mag_styles_valid := true
+	for wid in WeaponDB.WEAPON_ORDER:
+		if not WeaponDB.MAG_STYLES.has(WeaponDB.get_weapon(wid).mag_style):
+			all_mag_styles_valid = false
+	_check(all_mag_styles_valid and WeaponDB.MAG_STYLES.has(&"box"),
+		"18 把武器均有合法 mag_style 且预留 box 弹箱样式")
+	_check(WeaponDB.mag_style(&"akm") == &"curved_mag"
+		and WeaponDB.mag_style(&"l85a2") == &"curved_mag"
+		and WeaponDB.mag_style(&"vss") == &"curved_mag"
+		and WeaponDB.mag_style(&"saiga12k") == &"curved_mag"
+		and WeaponDB.mag_style(&"g17") == &"stick_mag"
+		and WeaponDB.mag_style(&"awm") == &"stick_mag"
+		and WeaponDB.mag_style(&"m870") == &"tube"
+		and WeaponDB.mag_style(&"m1014") == &"tube"
+		and WeaponDB.mag_style(&"python") == &"cylinder"
+		and WeaponDB.mag_style(&"p90") == &"top_mag",
+		"18 把武器基础供弹容器样式映射准确（弯匣/直匣/弹管/弹巢/顶置匣）")
+	_check(String(ModDB.option("magazine", "mag_drum", false, "akm").get("mag_style", "")) == "drum"
+		and String(ModDB.option("magazine", "mag_drum", false, "g17").get("mag_style", "")) == "drum"
+		and String(ModDB.option("magazine", "mag_drum", false, "g18").get("mag_style", "")) == "drum"
+		and String(ModDB.option("magazine", "mag_drum", false, "saiga12k").get("mag_style", "")) == "drum"
+		and float(ModDB.option("magazine", "mag_long", false, "g17").get("mag_scale", 1.0)) > 1.1,
+		"弹鼓配件标注 drum 样式，加长弹匣标注 mag_scale 拉长比例")
 	var supp := ModDB.option("muzzle", "suppressor", false, "akm")
 	var supp_fx: Dictionary = supp.get("effects", {})
 	_check(not supp_fx.has("damage_mul")

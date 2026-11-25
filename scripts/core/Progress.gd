@@ -371,6 +371,10 @@ func _sync_ui_theme() -> void:
 	PixelUI.set_theme_palette(ui_theme(), ui_theme_color())
 	PixelUI.set_typewriter_config(typewriter_enabled(), typewriter_speed())
 
+func ammo_display() -> String:
+	return SETTINGS_STORE.ammo_display(data)
+
+
 func set_ammo_display(mode: String) -> bool:
 	return save_data() if SETTINGS_STORE.set_ammo_display(data, mode) else false
 

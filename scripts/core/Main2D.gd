@@ -366,6 +366,11 @@ func _ensure_view_zoom_action() -> void:
 		var b_key := InputEventKey.new()
 		b_key.physical_keycode = KEY_B
 		InputMap.action_add_event("fire_mode", b_key)
+	if not InputMap.has_action("ammo_display"):
+		InputMap.add_action("ammo_display")
+		var j_key := InputEventKey.new()
+		j_key.physical_keycode = KEY_J
+		InputMap.action_add_event("ammo_display", j_key)
 
 
 ## 通过命令行切换角色表现：
@@ -430,8 +435,13 @@ func _apply_talents() -> void:
 	view_zoom_pct = clampf(
 		roundf(float(progress.data.get("view_zoom", 100)) / 10.0) * 10.0,
 		VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
-	if hud != null and progress.has_method("pickup_merge_window"):
-		hud.set_pickup_merge_window(float(progress.pickup_merge_window()))
+	if hud != null:
+		if progress.has_method("pickup_merge_window"):
+			hud.set_pickup_merge_window(float(progress.pickup_merge_window()))
+		if progress.has_method("ammo_display"):
+			hud.set_ammo_display_mode(String(progress.ammo_display()))
+		elif progress.data is Dictionary:
+			hud.set_ammo_display_mode(String(progress.data.get("ammo_display", "both")))
 	_view_zoom_visual = view_zoom_pct
 	# 护甲：基础存档值 + 护甲组件 + 护甲强化天赋，进入行动时补满。
 	var armor_mods := ModDB.modifiers(progress.armor_mods_2d(), true)
@@ -465,8 +475,13 @@ func _on_settings_applied() -> void:
 	view_zoom_pct = clampf(
 		roundf(float(progress.data.get("view_zoom", 100)) / 10.0) * 10.0,
 		VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
-	if hud != null and progress.has_method("pickup_merge_window"):
-		hud.set_pickup_merge_window(float(progress.pickup_merge_window()))
+	if hud != null:
+		if progress.has_method("pickup_merge_window"):
+			hud.set_pickup_merge_window(float(progress.pickup_merge_window()))
+		if progress.has_method("ammo_display"):
+			hud.set_ammo_display_mode(String(progress.ammo_display()))
+		elif progress.data is Dictionary:
+			hud.set_ammo_display_mode(String(progress.data.get("ammo_display", "both")))
 
 
 ## 立即套用弹道线条开关：只隐藏枪口到弹丸的长线，弹丸实体与命中不受影响。
@@ -1001,6 +1016,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_set_view_zoom(view_zoom_pct - VIEW_ZOOM_STEP)
 			get_viewport().set_input_as_handled()
 			return
+	if event.is_action_pressed("ammo_display"):
+		if run_state == RunState.ACTIVE \
+				and (pause_menu == null or not pause_menu.visible) \
+				and (map_overlay == null or not map_overlay.visible) \
+				and (backpack == null or not backpack.visible):
+			_cycle_ammo_display()
+			get_viewport().set_input_as_handled()
+		return
 	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	match event.physical_keycode:
@@ -1028,6 +1051,24 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_F8:
 			get_tree().debug_collisions_hint = not get_tree().debug_collisions_hint
 			get_viewport().set_input_as_handled()
+
+
+## J 键轮换弹药显示模式（both 图文 → numeric 数值 → graphic 图形），同步写回存档并轻闪提示。
+func _cycle_ammo_display() -> void:
+	if hud == null:
+		return
+	var next_mode := hud.cycle_ammo_display_mode()
+	var progress := get_node_or_null("/root/Progress")
+	if progress != null and progress.has_method("set_ammo_display"):
+		progress.set_ammo_display(next_mode)
+	var labels := {
+		"both": "弹药显示：图文（容器 + 数值）",
+		"numeric": "弹药显示：纯数值",
+		"graphic": "弹药显示：纯图形容器",
+	}
+	_flash_hint(String(labels.get(next_mode, "弹药显示已切换")))
+	if doll != null and doll.weapon_rig != null:
+		hud.update_weapon(doll.weapon_rig)
 
 
 ## 整体视角缩放：夹在 20%–200% 并对齐 10% 档位。

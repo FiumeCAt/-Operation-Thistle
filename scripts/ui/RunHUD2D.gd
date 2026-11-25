@@ -7,10 +7,17 @@ class_name RunHUD2D
 
 const PLATE_TEX: Texture2D = preload("res://assets/art/ui/hud/status_plate.png")
 const WEAPON_PLATE_TEX: Texture2D = preload("res://assets/art/ui/hud/weapon_plate.png")
+const AMMO_CONTAINER := preload("res://scripts/ui/AmmoContainer2D.gd")
 ## 状态板贴左下角：生命条在屏幕左下，避开主要视野。
 const PLATE_POS := Vector2(20, -148)
 const PLATE_SIZE := Vector2(560, 132)
-const WEAPON_PLATE_SIZE := Vector2(360, 150)
+const WEAPON_PLATE_SIZE := Vector2(456, 164)
+const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
+const AMMO_DISPLAY_LABELS := {
+	"both": "[J] 图文",
+	"numeric": "[J] 数值",
+	"graphic": "[J] 图形",
+}
 
 ## 右上角小地图：只显示玩家附近敌情，目标点常显。
 signal return_requested
@@ -52,8 +59,11 @@ var _ammo_name: Label
 var _reserve: Label
 var _count: Label
 var _state: Label
+var _mode_badge: Label
 var _progress: ProgressBar
-var _strip: ShellStrip2D
+var _ammo_well: PanelContainer
+var ammo_container: Control
+var ammo_display_mode := "both"
 var fire_selector: FireSelectorWidget2D
 var _result_panel: PanelContainer
 var _debrief_empty: Label
@@ -84,8 +94,56 @@ func _ready() -> void:
 	_build_minimap()
 	_build_result_panel()
 	var progress := get_node_or_null("/root/Progress")
-	if progress != null and progress.has_method("pickup_merge_window"):
-		set_pickup_merge_window(float(progress.pickup_merge_window()))
+	if progress != null:
+		if progress.has_method("pickup_merge_window"):
+			set_pickup_merge_window(float(progress.pickup_merge_window()))
+		if progress.has_method("ammo_display"):
+			set_ammo_display_mode(String(progress.ammo_display()))
+		elif progress.data is Dictionary:
+			set_ammo_display_mode(String(progress.data.get("ammo_display", "both")))
+
+
+func set_ammo_display_mode(mode: String) -> void:
+	var clean := mode if AMMO_DISPLAY_MODES.has(mode) else "both"
+	ammo_display_mode = clean
+	_apply_ammo_display_mode()
+
+
+func get_ammo_display_mode() -> String:
+	return ammo_display_mode
+
+
+func cycle_ammo_display_mode() -> String:
+	var idx := AMMO_DISPLAY_MODES.find(ammo_display_mode)
+	var next_mode: String = AMMO_DISPLAY_MODES[(idx + 1) % AMMO_DISPLAY_MODES.size()]
+	set_ammo_display_mode(next_mode)
+	return next_mode
+
+
+func _apply_ammo_display_mode() -> void:
+	var show_graphic := ammo_display_mode != "numeric"
+	var show_numeric := ammo_display_mode != "graphic"
+	var graphic_focus := ammo_display_mode == "graphic"
+	if _ammo_well != null:
+		_ammo_well.visible = show_graphic
+		_ammo_well.custom_minimum_size = Vector2(96, 116) if graphic_focus else Vector2(80, 114)
+		var well_style := _ammo_well.get_theme_stylebox("panel") as StyleBoxFlat
+		if well_style != null:
+			well_style.border_color = Color(PixelUI.AMBER_BRIGHT, 0.62) if graphic_focus \
+				else Color(PixelUI.AMBER, 0.34)
+	if ammo_container != null:
+		ammo_container.visible = show_graphic
+		ammo_container.custom_minimum_size = Vector2(86, 106) if graphic_focus else Vector2(70, 104)
+	if _count != null:
+		_count.visible = show_numeric
+		_count.add_theme_font_size_override(
+			"font_size", PixelUI.FS_TITLE + 4 if ammo_display_mode == "numeric" else PixelUI.FS_TITLE)
+	if _reserve != null:
+		_reserve.add_theme_font_size_override(
+			"font_size", PixelUI.FS_BODY + 4 if graphic_focus else PixelUI.FS_BODY)
+		_reserve.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT if graphic_focus else HORIZONTAL_ALIGNMENT_RIGHT
+	if _mode_badge != null:
+		_mode_badge.text = String(AMMO_DISPLAY_LABELS.get(ammo_display_mode, "[J] 图文"))
 
 
 func set_pickup_merge_window(seconds: float) -> void:
@@ -365,7 +423,7 @@ static func _format_pickup_bbcode(text: String, color: Color) -> String:
 	return PixelUI.bb(out, color.lightened(0.08))
 
 
-## 右下：枪名 / 弹匣 / 备弹 / 状态 / 换弹进度，共用生成式金属底板。
+## 右下：独立图形化供弹容器展示区 + 枪名 / 弹匣数值 / 备弹 / 状态 / 换弹进度，共用生成式金属底板。
 func _build_weapon_panel() -> void:
 	var plate := TextureRect.new()
 	plate.texture = WEAPON_PLATE_TEX
@@ -383,52 +441,86 @@ func _build_weapon_panel() -> void:
 	var margin := MarginContainer.new()
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 26)
+	margin.add_theme_constant_override("margin_left", 30)
 	margin.add_theme_constant_override("margin_right", 24)
-	margin.add_theme_constant_override("margin_top", 16)
-	margin.add_theme_constant_override("margin_bottom", 14)
+	margin.add_theme_constant_override("margin_top", 18)
+	margin.add_theme_constant_override("margin_bottom", 16)
 	plate.add_child(margin)
 
+	var body := HBoxContainer.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_theme_constant_override("separation", 12)
+	margin.add_child(body)
+
+	# 左侧独立弹药容器展示区（支持 6 种供弹轮廓 + 预留弹箱，graphic 模式下自动放大突出）。
+	_ammo_well = PanelContainer.new()
+	_ammo_well.name = "AmmoContainerWell"
+	_ammo_well.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ammo_well.custom_minimum_size = Vector2(80, 114)
+	_ammo_well.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var well_style := StyleBoxFlat.new()
+	well_style.bg_color = Color(0.010, 0.014, 0.020, 0.72)
+	well_style.border_color = Color(PixelUI.AMBER, 0.34)
+	well_style.set_border_width_all(1)
+	well_style.content_margin_left = 4
+	well_style.content_margin_right = 4
+	well_style.content_margin_top = 4
+	well_style.content_margin_bottom = 4
+	_ammo_well.add_theme_stylebox_override("panel", well_style)
+	body.add_child(_ammo_well)
+
+	ammo_container = AMMO_CONTAINER.new()
+	ammo_container.name = "AmmoContainer2D"
+	ammo_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ammo_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_ammo_well.add_child(ammo_container)
+
 	var rows := VBoxContainer.new()
+	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rows.alignment = BoxContainer.ALIGNMENT_CENTER
-	rows.add_theme_constant_override("separation", 4)
-	margin.add_child(rows)
+	rows.add_theme_constant_override("separation", 5)
+	body.add_child(rows)
 
 	var title_row := HBoxContainer.new()
-	title_row.add_theme_constant_override("separation", 10)
+	title_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_row.add_theme_constant_override("separation", 8)
 	rows.add_child(title_row)
-	_title = PixelUI.emphasize(PixelUI.label(title_row, "G17 // 9MM", PixelUI.FS_BODY, PixelUI.AMBER_BRIGHT), 2, 1)
+	_title = PixelUI.emphasize(PixelUI.label(title_row, "G17 // 9MM", 20, PixelUI.AMBER_BRIGHT), 2, 1)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_state = PixelUI.emphasize(PixelUI.label(title_row, "就绪", PixelUI.FS_BODY, PixelUI.OK), 2, 1)
+	_title.clip_text = true
+	_state = PixelUI.emphasize(PixelUI.label(title_row, "就绪", 20, PixelUI.OK), 2, 1)
 	_state.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
 	var count_row := HBoxContainer.new()
-	count_row.add_theme_constant_override("separation", 10)
+	count_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	count_row.add_theme_constant_override("separation", 8)
 	rows.add_child(count_row)
 	_count = PixelUI.emphasize(PixelUI.label(count_row, "-- / --", PixelUI.FS_TITLE, PixelUI.TEXT), 3, 2)
 	_count.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_count.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	ammo_label = _count
 	_reserve = PixelUI.emphasize(PixelUI.label(count_row, "备弹 --", PixelUI.FS_BODY, PixelUI.DIM), 2, 1)
+	_reserve.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_reserve.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_reserve.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
-	var strip_row := HBoxContainer.new()
-	strip_row.add_theme_constant_override("separation", 10)
-	rows.add_child(strip_row)
-	_strip = ShellStrip2D.new()
-	_strip.custom_minimum_size = Vector2(150, 16)
-	_strip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	strip_row.add_child(_strip)
-	_ammo_name = PixelUI.label(strip_row, "9mm", PixelUI.FS_BODY, PixelUI.AMBER)
+	var meta_row := HBoxContainer.new()
+	meta_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	meta_row.add_theme_constant_override("separation", 8)
+	rows.add_child(meta_row)
+	_ammo_name = PixelUI.label(meta_row, "9mm", PixelUI.FS_BODY, PixelUI.AMBER)
 	_ammo_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_ammo_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_ammo_name.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_mode_badge = PixelUI.label(meta_row, "[J] 图文", 15, Color(PixelUI.DIM, 0.85))
+	_mode_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_mode_badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 	_progress = PixelUI.bar(6)
 	_progress.max_value = 100
 	_progress.value = 0
 	rows.add_child(_progress)
+	_apply_ammo_display_mode()
 
 	# 武器面板左侧快慢机拨片：参照机匣拨片造型，支持鼠标左键点击与 B 键切换全自动/半自动。
 	fire_selector = FireSelectorWidget2D.new()
@@ -661,9 +753,8 @@ func update_weapon(rig) -> void:
 		_reserve.text = ""
 		_count.text = "--"
 		_state.text = ""
-		_strip.mag = 0
-		_strip.cap = 0
-		_strip.queue_redraw()
+		if ammo_container != null:
+			ammo_container.configure(0, 0, &"stick_mag", 1.0, false)
 		_progress.value = 0.0
 		if fire_selector != null:
 			fire_selector.visible = false
@@ -683,16 +774,17 @@ func update_weapon(rig) -> void:
 	var reserve_cnt: int = rig.get_reserve()
 	_reserve.text = "备弹 %d" % reserve_cnt
 	_reserve.add_theme_color_override(
-		"font_color", PixelUI.DANGER if reserve_cnt <= 0 else PixelUI.DIM)
+		"font_color", PixelUI.DANGER if reserve_cnt <= 0 else (PixelUI.TEXT if ammo_display_mode == "graphic" else PixelUI.DIM))
 	_count.text = "%d / %d" % [rig.mag, data.mag_capacity]
 	var mag_ratio := float(rig.mag) / maxf(1.0, float(data.mag_capacity))
 	var count_col := PixelUI.DANGER if rig.mag <= 0 \
 		else (PixelUI.GOLD if mag_ratio <= 0.25 else PixelUI.TEXT)
 	_count.add_theme_color_override("font_color", count_col)
-	_strip.cap = data.mag_capacity
-	_strip.mag = rig.mag
-	_strip.queue_redraw()
 	var reloading: bool = rig.reload_t > 0.0
+	if ammo_container != null:
+		var style: StringName = data.mag_style if ("mag_style" in data) else WeaponDB.mag_style(data.id)
+		var scale_ratio: float = float(data.mag_scale) if ("mag_scale" in data) else 1.0
+		ammo_container.configure(rig.mag, data.mag_capacity, style, scale_ratio, reloading)
 	var switching: bool = rig.switch_t > 0.0
 	var state_color := PixelUI.OK
 	if rig.is_drawing():
@@ -843,31 +935,6 @@ func _process(delta: float) -> void:
 			expired.append(item)
 	for item in expired:
 		_feed_items.erase(item)
-
-
-## 弹匣条：每发一根竖条，一排放得下；比矩阵格更矮，适合紧凑武器面板。
-class ShellStrip2D extends Control:
-	var mag := 0
-	var cap := 0
-
-	func _draw() -> void:
-		if cap <= 0:
-			return
-		var amber := PixelUI.AMBER
-		var slot := 7.0
-		var bar_w := 5.0
-		var bar_h := minf(size.y - 4.0, 12.0)
-		var width := cap * slot - 2.0
-		var origin := Vector2((size.x - width) * 0.5, (size.y - bar_h) * 0.5)
-		draw_rect(Rect2(origin - Vector2(4, 3), Vector2(width + 8, bar_h + 6)),
-			Color(0.85, 0.89, 0.92, 0.22), false, 1.0)
-		for i in cap:
-			var pos := origin + Vector2(i * slot, 0.0)
-			var loaded := i < mag
-			draw_rect(Rect2(pos, Vector2(bar_w, bar_h)),
-				amber if loaded else Color(0.11, 0.14, 0.17, 0.95), true)
-			draw_rect(Rect2(pos, Vector2(bar_w, bar_h)),
-				Color(0.55, 0.60, 0.64, 0.45), false, 1.0)
 
 
 ## 像素机械快慢机拨片（F 全自动 / S 半自动）：置于右下武器面板左侧，支持鼠标点击与 B 键联动。
