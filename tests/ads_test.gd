@@ -176,6 +176,25 @@ func _run() -> void:
 				awm_main_t, awm_rig_t, g17_main_t, g17_rig_t])
 		_check(absf(awm_main_t - awm_rig_t) < 0.08,
 			"AWM+8x Main2D._ads_t and WeaponRig2D._ads_t stay synchronized under scope ads_time_mul")
+
+		# 狙击镜开镜渐变动画：中间帧镜口与放大平滑过渡，满开镜后抵达完整倍率与尺寸
+		_main._ads_t = 0.0
+		rig._ads_t = 0.0
+		_main.scope_sight._fade = 0.0
+		Input.action_press("aim")
+		await _wait(12)
+		var mid_fade: float = _main.scope_sight.get_scope_fade()
+		var mid_scale: float = _main.scope_sight.get_lens_scale()
+		var mid_zoom: float = _main.scope_sight._cam.zoom.x
+		_check(mid_fade > 0.05 and mid_fade < 0.95 and mid_scale > 0.62 and mid_scale < 0.99
+			and mid_zoom > 1.0 and mid_zoom < 7.8,
+			"scope sight smoothly animates fade (%.2f), scale (%.2f), and zoom (%.2fx) mid-ADS" % [
+				mid_fade, mid_scale, mid_zoom])
+		await _wait(40)
+		_check(_main.scope_sight.get_scope_fade() > 0.98 and _main.scope_sight.get_lens_scale() > 0.99
+			and _main.scope_sight._cam.zoom.x > 7.5,
+			"scope sight finishes smoothly at full scale and 8x magnification")
+		Input.action_release("aim")
 		p.reset_for_test()
 
 	# --- 头身接缝：头部不再独立旋转/横移 ---

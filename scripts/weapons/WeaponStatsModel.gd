@@ -22,6 +22,20 @@ static func gun_accuracy_mul(level: int) -> float:
 	return maxf(0.25, 1.0 - float(maxi(level, 0)) * GUN_ACCURACY_PER_LEVEL)
 
 
+## 简洁 DPS 计算：返回真实射击周期、每秒 DPS、持续 DPS（含换弹）与单匣总伤害。
+static func _calc_dps(shot_dmg: float, interval: float, pump_extra: float,
+		mag: int, load_t: float, shell_feed: bool) -> Dictionary:
+	var cycle := maxf(0.03, interval + pump_extra)
+	var reload_full := load_t * float(mag) if shell_feed else load_t
+	var mag_dmg := shot_dmg * float(mag)
+	return {
+		"cycle": cycle,
+		"dps": shot_dmg / cycle,
+		"sustained": mag_dmg / maxf(float(mag) * cycle + reload_full, 0.05),
+		"mag_dmg": mag_dmg,
+	}
+
+
 ## 从 Progress Autoload 提取与武器属性相关的 2D 天赋等级；缺失时全回退 0。
 static func talents_from_progress(progress: Node) -> Dictionary:
 	if progress == null or not progress.has_method("talent_2d_level"):
@@ -137,18 +151,12 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		var attach_scale := clampf(float(ammo.attachment_spread_scale), 0.0, 1.0)
 		spread = base_spread * lerpf(1.0, spread_mul, attach_scale) * accuracy
 
-	# 真实射击循环周期：泵动/手动循环武器（如 M870）计入 pump_time，避免虚高假 DPS。
-	var manual_cycle_extra := base.pump_time if (not base.auto_cycle and base.pump_time > 0.0) else 0.0
-	var base_cycle_time := maxf(0.03, base.fire_interval + manual_cycle_extra)
-	var cycle_time := maxf(0.03, interval + manual_cycle_extra)
-	var base_burst_dps := base_total_damage / base_cycle_time
-	var burst_dps := total_damage / cycle_time
-	var base_mag_damage := base_total_damage * float(base.mag_capacity)
-	var mag_damage := total_damage * float(mag)
-	var base_reload_full := base.load_time * float(base.mag_capacity) if base.feed_mode == &"shell" else base.load_time
-	var reload_full := load_effective * float(mag) if base.feed_mode == &"shell" else load_effective
-	var base_sustained_dps := base_mag_damage / maxf(float(base.mag_capacity) * base_cycle_time + base_reload_full, 0.05)
-	var sustained_dps := mag_damage / maxf(float(mag) * cycle_time + reload_full, 0.05)
+	# 真实射击循环周期与每秒 DPS（泵动/手动循环武器计入 pump_time）。
+	var pump_extra := base.pump_time if (not base.auto_cycle and base.pump_time > 0.0) else 0.0
+	var shell_feed := base.feed_mode == &"shell"
+	var base_dps_info := _calc_dps(base_total_damage, base.fire_interval, pump_extra,
+		base.mag_capacity, base.load_time, shell_feed)
+	var dps_info := _calc_dps(total_damage, interval, pump_extra, mag, load_effective, shell_feed)
 
 	# 真实开镜时间（秒）：综合武器基础开镜耗时、高倍镜/后托/握把/扩容弹匣手感倍率与下挂激光加速。
 	var base_ads_time := clampf(float(base.ads_time), 0.05, 1.50)
@@ -163,8 +171,8 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"mag_style": mag_style,
 		"mag_scale": mag_scale,
 		"interval": interval,
-		"base_cycle_time": base_cycle_time,
-		"cycle_time": cycle_time,
+		"base_cycle_time": float(base_dps_info["cycle"]),
+		"cycle_time": float(dps_info["cycle"]),
 		"load_modded": load_modded,
 		"load": load_effective,
 		"range": range_m,
@@ -195,12 +203,14 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 		"base_pellet_damage": base_pellet_damage,
 		"pellet_damage": pellet_damage,
 		"damage": total_damage,
-		"base_burst_dps": base_burst_dps,
-		"burst_dps": burst_dps,
-		"base_sustained_dps": base_sustained_dps,
-		"sustained_dps": sustained_dps,
-		"base_mag_damage": base_mag_damage,
-		"mag_damage": mag_damage,
+		"base_dps": float(base_dps_info["dps"]),
+		"dps": float(dps_info["dps"]),
+		"base_burst_dps": float(base_dps_info["dps"]),
+		"burst_dps": float(dps_info["dps"]),
+		"base_sustained_dps": float(base_dps_info["sustained"]),
+		"sustained_dps": float(dps_info["sustained"]),
+		"base_mag_damage": float(base_dps_info["mag_dmg"]),
+		"mag_damage": float(dps_info["mag_dmg"]),
 		"pellets": pellets,
 		"ap": ap,
 		"base_spread": base_spread,

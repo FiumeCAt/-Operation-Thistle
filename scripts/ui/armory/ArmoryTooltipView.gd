@@ -7,7 +7,7 @@ const TIP_WIDTH := 520.0
 
 const STAT_KEYS: Array[String] = [
 	"口径", "弹匣容量", "供弹方式", "换弹时间", "射速", "射程", "子弹速度", "散布",
-	"枪声范围", "弹药", "弹丸数", "穿甲", "伤害", "爆发 DPS",
+	"枪声范围", "弹药", "弹丸数", "穿甲", "伤害", "每秒 DPS",
 	"后坐抑制", "垂直后坐", "水平后坐", "视野倍率", "瞄准速度",
 ]
 
@@ -187,19 +187,16 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 			continue
 		var effect_key := String(STAT_EFFECT.get(key, ""))
 		var sources: Array[String] = []
-		if key == "爆发 DPS":
+		if key == "每秒 DPS":
 			var cycle_time := float(stats.get("cycle_time", 0.1))
 			var sustained_dps := float(stats.get("sustained_dps", 0.0))
-			var base_sustained_dps := float(stats.get("base_sustained_dps", 0.0))
 			var mag_damage := float(stats.get("mag_damage", 0.0))
-			var base_mag_damage := float(stats.get("base_mag_damage", 0.0))
 			var mag_cnt := int(stats.get("mag", 0))
-			if base_w != null and not base_w.auto_cycle and base_w.pump_time > 0.0:
-				text += "\n真实射击循环：%.2fs（含泵动 %.2fs）" % [cycle_time, base_w.pump_time]
-			else:
-				text += "\n射击循环：%.2fs / 发" % cycle_time
-			text += "\n持续 DPS（含换弹）：%.0f /s（基础 %.0f /s）" % [sustained_dps, base_sustained_dps]
-			text += "\n单匣总伤害：%.0f（基础 %.0f · %d 发）" % [mag_damage, base_mag_damage, mag_cnt]
+			var cycle_text := "%.2fs（含泵动 %.2fs）" % [cycle_time, base_w.pump_time] \
+				if (base_w != null and not base_w.auto_cycle and base_w.pump_time > 0.0) \
+				else "%.2fs / 发" % cycle_time
+			text += "\n循环 %s · 持续 %.0f /s（含换弹）· 单匣 %.0f（%d 发）" % [
+				cycle_text, sustained_dps, mag_damage, mag_cnt]
 			for slot_def in ModDB.WEAPON_SLOTS:
 				var slot := String(slot_def["id"])
 				var option_id := String(installed.get(slot, ""))

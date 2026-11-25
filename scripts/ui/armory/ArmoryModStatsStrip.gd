@@ -19,7 +19,7 @@ const COLOR_PRESETS: Array[Color] = [
 const STAT_DEFS: Array = [
 	["mag", "弹匣"], ["rate", "射速"], ["load", "换弹"], ["range", "射程"],
 	["speed", "弹速"], ["spread", "散布"], ["sound", "枪声"], ["damage", "伤害"],
-	["dps", "爆发DPS"], ["ap", "穿甲"], ["mode", "模式"], ["slots", "槽位"],
+	["dps", "每秒DPS"], ["ap", "穿甲"], ["mode", "模式"], ["slots", "槽位"],
 	["recoil", "后坐"], ["vision", "视野"], ["ads", "瞄准"],
 ]
 

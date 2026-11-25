@@ -25,6 +25,7 @@ var _lens: TextureRect
 var _lens_mat: ShaderMaterial
 var _overlay: Control
 var _fade := 0.0
+var _lens_scale := 1.0
 var _lens_visible := false
 var _mini_active := false
 var _blend := 0.0
@@ -98,28 +99,36 @@ func _process(delta: float) -> void:
 			_distortion_on = bool(progress.scope_lens_distortion())
 	_blend = float(rig.get_ads_blend())
 	var drawn: bool = not rig.is_holstered() and not rig.is_stowing()
-	var want_scope: bool = _has_scope and _blend > 0.35 and drawn
-	_fade = move_toward(_fade, 1.0 if want_scope else 0.0, delta * 8.0)
+	# 狙击镜平滑开镜渐变：随武器真实 ADS 进度平滑展开（透明渐入 + 镜口缩放 + 光学平滑放大 + 眼盒暗边退散）。
+	var target_fade := clampf((_blend - 0.10) / 0.90, 0.0, 1.0) if (_has_scope and drawn) else 0.0
+	var fade_rate := maxf(float(rig.get_ads_rate()) * 1.45, 7.0) if rig.has_method("get_ads_rate") else 8.0
+	_fade = move_toward(_fade, target_fade, delta * fade_rate)
+	var ease_t := 1.0 - pow(1.0 - _fade, 3.0)
+	var alpha_t := smoothstep(0.0, 0.78, _fade)
+	_lens_scale = lerpf(0.62, 1.0, ease_t)
 	_lens_visible = _fade > 0.01 and _has_scope
 	_mini_active = not _has_scope and _blend > 0.5 and drawn \
 		and (_reticle == "dot" or _reticle == "holo")
 
-	var screen := get_viewport().get_visible_rect().size
 	var canvas_xform := get_viewport().get_canvas_transform()
 	_aim_screen = canvas_xform * doll.aim_target
 	if _lens_visible:
 		# 镜窗与准心严格同点：不做边界夹取，瞄准点靠近屏幕边缘时允许镜片部分出界。
 		_center = _aim_screen
-		_lens.position = _center - Vector2(LENS_SIZE * 0.5, LENS_SIZE * 0.5)
-		_lens.modulate.a = _fade
+		var cur_size := LENS_SIZE * _lens_scale
+		_lens.size = Vector2(cur_size, cur_size)
+		_lens.position = _center - _lens.size * 0.5
+		_lens.modulate.a = alpha_t
 		_lens.visible = true
 		_sub.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-		# 放大联动：玩家视角缩放越小，镜内实际放大同步降低，镜内与世界缩放保持一致。
-		_cam.zoom = Vector2.ONE * (LENS_BASE_ZOOM * _effective_magnification())
+		# 光学缩放平滑过渡：从 1× 平滑推至额定有效倍率，避免瞬间跳切。
+		var target_mag := _effective_magnification()
+		var cur_mag := lerpf(1.0, target_mag, ease_t)
+		_cam.zoom = Vector2.ONE * (LENS_BASE_ZOOM * cur_mag)
 		# 镜内始终以准心指向的世界点为中心，立即 force_update_scroll 确保与主视口同帧同步。
 		_cam.global_position = doll.aim_target
 		_cam.force_update_scroll()
-		_update_lens_effects(delta)
+		_update_lens_effects(delta, alpha_t, ease_t)
 	else:
 		_lens.visible = false
 		_sub.render_target_update_mode = SubViewport.UPDATE_DISABLED
@@ -127,10 +136,9 @@ func _process(delta: float) -> void:
 		_motion_uv = Vector2.ZERO
 		if _lens_mat != null:
 			_lens_mat.set_shader_parameter("motion", Vector2.ZERO)
-	if _lens_visible or _mini_active:
-		_overlay.queue_redraw()
-	else:
-		_overlay.queue_redraw()
+			_lens_mat.set_shader_parameter("alpha", 0.0)
+			_lens_mat.set_shader_parameter("iris", 0.0)
+	_overlay.queue_redraw()
 
 
 ## 高倍镜联动：玩家视角缩放越小，镜内实际放大按同比例降低。
@@ -141,8 +149,8 @@ func _effective_magnification() -> float:
 	return _magnification * clampf(view, 0.25, 1.0)
 
 
-## 镜内特效：瞄准点移动 → 镜内画面反向拖影；畸变始终按设置应用。
-func _update_lens_effects(delta: float) -> void:
+## 镜内特效：瞄准点移动 → 镜内画面反向拖影；同步透明度与眼盒开合进度。
+func _update_lens_effects(delta: float, alpha_t: float, iris_t: float) -> void:
 	var aim_world: Vector2 = doll.aim_target
 	var world_delta := aim_world - _prev_aim_world
 	_prev_aim_world = aim_world
@@ -157,7 +165,17 @@ func _update_lens_effects(delta: float) -> void:
 		_motion_uv = Vector2.ZERO
 	if _lens_mat != null:
 		_lens_mat.set_shader_parameter("motion", _motion_uv)
-		_lens_mat.set_shader_parameter("distort", 0.55 if _distortion_on else 0.0)
+		_lens_mat.set_shader_parameter("distort", (0.55 if _distortion_on else 0.0) * iris_t)
+		_lens_mat.set_shader_parameter("alpha", alpha_t)
+		_lens_mat.set_shader_parameter("iris", iris_t)
+
+
+func get_scope_fade() -> float:
+	return _fade
+
+
+func get_lens_scale() -> float:
+	return _lens_scale
 
 
 ## 装备自瞄具的准心时隐藏默认准星，避免与镜内准心/红点重叠。
@@ -174,11 +192,14 @@ func should_hide_reticle() -> bool:
 
 func _hide_all() -> void:
 	_fade = 0.0
+	_lens_scale = 0.62
 	_lens_visible = false
 	_mini_active = false
 	_motion_uv = Vector2.ZERO
 	if _lens_mat != null:
 		_lens_mat.set_shader_parameter("motion", Vector2.ZERO)
+		_lens_mat.set_shader_parameter("alpha", 0.0)
+		_lens_mat.set_shader_parameter("iris", 0.0)
 	if _lens != null:
 		_lens.visible = false
 	if _sub != null:
@@ -194,6 +215,8 @@ static func _get_mask_shader() -> Shader:
 shader_type canvas_item;
 uniform vec2 motion = vec2(0.0);
 uniform float distort = 0.0;
+uniform float alpha = 1.0;
+uniform float iris = 1.0;
 
 void fragment() {
 	vec2 raw = UV * 2.0 - 1.0;
@@ -208,6 +231,8 @@ void fragment() {
 	vec2 lo = vec2(0.001);
 	vec2 hi = vec2(0.999);
 	float vig = smoothstep(0.76, 1.0, d);
+	// 眼盒开合暗影：刚举镜时四周较暗，眼距对正后平滑退散至镜筒边缘。
+	float eye_shadow = smoothstep(mix(0.32, 0.96, clamp(iris, 0.0, 1.0)), 1.0, d);
 	// 运动拖影：沿瞄准移动方向做 7 次采样。
 	vec3 c = vec3(0.0);
 	float wsum = 0.0;
@@ -232,7 +257,9 @@ void fragment() {
 		c.b = texture(TEXTURE, clamp(uv - ca, lo, hi)).b;
 	}
 	c *= mix(1.0, 0.72, vig);
-	COLOR = vec4(c, 1.0);
+	c *= mix(1.0, 0.14, eye_shadow);
+	float edge_a = 1.0 - smoothstep(0.965, 1.0, d);
+	COLOR = vec4(c, clamp(alpha, 0.0, 1.0) * edge_a);
 }
 """
 		_mask_shader = shader
@@ -241,8 +268,12 @@ void fragment() {
 
 func _draw_overlay() -> void:
 	if _lens_visible:
-		_draw_lens_frame()
-		_draw_reticle(_center, LENS_SIZE * 0.5, _reticle, _fade)
+		var cur_radius := LENS_SIZE * 0.5 * _lens_scale
+		var frame_alpha := smoothstep(0.0, 0.75, _fade)
+		var reticle_alpha := smoothstep(0.22, 0.90, _fade)
+		RETICLES.draw_lens_frame(_overlay, _center, cur_radius, frame_alpha)
+		if reticle_alpha > 0.01:
+			_draw_reticle(_center, cur_radius, _reticle, reticle_alpha)
 	if _mini_active:
 		_draw_mini_reticle()
 

@@ -293,7 +293,7 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 		_set_plain_stat("弹丸数", "-")
 		_set_plain_stat("穿甲", "-")
 		_set_plain_stat("伤害", "-")
-		_set_plain_stat("爆发 DPS", "-")
+		_set_plain_stat("每秒 DPS", "-")
 	else:
 		var ammo_text: String = ammo.display_name
 		if ammo.pellets > 1:
@@ -307,10 +307,10 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 			"%d × %.1f = %.1f" % [ammo.pellets, damage, float(stats["damage"])],
 			"%d × %.1f = %.1f" % [ammo.pellets, base_damage, base_damage * pellets],
 			(damage - base_damage) * pellets, true, 1)
-		var base_burst_dps: float = float(stats["base_burst_dps"])
-		var burst_dps: float = float(stats["burst_dps"])
-		set_stat("爆发 DPS", "%.0f /s" % burst_dps, "%.0f /s" % base_burst_dps,
-			burst_dps - base_burst_dps, true, 0)
+		var base_dps: float = float(stats["base_dps"])
+		var actual_dps: float = float(stats["dps"])
+		set_stat("每秒 DPS", "%.0f /s" % actual_dps, "%.0f /s" % base_dps,
+			actual_dps - base_dps, true, 0)
 
 	for id in WeaponDB.WEAPON_ORDER:
 		var button: Button = weapon_buttons[id]
