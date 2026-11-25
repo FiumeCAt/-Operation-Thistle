@@ -310,7 +310,7 @@ func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO
 			sfx.play_hit(hit_material(), hit_weight(), -11.0)
 	_enter("combat")
 	if def.is_self_destruct_unit():
-		combat.on_self_destruct_damaged(self)
+		combat.on_self_destruct_damaged(self, dmg)
 	elif hp <= 0.0:
 		_die()
 	return dmg

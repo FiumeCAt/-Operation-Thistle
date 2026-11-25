@@ -1,5 +1,5 @@
 extends SceneTree
-## EnemyCombat2D 独立单元测试：验证炮塔激光锁定状态、歌利亚受击锁血与 20% 缩引信、双发连射与状态复位。
+## EnemyCombat2D 独立单元测试：验证炮塔激光锁定状态、歌利亚按伤害比例缩引信与 200% 瞬爆、双发连射与状态复位。
 ## godot --headless --path . --script res://tests/enemy_combat_test.gd
 
 const ENEMY_DEF := preload("res://scripts/actors/enemy/EnemyDef.gd")
@@ -125,33 +125,87 @@ func _run() -> void:
 	_check(not turret_combat.laser_on and not turret_combat.turret_locked,
 		"leaving combat clears turret laser and lock state")
 
-	# 2. 歌利亚：受致命伤锁血 1 点并点引信，再次受击缩短 20% 引信，归零后爆炸并触发死亡
+	# 2. 歌利亚：未坐地受致命伤（< 200% 血量上限）锁血 1 点并点引信；
+	#    自爆期间每造成 1% 血量上限伤害减少 1% 总自爆时间，归零立刻引爆。
 	var goliath_host := StubEnemy.new()
 	goliath_host.def = ENEMY_DEF.from_dict(&"goliath", EnemyDB.stats(&"goliath"))
 	goliath_host.player = dummy_player
-	goliath_host.hp = -50.0
+	goliath_host.hp_max = 100.0
+	goliath_host.hp = -20.0
 	root.add_child(goliath_host)
 
 	var goliath_combat: EnemyCombat2D = COMBAT.new()
-	goliath_combat.on_self_destruct_damaged(goliath_host)
+	goliath_combat.on_self_destruct_damaged(goliath_host, 120.0)
+	var base_delay: float = goliath_host.def.explode_delay
 	_check(is_equal_approx(goliath_host.hp, 1.0)
-		and is_equal_approx(goliath_combat.explode_t, goliath_host.def.explode_delay)
+		and is_equal_approx(goliath_combat.explode_t, base_delay)
 		and not goliath_combat.exploded,
-		"goliath fatal damage clamps hp to 1 and ignites fuse")
+		"goliath fatal damage below 200 percent hp_max clamps hp to 1 and ignites fuse")
 
-	var before_fuse := goliath_combat.explode_t
-	goliath_combat.on_self_destruct_damaged(goliath_host)
-	_check(is_equal_approx(goliath_combat.explode_t, before_fuse * 0.8),
-		"subsequent hits shorten active fuse by 20 percent")
+	goliath_host.hp -= 37.0
+	goliath_combat.on_self_destruct_damaged(goliath_host, 37.0)
+	_check(is_equal_approx(goliath_combat.explode_t, base_delay * 0.63)
+		and is_equal_approx(goliath_host.hp, 1.0) and not goliath_combat.exploded,
+		"37 percent hp_max damage during fuse shortens fuse time by 37 percent")
 
-	goliath_combat.explode_t = 0.05
-	goliath_combat.tick_self_destruct(goliath_host, 0.1)
+	goliath_host.hp -= 63.0
+	goliath_combat.on_self_destruct_damaged(goliath_host, 63.0)
 	_check(goliath_combat.exploded and goliath_host.die_calls == 1
-		and goliath_host.explode_fx_calls == 1 and dummy_player.damage_taken > 0.0,
+		and goliath_host.explode_fx_calls == 1 and dummy_player.damage_taken > 0.0
+		and goliath_host.hp <= 0.0,
+		"cumulative 100 percent hp_max fuse damage detonates immediately")
+
+	# 3. 歌利亚：倒计时自然归零同样触发爆炸与死亡
+	var tick_host := StubEnemy.new()
+	tick_host.def = ENEMY_DEF.from_dict(&"goliath", EnemyDB.stats(&"goliath"))
+	tick_host.player = dummy_player
+	tick_host.hp_max = 100.0
+	tick_host.hp = -10.0
+	root.add_child(tick_host)
+	var tick_combat: EnemyCombat2D = COMBAT.new()
+	tick_combat.on_self_destruct_damaged(tick_host, 110.0)
+	var dmg_before_tick := dummy_player.damage_taken
+	tick_combat.explode_t = 0.05
+	tick_combat.tick_self_destruct(tick_host, 0.1)
+	_check(tick_combat.exploded and tick_host.die_calls == 1
+		and tick_host.explode_fx_calls == 1 and dummy_player.damage_taken > dmg_before_tick,
 		"fuse expiry triggers explosion, player blast damage, FX, and death in one step")
+
+	# 4. 歌利亚：进入坐地自爆前单次受 >= 200% 血量上限伤害直接瞬间自爆，不坐地不倒计时
+	var instant_host := StubEnemy.new()
+	instant_host.def = ENEMY_DEF.from_dict(&"goliath", EnemyDB.stats(&"goliath"))
+	instant_host.player = dummy_player
+	instant_host.hp_max = 100.0
+	instant_host.hp = -100.0
+	root.add_child(instant_host)
+	var instant_combat: EnemyCombat2D = COMBAT.new()
+	var dmg_before_instant := dummy_player.damage_taken
+	instant_combat.on_self_destruct_damaged(instant_host, 200.0)
+	_check(instant_combat.exploded and instant_host.die_calls == 1
+		and instant_combat.explode_t < 0.0
+		and not instant_host.sfx_calls.has("fuse_long")
+		and instant_host.sfx_calls.has("boom")
+		and dummy_player.damage_taken > dmg_before_instant,
+		"200 percent hp_max damage before sit-down triggers instant detonation without fuse")
+
+	# 5. 歌利亚：进入坐地前单次受 199% 血量上限伤害仍进入坐地倒计时
+	var near_host := StubEnemy.new()
+	near_host.def = ENEMY_DEF.from_dict(&"goliath", EnemyDB.stats(&"goliath"))
+	near_host.player = dummy_player
+	near_host.hp_max = 100.0
+	near_host.hp = -99.0
+	root.add_child(near_host)
+	var near_combat: EnemyCombat2D = COMBAT.new()
+	near_combat.on_self_destruct_damaged(near_host, 199.0)
+	_check(not near_combat.exploded and is_equal_approx(near_host.hp, 1.0)
+		and is_equal_approx(near_combat.explode_t, base_delay),
+		"199 percent hp_max damage before sit-down still enters sit-down fuse")
 
 	turret_host.queue_free()
 	goliath_host.queue_free()
+	tick_host.queue_free()
+	instant_host.queue_free()
+	near_host.queue_free()
 	dummy_player.queue_free()
 	await process_frame
 	print("\n=== enemy combat: %s (%d ok / %d fail) ===" % [

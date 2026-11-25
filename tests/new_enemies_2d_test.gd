@@ -136,7 +136,7 @@ func _run() -> void:
 	victim.queue_free()
 	bomber.queue_free()
 
-	# 自爆优先于死亡：致命伤害只把血量压到 1 点并点燃引信，单位仍然存活。
+	# 自爆优先于死亡：普通致命伤害（< 200% 血量上限）把血量压到 1 点并点燃引信，单位仍然存活。
 	var bystander := Enemy2D.new()
 	bystander.setup(&"sentry_type1", arena + Vector2(0, 1200), 1)
 	_main.sort_layer.add_child(bystander)
@@ -145,18 +145,20 @@ func _run() -> void:
 	_main.sort_layer.add_child(killed)
 	await process_frame
 	var bystander_hp := bystander.hp
-	killed.take_damage(99999.0)
+	var g_armor: float = killed.def.armor
+	var g_delay: float = killed.def.explode_delay
+	killed.take_damage(killed.hp_max * 1.2, g_armor)
 	_check(not killed._dead and killed.hp == 1.0 and not killed._exploded,
-		"哥利亚被打到 1 血时不死亡")
+		"哥利亚受普通致命伤被打到 1 血时不死亡")
 	_check(killed._explode_t > 0.0, "哥利亚被打到 1 血时进入自爆状态")
 	await physics_frame
 	await physics_frame
 	_check(bystander.hp == bystander_hp, "引信期间不会瞬间爆炸")
-	# 自爆期间受击：剩余引信缩短 20%。
+	# 自爆期间受击：按伤害占最大生命值比例缩短总引信时间（37% 血量上限 -> 减少 37% 总自爆时间）。
 	var fuse_before: float = killed._explode_t
-	killed.take_damage(10.0)
-	_check(is_equal_approx(killed._explode_t, fuse_before * 0.8),
-		"自爆期间每受击一次缩短 20% 剩余引信")
+	killed.take_damage(killed.hp_max * 0.37, g_armor)
+	_check(is_equal_approx(killed._explode_t, fuse_before - g_delay * 0.37),
+		"自爆期间造成 37% 血量上限伤害缩短 37% 总引信时间")
 	killed._explode_t = 0.02
 	for i in 8:
 		await physics_frame
@@ -164,6 +166,23 @@ func _run() -> void:
 	_check(bystander.hp < bystander_hp, "自爆造成范围伤害")
 	bystander.queue_free()
 	killed.queue_free()
+
+	# 坐地前承受 >= 200% 血量上限伤害：不坐地不倒计时，直接瞬间自爆。
+	var instant_victim := Enemy2D.new()
+	instant_victim.setup(&"sentry_type1", arena + Vector2(0, 1500), 1)
+	_main.sort_layer.add_child(instant_victim)
+	var instant_bomber := Enemy2D.new()
+	instant_bomber.setup(&"goliath", arena + Vector2(40, 1500), 1)
+	_main.sort_layer.add_child(instant_bomber)
+	await process_frame
+	var instant_victim_hp := instant_victim.hp
+	instant_bomber.take_damage(instant_bomber.hp_max * 2.0, instant_bomber.def.armor)
+	_check(instant_bomber._exploded and instant_bomber._dead and instant_bomber._explode_t < 0.0,
+		"歌利亚坐地前受 >= 200% 血量上限伤害直接瞬间自爆")
+	_check(instant_victim.hp < instant_victim_hp,
+		"歌利亚瞬间自爆立即对周围造成范围伤害")
+	instant_victim.queue_free()
+	instant_bomber.queue_free()
 
 	# 音效资源
 	var sfx = root.get_node_or_null("Sfx")

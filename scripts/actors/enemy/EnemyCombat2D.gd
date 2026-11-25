@@ -258,14 +258,36 @@ func begin_self_destruct(host) -> void:
 	host.queue_redraw()
 
 
-## 自爆单位受击时的锁血与引信缩短（每受击一次缩短 20% 剩余引信）。
-func on_self_destruct_damaged(host) -> void:
+const INSTANT_EXPLODE_HP_RATIO := 2.0
+
+
+## 自爆单位受击逻辑：
+##   - 进入坐地自爆前，若单次有效伤害 >= 200% 自身血量上限，跳过坐地与倒计时直接瞬间自爆；
+##   - 否则血量跌至 <= 1 时锁血 1 点并进入坐地自爆倒计时；
+##   - 进入自爆状态后，每造成 1% 血量上限的伤害就减少 1% 总自爆时间，归零时立即引爆。
+func on_self_destruct_damaged(host, dmg: float = 0.0) -> void:
+	if host._dead or exploded:
+		return
+	var max_hp := maxf(float(host.hp_max), 1.0)
+	var hit_dmg := maxf(dmg, 0.0)
 	if explode_t >= 0.0:
-		explode_t = maxf(explode_t * 0.8, 0.0)
+		var base_delay := maxf(float(host.def.explode_delay), 0.01)
+		explode_t = maxf(explode_t - base_delay * (hit_dmg / max_hp), 0.0)
+		if explode_t <= 0.0:
+			explode_t = -1.0
+			host.hp = minf(float(host.hp), 0.0)
+			explode(host)
+			return
+		if host.hp <= 1.0:
+			host.hp = 1.0
+		return
+	if hit_dmg >= max_hp * INSTANT_EXPLODE_HP_RATIO:
+		explode_t = -1.0
+		explode(host)
+		return
 	if host.hp <= 1.0:
 		host.hp = 1.0
-		if explode_t < 0.0:
-			begin_self_destruct(host)
+		begin_self_destruct(host)
 
 
 ## 自爆引信倒计时：归零时爆炸并死亡，两个事件在同一帧结算。
