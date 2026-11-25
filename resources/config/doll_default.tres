@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="DollConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/config/DollConfig.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+ads_speed_mul = 0.5
+walk_fps = 10.4
+run_fps = 14.8
+step_bob_px = PackedFloat32Array(1.2, 0, 1.2, 0)
+hurt_invuln_sec = 0.12
+hurt_flash_sec = 0.16
+hurt_flash_tint = Color(2.1, 0.62, 0.58, 1)
+fire_flinch_px = 2.2
+flinch_recover_speed = 40.0
+stow_rotation = -0.62
+stow_offset = Vector2(0, 2)
+stow_tint = Color(0.78, 0.82, 0.9, 1)
+head_motion_enabled = false
+head_max_tilt = 0.18
+head_tilt_speed = 9.0
+head_max_shift = 0.01

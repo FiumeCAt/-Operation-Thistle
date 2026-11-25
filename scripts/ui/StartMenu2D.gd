@@ -19,6 +19,10 @@ const BG_SLIDES: Array[Dictionary] = [
 const BG_HOLD_SECONDS := 8.5
 const BG_FADE_SECONDS := 1.8
 
+## 主菜单背景轮播与暗角蒙版可调配置资源（resources/config/start_menu_default.tres）；
+## 未挂载时平滑回退上方 const 默认值；玩家主题配色与音量仍由 Progress 动态驱动。
+@export var config: Resource
+
 var start_button: Button
 var waves_button: Button
 var talents_button: Button
@@ -96,9 +100,45 @@ func _ready() -> void:
 		_start_main_preload()
 
 
+func _cfg_float(prop: StringName, fallback: float) -> float:
+	if config != null and prop in config:
+		return float(config.get(prop))
+	return fallback
+
+
+func _cfg_color(prop: StringName, fallback: Color) -> Color:
+	if config != null and prop in config:
+		var val = config.get(prop)
+		if val is Color:
+			return val
+	return fallback
+
+
+func _bg_slides() -> Array[Dictionary]:
+	if config != null and &"slide_paths" in config:
+		var paths = config.get(&"slide_paths")
+		var labels = config.get(&"slide_labels") if (&"slide_labels" in config) else PackedStringArray()
+		if paths is PackedStringArray and paths.size() > 0:
+			var out: Array[Dictionary] = []
+			for i in paths.size():
+				var lbl := String(labels[i]) if (labels is PackedStringArray and i < labels.size()) \
+					else ("0%d SCENE" % (i + 1))
+				out.append({"path": String(paths[i]), "label": lbl})
+			return out
+	return BG_SLIDES
+
+
+func _bg_hold_seconds() -> float:
+	return maxf(_cfg_float(&"bg_hold_seconds", BG_HOLD_SECONDS), 0.2)
+
+
+func _bg_fade_seconds() -> float:
+	return maxf(_cfg_float(&"bg_fade_seconds", BG_FADE_SECONDS), 0.05)
+
+
 func _load_bg_textures() -> void:
 	_bg_textures.clear()
-	for slide in BG_SLIDES:
+	for slide in _bg_slides():
 		var path := String(slide["path"])
 		if ResourceLoader.exists(path):
 			var tex := load(path) as Texture2D
@@ -130,7 +170,7 @@ func _step_bg_carousel(delta: float) -> void:
 	if _bg_textures.size() <= 1 or _bg_cur == null or _bg_next == null:
 		return
 	if _bg_fading:
-		_bg_fade_t = minf(_bg_fade_t + delta / BG_FADE_SECONDS, 1.0)
+		_bg_fade_t = minf(_bg_fade_t + delta / _bg_fade_seconds(), 1.0)
 		var smooth := _bg_fade_t * _bg_fade_t * (3.0 - 2.0 * _bg_fade_t)
 		_bg_next.modulate.a = smooth
 		if _bg_fade_t >= 1.0:
@@ -143,7 +183,7 @@ func _step_bg_carousel(delta: float) -> void:
 			_refresh_bg_indicator()
 	else:
 		_bg_timer += delta
-		if _bg_timer >= BG_HOLD_SECONDS:
+		if _bg_timer >= _bg_hold_seconds():
 			_begin_bg_transition((_bg_index + 1) % _bg_textures.size())
 
 
@@ -177,8 +217,9 @@ func select_bg_slide(index: int) -> void:
 
 
 func _refresh_bg_indicator() -> void:
-	if _bg_scene_label != null and _bg_index < BG_SLIDES.size():
-		_bg_scene_label.text = String(BG_SLIDES[_bg_index]["label"])
+	var slides := _bg_slides()
+	if _bg_scene_label != null and _bg_index < slides.size():
+		_bg_scene_label.text = String(slides[_bg_index]["label"])
 	var acc := PixelUI.theme_accent()
 	for i in _bg_dot_buttons.size():
 		var btn := _bg_dot_buttons[i]
@@ -235,7 +276,7 @@ func _build() -> void:
 
 func _build_background_layer() -> void:
 	var base := ColorRect.new()
-	base.color = Color(0.008, 0.011, 0.016, 1.0)
+	base.color = _cfg_color(&"base_bg_color", Color(0.008, 0.011, 0.016, 1.0))
 	base.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	base.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(base)
@@ -264,6 +305,7 @@ func _build_background_layer() -> void:
 
 	_backdrop_overlay = _BackdropOverlay.new()
 	_backdrop_overlay.name = "BackdropOverlay"
+	_backdrop_overlay.menu_config = config
 	_backdrop_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_backdrop_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_backdrop_overlay)
@@ -630,12 +672,14 @@ func _build_footer() -> void:
 	var sep := PixelUI.label(bar, "|", 16, Color(PixelUI.DIM, 0.5))
 	sep.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
-	_bg_scene_label = PixelUI.label(bar, String(BG_SLIDES[0]["label"]), 16, PixelUI.theme_accent())
+	var slides := _bg_slides()
+	var first_label := String(slides[0]["label"]) if not slides.is_empty() else ""
+	_bg_scene_label = PixelUI.label(bar, first_label, 16, PixelUI.theme_accent())
 	_bg_scene_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_themed_accent_labels.append(_bg_scene_label)
 
 	_bg_dot_buttons.clear()
-	for i in BG_SLIDES.size():
+	for i in slides.size():
 		var dot := Button.new()
 		dot.text = "■" if i == 0 else "□"
 		dot.flat = true
@@ -1004,14 +1048,27 @@ func _unhandled_input(event: InputEvent) -> void:
 ## 氛围暗角与左侧渐变蒙版 + 极细主题色战术四角与微弱扫描线：
 ## 保证前景 UI 高可读的同时，把中央大面积画面完全留给背景场景图。
 class _BackdropOverlay extends Control:
+	var menu_config: Resource
 	var _sweep := 0.0
+
+	func _f(prop: StringName, fallback: float) -> float:
+		if menu_config != null and prop in menu_config:
+			return float(menu_config.get(prop))
+		return fallback
+
+	func _c(prop: StringName, fallback: Color) -> Color:
+		if menu_config != null and prop in menu_config:
+			var val = menu_config.get(prop)
+			if val is Color:
+				return val
+		return fallback
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		set_process(true)
 
 	func _process(delta: float) -> void:
-		_sweep = fmod(_sweep + delta * 0.045, 1.0)
+		_sweep = fmod(_sweep + delta * _f(&"sweep_speed", 0.045), 1.0)
 		queue_redraw()
 
 	func _draw() -> void:
@@ -1019,51 +1076,67 @@ class _BackdropOverlay extends Control:
 		if s.x < 16.0 or s.y < 16.0:
 			return
 		var acc := PixelUI.theme_accent()
+		var tint := _c(&"mask_tint", Color(0.008, 0.011, 0.016, 1.0))
 		# 左侧渐变暗蒙版（确保左导航高可读，中央柔和淡出至通透）
 		const STRIPS := 28
-		var left_w := s.x * 0.42
-		for i in STRIPS:
-			var t0 := float(i) / float(STRIPS)
-			var t1 := float(i + 1) / float(STRIPS)
-			var a := pow(1.0 - t0, 1.65) * 0.72
-			draw_rect(Rect2(Vector2(left_w * t0, 0.0), Vector2(left_w * (t1 - t0) + 1.0, s.y)),
-				Color(0.008, 0.011, 0.016, a), true)
+		var left_w := s.x * clampf(_f(&"left_mask_width_ratio", 0.42), 0.0, 0.8)
+		var left_a := clampf(_f(&"left_mask_alpha", 0.72), 0.0, 1.0)
+		if left_w > 1.0 and left_a > 0.001:
+			for i in STRIPS:
+				var t0 := float(i) / float(STRIPS)
+				var t1 := float(i + 1) / float(STRIPS)
+				var a := pow(1.0 - t0, 1.65) * left_a
+				draw_rect(Rect2(Vector2(left_w * t0, 0.0), Vector2(left_w * (t1 - t0) + 1.0, s.y)),
+					Color(tint.r, tint.g, tint.b, a), true)
 		# 右侧柔和暗蒙版（托起右侧档案与携行卡）
-		var right_w := s.x * 0.34
-		for i in 18:
-			var t0 := float(i) / 18.0
-			var t1 := float(i + 1) / 18.0
-			var a := pow(t1, 1.8) * 0.56
-			draw_rect(Rect2(Vector2(s.x - right_w + right_w * t0, 0.0), Vector2(right_w * (t1 - t0) + 1.0, s.y)),
-				Color(0.008, 0.011, 0.016, a), true)
+		var right_w := s.x * clampf(_f(&"right_mask_width_ratio", 0.34), 0.0, 0.8)
+		var right_a := clampf(_f(&"right_mask_alpha", 0.56), 0.0, 1.0)
+		if right_w > 1.0 and right_a > 0.001:
+			for i in 18:
+				var t0 := float(i) / 18.0
+				var t1 := float(i + 1) / 18.0
+				var a := pow(t1, 1.8) * right_a
+				draw_rect(Rect2(Vector2(s.x - right_w + right_w * t0, 0.0), Vector2(right_w * (t1 - t0) + 1.0, s.y)),
+					Color(tint.r, tint.g, tint.b, a), true)
 		# 上下微弱电影暗角（托起顶部空间与底部轮播条）
+		var top_h := s.y * clampf(_f(&"top_vignette_ratio", 0.14), 0.0, 0.45)
+		var bot_h := s.y * clampf(_f(&"bottom_vignette_ratio", 0.16), 0.0, 0.45)
+		var top_a := clampf(_f(&"top_vignette_alpha", 0.42), 0.0, 1.0)
+		var bot_a := clampf(_f(&"bottom_vignette_alpha", 0.54), 0.0, 1.0)
 		for i in 12:
 			var t := float(i) / 12.0
-			var h := s.y * 0.14 / 12.0
-			var a_top := pow(1.0 - t, 1.6) * 0.42
-			var a_bot := pow(t, 1.6) * 0.54
-			draw_rect(Rect2(Vector2(0.0, i * h), Vector2(s.x, h + 1.0)),
-				Color(0.006, 0.009, 0.013, a_top), true)
-			draw_rect(Rect2(Vector2(0.0, s.y - s.y * 0.16 + i * (s.y * 0.16 / 12.0)),
-				Vector2(s.x, s.y * 0.16 / 12.0 + 1.0)),
-				Color(0.006, 0.009, 0.013, a_bot), true)
+			if top_h > 1.0 and top_a > 0.001:
+				var h_t := top_h / 12.0
+				draw_rect(Rect2(Vector2(0.0, i * h_t), Vector2(s.x, h_t + 1.0)),
+					Color(tint.r * 0.75, tint.g * 0.82, tint.b * 0.82, pow(1.0 - t, 1.6) * top_a), true)
+			if bot_h > 1.0 and bot_a > 0.001:
+				var h_b := bot_h / 12.0
+				draw_rect(Rect2(Vector2(0.0, s.y - bot_h + i * h_b), Vector2(s.x, h_b + 1.0)),
+					Color(tint.r * 0.75, tint.g * 0.82, tint.b * 0.82, pow(t, 1.6) * bot_a), true)
 		# 极细扫描线与主题色光扫
-		var scan := Color(1, 1, 1, 0.012)
-		var sy := 0.0
-		while sy < s.y:
-			draw_line(Vector2(0, sy), Vector2(s.x, sy), scan, 1.0)
-			sy += 5.0
-		var sweep_y := s.y * _sweep
-		draw_line(Vector2(0, sweep_y), Vector2(s.x, sweep_y), Color(acc, 0.05), 2.0)
+		var scan_a := clampf(_f(&"scanline_alpha", 0.012), 0.0, 0.25)
+		var scan_step := maxf(_f(&"scanline_step_px", 5.0), 2.0)
+		if scan_a > 0.0005:
+			var scan := Color(1, 1, 1, scan_a)
+			var sy := 0.0
+			while sy < s.y:
+				draw_line(Vector2(0, sy), Vector2(s.x, sy), scan, 1.0)
+				sy += scan_step
+		var sweep_a := clampf(_f(&"sweep_alpha", 0.05), 0.0, 0.4)
+		if sweep_a > 0.0005:
+			var sweep_y := s.y * _sweep
+			draw_line(Vector2(0, sweep_y), Vector2(s.x, sweep_y), Color(acc, sweep_a), 2.0)
 		# 四角战术框线
-		var c := Color(acc, 0.42)
-		var m := 18.0
-		var l := 56.0
-		draw_line(Vector2(m, m), Vector2(m + l, m), c, 2.0)
-		draw_line(Vector2(m, m), Vector2(m, m + l), c, 2.0)
-		draw_line(Vector2(s.x - m, m), Vector2(s.x - m - l, m), c, 2.0)
-		draw_line(Vector2(s.x - m, m), Vector2(s.x - m, m + l), c, 2.0)
-		draw_line(Vector2(m, s.y - m), Vector2(m + l, s.y - m), c, 2.0)
-		draw_line(Vector2(m, s.y - m), Vector2(m, s.y - m - l), c, 2.0)
-		draw_line(Vector2(s.x - m, s.y - m), Vector2(s.x - m - l, s.y - m), c, 2.0)
-		draw_line(Vector2(s.x - m, s.y - m), Vector2(s.x - m, s.y - m - l), c, 2.0)
+		var bracket_a := clampf(_f(&"corner_bracket_alpha", 0.42), 0.0, 1.0)
+		if bracket_a > 0.001:
+			var c := Color(acc, bracket_a)
+			var m := _f(&"corner_margin", 18.0)
+			var l := _f(&"corner_length", 56.0)
+			draw_line(Vector2(m, m), Vector2(m + l, m), c, 2.0)
+			draw_line(Vector2(m, m), Vector2(m, m + l), c, 2.0)
+			draw_line(Vector2(s.x - m, m), Vector2(s.x - m - l, m), c, 2.0)
+			draw_line(Vector2(s.x - m, m), Vector2(s.x - m, m + l), c, 2.0)
+			draw_line(Vector2(m, s.y - m), Vector2(m + l, s.y - m), c, 2.0)
+			draw_line(Vector2(m, s.y - m), Vector2(m, s.y - m - l), c, 2.0)
+			draw_line(Vector2(s.x - m, s.y - m), Vector2(s.x - m - l, s.y - m), c, 2.0)
+			draw_line(Vector2(s.x - m, s.y - m), Vector2(s.x - m, s.y - m - l), c, 2.0)

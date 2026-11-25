@@ -35,6 +35,26 @@ var _owner: Node2D
 var _fx_layer: Node2D
 var _doll: Doll2D
 var _hud: RunHUD2D
+## 可选反馈配置资源（CombatFeelConfig）；缺省时平滑回退默认常量。
+var config: Resource
+
+
+func apply_config(cfg: Resource) -> void:
+	config = cfg
+
+
+func _cfg_float(prop: StringName, fallback: float) -> float:
+	if config != null and prop in config:
+		return float(config.get(prop))
+	return fallback
+
+
+func _cfg_color(prop: StringName, fallback: Color) -> Color:
+	if config != null and prop in config:
+		var val = config.get(prop)
+		if val is Color:
+			return val
+	return fallback
 
 
 func setup(owner_node: Node2D, fx_layer: Node2D, doll: Doll2D, hud: RunHUD2D) -> void:
@@ -51,7 +71,7 @@ func apply_settings(progress: Node) -> void:
 	screen_shake = bool(progress.data.get("screen_shake", true))
 	hitstop_enabled = bool(progress.data.get("hitstop_enabled", false))
 	shake_scale = clampf(float(progress.data.get("shake_scale", 100.0)) / 100.0, 0.0, 10.0) \
-		* SHAKE_SCALE_BASE
+		* _cfg_float(&"shake_scale_base", SHAKE_SCALE_BASE)
 
 
 ## 顿帧计时器与受击红屏只建一次，避免每次命中都新建节点。
@@ -111,7 +131,7 @@ func hitstop(seconds: float) -> void:
 	# 无头测试不需要画面顿帧，避免拖慢物理步进与测试时长。
 	if DisplayServer.get_name() == "headless":
 		return
-	Engine.time_scale = 0.12
+	Engine.time_scale = clampf(_cfg_float(&"hitstop_time_scale", 0.12), 0.02, 1.0)
 	hitstop_timer.start(maxf(hitstop_timer.time_left, seconds))
 
 
@@ -136,9 +156,10 @@ func flash_hurt(hp_damage: int) -> void:
 	if hurt_flash_rect == null or not is_instance_valid(hurt_flash_rect):
 		return
 	var alpha := calc_hurt_flash_alpha(hp_damage)
-	hurt_flash_rect.color = Color(0.72, 0.04, 0.04, alpha)
+	var fc := _cfg_color(&"hurt_flash_color", Color(0.72, 0.04, 0.04, 1.0))
+	hurt_flash_rect.color = Color(fc.r, fc.g, fc.b, alpha)
 	var tw := hurt_flash_rect.create_tween()
-	tw.tween_property(hurt_flash_rect, "color:a", 0.0, 0.34)
+	tw.tween_property(hurt_flash_rect, "color:a", 0.0, maxf(_cfg_float(&"hurt_flash_fade_sec", 0.34), 0.05))
 
 
 ## 玩家受击完整反馈：护甲/生命分开飘字，真正掉血时红屏 + 抖屏，并刷新 HUD 护甲条。
@@ -153,7 +174,11 @@ func on_player_damaged(armor_damage: int, hp_damage: int, pos: Vector2) -> void:
 	if hp_damage > 0:
 		# 真正掉血才红屏 + 抖屏，纯破甲只飘蓝字，避免一直闪。
 		flash_hurt(hp_damage)
-		add_shake(2.2, 0.3, 24.0)
+		add_shake(
+			_cfg_float(&"hurt_shake_amount", 2.2),
+			_cfg_float(&"hurt_shake_roll_deg", 0.3),
+			_cfg_float(&"hurt_shake_decay", 24.0)
+		)
 	if _hud != null and _doll != null:
 		_hud.set_armor(_doll.armor, _doll.armor_max)
 

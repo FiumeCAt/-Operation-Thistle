@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="CameraFeelConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/config/CameraFeelConfig.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+camera_lift = 44.0
+view_zoom_min = 20.0
+view_zoom_max = 200.0
+view_zoom_step = 10.0
+view_zoom_lerp = 260.0
+ads_zoom_speed = 6.0
+ads_look_ahead = 340.0
+ads_look_smooth = 10.0
+scope_keep_player_ratio_x = 0.88
+scope_keep_player_ratio_y = 0.82
+scope_zoom_out_min_mag = 0.85
+scope_zoom_out_max_mag = 0.62
+scope_deadzone_px = 6.0
+scope_look_smooth = 10.0

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="VisionLightingConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/config/VisionLightingConfig.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+clear_energy = 0.6
+ring_dim = 0.4
+dark_energy = 0.18
+self_energy = 0.18
+ring_enemy_alpha = 0.8
+light_color = Color(1, 0.97, 0.92, 1)
+dark_color = Color(0.72, 0.82, 1, 1)
+self_color = Color(1, 0.95, 0.88, 1)

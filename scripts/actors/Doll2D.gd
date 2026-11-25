@@ -49,7 +49,11 @@ const STOW_OFFSET := Vector2(0.0, 2.0)
 const STOW_TINT := Color(0.78, 0.82, 0.90, 1.0)
 ## 右键瞄准时移速降到一半，换取更低散布和更远视野。
 const ADS_SPEED_MUL := 0.5
+## 256px 默认 LOD 下脚底对齐的基准偏移；编辑器在 Doll2D.tscn 中微调 Body.offset 时自动保留差值。
+const DEFAULT_BODY_OFFSET := Vector2(0.0, -144.0)
 
+## 角色固定调优配置资源（resources/config/doll_default.tres）；未挂载时平滑回退上方 const 默认值。
+@export var config: Resource
 @export var walk_speed := 250.0
 @export var sprint_speed := 380.0
 @export var bounds := Rect2(72, 72, 1392, 1008)
@@ -61,6 +65,7 @@ var frame_size := Vector2i(160, 160)
 var sheet: Texture2D = BODY_SHEET
 var head_sheet: Texture2D = HEAD_SHEET
 var _base_offset := 0.0
+var _editor_body_offset_delta := Vector2.ZERO
 var _neck_base := Vector2.ZERO
 var _current_block := 0
 ## 受击闪白：短暂把整身染成冷白再退回原色。
@@ -127,9 +132,49 @@ func enable_rig(rig_style: String = "normal") -> void:
 	add_child(rig)
 	body.visible = false
 
+func _cfg_float(prop: StringName, fallback: float) -> float:
+	if config != null and prop in config:
+		return float(config.get(prop))
+	return fallback
+
+
+func _cfg_bool(prop: StringName, fallback: bool) -> bool:
+	if config != null and prop in config:
+		return bool(config.get(prop))
+	return fallback
+
+
+func _cfg_vec2(prop: StringName, fallback: Vector2) -> Vector2:
+	if config != null and prop in config:
+		var val = config.get(prop)
+		if val is Vector2:
+			return val
+	return fallback
+
+
+func _cfg_color(prop: StringName, fallback: Color) -> Color:
+	if config != null and prop in config:
+		var val = config.get(prop)
+		if val is Color:
+			return val
+	return fallback
+
+
+func _step_bob(frame_idx: int) -> float:
+	if config != null and &"step_bob_px" in config:
+		var arr = config.get(&"step_bob_px")
+		if arr is PackedFloat32Array and arr.size() > 0:
+			return float(arr[mini(frame_idx, arr.size() - 1)])
+	return float(BOB[mini(frame_idx, BOB.size() - 1)])
+
+
 func _ready() -> void:
 	add_to_group("actors")
 	add_to_group("player")
+	# 保留 Doll2D.tscn 中 Body.offset 相对默认 (-144) 的编辑器微调量，启动不再无条件丢弃。
+	if body != null and not body.offset.is_equal_approx(Vector2.ZERO) \
+			and not body.offset.is_equal_approx(DEFAULT_BODY_OFFSET):
+		_editor_body_offset_delta = body.offset - DEFAULT_BODY_OFFSET
 	_build_rig()
 	frame_size = Vector2i(int(round(DEFAULT_BODY_PX * 1.25)), int(round(DEFAULT_BODY_PX * 1.25)))
 	_apply_sheet(BODY_SHEET)
@@ -154,8 +199,8 @@ func configure(body_px: int) -> void:
 
 func _apply_sheet(tex: Texture2D) -> void:
 	body.sprite_frames = _build_frames(tex)
-	_base_offset = -frame_size.y * (FEET_RATIO - 0.5)
-	body.offset = Vector2(0, _base_offset)
+	_base_offset = -frame_size.y * (FEET_RATIO - 0.5) + _editor_body_offset_delta.y
+	body.offset = Vector2(_editor_body_offset_delta.x, _base_offset)
 	_build_head_frames()
 	_layout_rig()
 	_head.visible = _head_enabled
@@ -197,11 +242,13 @@ func _build_head_frames() -> void:
 func _layout_rig() -> void:
 	var f := Vector2(frame_size)
 	var neck := Vector2(HEAD_NECK_UV.x * f.x, HEAD_NECK_UV.y * f.y)
-	var neck_local := Vector2(neck.x - f.x * 0.5, neck.y - f.y * 0.5 + _base_offset)
+	var neck_local := Vector2(
+		neck.x - f.x * 0.5 + _editor_body_offset_delta.x,
+		neck.y - f.y * 0.5 + _base_offset)
 	_head_pivot.position = neck_local
 	_neck_base = neck_local
 	# 头部贴图是整帧大小：把整帧中心摆回身体贴图的位置，旋转支点即为脖子
-	_head.position = Vector2(0, _base_offset) - neck_local
+	_head.position = Vector2(_editor_body_offset_delta.x, _base_offset) - neck_local
 	_update_weapon_anchor()
 
 func _sync_head() -> void:
@@ -215,7 +262,7 @@ func _update_head_tilt(delta: float) -> void:
 	if _head_pivot == null:
 		return
 	# 关闭时头完全跟随身体帧，不旋转、不横移，避免脖子处出现接缝
-	if not HEAD_MOTION_ENABLED:
+	if not _cfg_bool(&"head_motion_enabled", HEAD_MOTION_ENABLED):
 		_head_pivot.rotation = 0.0
 		_head_pivot.position.x = _neck_base.x
 		return
@@ -224,9 +271,10 @@ func _update_head_tilt(delta: float) -> void:
 		var offset := aim_target - global_position
 		if offset.length() > 2.0:
 			ratio = clampf(offset.x / 120.0, -1.0, 1.0)
-	var blend := clampf(HEAD_TILT_SPEED * delta, 0.0, 1.0)
-	_head_pivot.rotation = lerp_angle(_head_pivot.rotation, ratio * HEAD_MAX_TILT, blend)
-	var target_x := _neck_base.x + ratio * frame_size.x * HEAD_MAX_SHIFT
+	var blend := clampf(_cfg_float(&"head_tilt_speed", HEAD_TILT_SPEED) * delta, 0.0, 1.0)
+	_head_pivot.rotation = lerp_angle(
+		_head_pivot.rotation, ratio * _cfg_float(&"head_max_tilt", HEAD_MAX_TILT), blend)
+	var target_x := _neck_base.x + ratio * frame_size.x * _cfg_float(&"head_max_shift", HEAD_MAX_SHIFT)
 	_head_pivot.position.x = move_toward(_head_pivot.position.x, target_x, frame_size.x * 0.02)
 
 func _update_weapon_anchor() -> void:
@@ -292,16 +340,16 @@ func _show_stowed_weapon() -> void:
 	var tex := weapon_rig.get_side_texture()
 	if tex == null:
 		return
-	_stow_base = STOW_OFFSET
+	_stow_base = _cfg_vec2(&"stow_offset", STOW_OFFSET)
 	var sprite := equip_weapon(tex, _stow_base, weapon_rig.get_stow_scale())
-	sprite.rotation = STOW_ROTATION
+	sprite.rotation = _cfg_float(&"stow_rotation", STOW_ROTATION)
 	sprite.flip_v = direction == 2
-	sprite.modulate = STOW_TINT
+	sprite.modulate = _cfg_color(&"stow_tint", STOW_TINT)
 	_update_weapon_anchor()
 
 ## 开火时整个人向后一顿，配合武器后坐让开火有反馈。
 func _on_weapon_fired(muzzle: Vector2, dir: Vector2) -> void:
-	_flinch = -dir * 2.2
+	_flinch = -dir * _cfg_float(&"fire_flinch_px", 2.2)
 	shot_fired.emit(muzzle, dir)
 
 func get_muzzle_position() -> Vector2:
@@ -317,9 +365,9 @@ func _build_frames(tex: Texture2D) -> SpriteFrames:
 		# 老档位图集没有瞄准行时直接跳过，避免取到空帧
 		if block + DIRECTIONS > rows_available:
 			continue
-		var fps := WALK_FPS
+		var fps := _cfg_float(&"walk_fps", WALK_FPS)
 		if anim_name == "run":
-			fps = RUN_FPS
+			fps = _cfg_float(&"run_fps", RUN_FPS)
 		elif anim_name == "idle":
 			fps = 1.0
 		elif anim_name == "aim":
@@ -356,8 +404,8 @@ func take_damage(amount: float, ap: float = 0.0) -> void:
 	var hp_damage: int = int(res["hp_damage"])
 	armor = int(res["new_armor"])
 	hp = int(res["new_hp"])
-	invuln = 0.12
-	_hurt_flash = 0.16
+	invuln = _cfg_float(&"hurt_invuln_sec", 0.12)
+	_hurt_flash = _cfg_float(&"hurt_flash_sec", 0.16)
 	damaged.emit(total, armor_damage, hp_damage, global_position)
 	if hp <= 0:
 		died.emit()
@@ -383,8 +431,9 @@ func _physics_process(delta: float) -> void:
 		invuln = maxf(invuln - delta, 0.0)
 	if _hurt_flash > 0.0:
 		_hurt_flash = maxf(_hurt_flash - delta, 0.0)
-		var t := _hurt_flash / 0.16
-		modulate = Color.WHITE.lerp(Color(2.1, 0.62, 0.58), t)
+		var flash_dur := maxf(_cfg_float(&"hurt_flash_sec", 0.16), 0.01)
+		var t := _hurt_flash / flash_dur
+		modulate = Color.WHITE.lerp(_cfg_color(&"hurt_flash_tint", Color(2.1, 0.62, 0.58)), t)
 	elif modulate != Color.WHITE:
 		modulate = Color.WHITE
 	var input_vector := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
@@ -393,7 +442,7 @@ func _physics_process(delta: float) -> void:
 	ads = InputMap.has_action("aim") and Input.is_action_pressed("aim") and not sprinting
 	var speed := sprint_speed if sprinting else walk_speed
 	if ads:
-		speed *= ADS_SPEED_MUL
+		speed *= _cfg_float(&"ads_speed_mul", ADS_SPEED_MUL)
 	var dbg_progress := get_node_or_null("/root/Progress")
 	if dbg_progress != null:
 		speed *= float(dbg_progress.debug_mul("move"))
@@ -461,14 +510,15 @@ func _play(anim_name: String, target_direction: int, speed: float) -> void:
 func _apply_bob(moving: bool) -> void:
 	var bob := 0.0
 	if moving:
-		bob = BOB[mini(body.frame, BOB.size() - 1)] * (frame_size.y / 160.0)
+		bob = _step_bob(body.frame) * (frame_size.y / 160.0)
 	var target := _base_offset + bob
 	body.offset.y = move_toward(body.offset.y, target, frame_size.y * 0.06)
 	# 头部挂在 Body 下不会跟着 offset 移动，这里手动跟随，避免走动时头身分离
 	if _head_pivot != null:
 		_head_pivot.position.y = _neck_base.y + (body.offset.y - _base_offset)
 	# 开火后坐：Body 与武器层一起后退，影子保持不动
-	_flinch = _flinch.move_toward(Vector2.ZERO, 40.0 * get_physics_process_delta_time())
+	_flinch = _flinch.move_toward(
+		Vector2.ZERO, _cfg_float(&"flinch_recover_speed", 40.0) * get_physics_process_delta_time())
 	body.position = _flinch
 	if weapon_rig != null:
 		weapon_rig.position = _flinch

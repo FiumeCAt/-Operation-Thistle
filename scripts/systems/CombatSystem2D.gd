@@ -60,6 +60,18 @@ var _muzzle_fx_fn: Callable = Callable()
 var _shake_fn: Callable = Callable()
 var _hitstop_fn: Callable = Callable()
 var _sfx_fn: Callable = Callable()
+## 可选手感配置资源（CombatFeelConfig）；缺省时平滑回退上方 const 常量。
+var config: Resource
+
+
+func apply_config(cfg: Resource) -> void:
+	config = cfg
+
+
+func _cfg_float(prop: StringName, fallback: float) -> float:
+	if config != null and prop in config:
+		return float(config.get(prop))
+	return fallback
 
 
 func setup(owner_node: Node2D, doll: Doll2D, fx_layer: Node2D, reticle: AimReticle2D,
@@ -112,9 +124,9 @@ func _progress_node() -> Node:
 func update(delta: float) -> void:
 	shot_clock += delta
 	update_burst_spread(delta)
-	recoil_offset = recoil_offset.move_toward(Vector2.ZERO, RECOIL_RECOVER * delta)
-	recoil_cam = recoil_cam.move_toward(Vector2.ZERO, 70.0 * delta)
-	recoil_roll = move_toward(recoil_roll, 0.0, 0.16 * delta)
+	recoil_offset = recoil_offset.move_toward(Vector2.ZERO, _cfg_float(&"recoil_recover", RECOIL_RECOVER) * delta)
+	recoil_cam = recoil_cam.move_toward(Vector2.ZERO, _cfg_float(&"recoil_cam_recover", 70.0) * delta)
+	recoil_roll = move_toward(recoil_roll, 0.0, _cfg_float(&"recoil_roll_recover", 0.16) * delta)
 
 
 ## 射击原点用视觉枪口：弹道、tracer、枪口闪光和准心才能三点一线。
@@ -164,9 +176,9 @@ func get_safe_shot_origin(muzzle_override: Vector2 = Vector2.INF) -> Vector2:
 	return safe
 
 
-## 当前后坐力/开火抖动强度倍率：腰射 1.0，开镜逐步降到 RECOIL_ADS_MUL。
+## 当前后坐力/开火抖动强度倍率：腰射 1.0，开镜逐步降到 recoil_ads_mul。
 func recoil_strength() -> float:
-	return lerpf(1.0, RECOIL_ADS_MUL, _ads_t())
+	return lerpf(1.0, _cfg_float(&"recoil_ads_mul", RECOIL_ADS_MUL), _ads_t())
 
 
 ## 子弹与激光共用的射击方向：始终从起点指向准心 + 当前后坐力偏移。
@@ -323,18 +335,20 @@ func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 	var cap_v: float = maxf(data.recoil_max_vertical * dbg_cap, data.recoil_vertical)
 	var cap_h: float = maxf(data.recoil_max_horizontal * dbg_cap, 1.0)
 	var build := clampf(absf(recoil_offset.y) / cap_v, 0.0, 1.0)
+	var build_gain := _cfg_float(&"recoil_build_gain", RECOIL_BUILD_GAIN)
 	var kick_v := data.recoil_vertical * dbg_v * ads_mul \
-		* lerpf(1.0, 1.0 + RECOIL_BUILD_GAIN, build)
+		* lerpf(1.0, 1.0 + build_gain, build)
 	var kick_h := (randf_range(-0.7, 0.7) + recoil_side * 0.3) \
 		* data.recoil_horizontal * dbg_h * ads_mul * lerpf(1.0, 1.25, build)
 	recoil_side = -recoil_side
 	recoil_offset += Vector2(kick_h, -kick_v)
 	recoil_offset.x = clampf(recoil_offset.x, -cap_h, cap_h)
 	recoil_offset.y = clampf(recoil_offset.y, -cap_v, 14.0)
-	recoil_cam += Vector2(kick_h, -kick_v) * RECOIL_CAM_SCALE
-	recoil_cam = recoil_cam.limit_length(RECOIL_CAM_LIMIT)
-	recoil_roll = clampf(recoil_roll + kick_h * RECOIL_ROLL_SCALE,
-		-RECOIL_ROLL_LIMIT, RECOIL_ROLL_LIMIT)
+	recoil_cam += Vector2(kick_h, -kick_v) * _cfg_float(&"recoil_cam_scale", RECOIL_CAM_SCALE)
+	recoil_cam = recoil_cam.limit_length(_cfg_float(&"recoil_cam_limit", RECOIL_CAM_LIMIT))
+	var roll_limit := _cfg_float(&"recoil_roll_limit", RECOIL_ROLL_LIMIT)
+	recoil_roll = clampf(recoil_roll + kick_h * _cfg_float(&"recoil_roll_scale", RECOIL_ROLL_SCALE),
+		-roll_limit, roll_limit)
 
 	var suppressed := bool(_doll.weapon_rig.has_suppressor) if _doll.weapon_rig != null else false
 	if _muzzle_fx_fn.is_valid():

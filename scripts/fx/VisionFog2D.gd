@@ -51,6 +51,8 @@ static var _textures: Dictionary = {}
 var player = null
 var level = null
 var canvas_modulate: CanvasModulate
+var lighting_config: Resource
+var ambient_color: Color = AMBIENT
 
 var _clear_light: PointLight2D
 var _dark_light: PointLight2D
@@ -64,17 +66,42 @@ var _tiers: Dictionary = {}
 var vision_mul := 1.0
 
 
-func setup(player_node: Node2D, level_node, modulate_node: CanvasModulate) -> void:
+func _cfg_float(prop: StringName, fallback: float) -> float:
+	if lighting_config != null and prop in lighting_config:
+		return float(lighting_config.get(prop))
+	return fallback
+
+
+func _cfg_color(prop: StringName, fallback: Color) -> Color:
+	if lighting_config != null and prop in lighting_config:
+		var val = lighting_config.get(prop)
+		if val is Color:
+			return val
+	return fallback
+
+
+func setup(player_node: Node2D, level_node, modulate_node: CanvasModulate,
+		ambient_override := Color(-1.0, -1.0, -1.0, 1.0),
+		cfg: Resource = null) -> void:
 	player = player_node
 	level = level_node
 	canvas_modulate = modulate_node
+	lighting_config = cfg
+	if ambient_override.r >= 0.0:
+		ambient_color = ambient_override
+	elif modulate_node != null and not modulate_node.color.is_equal_approx(Color.WHITE):
+		ambient_color = modulate_node.color
+	else:
+		ambient_color = AMBIENT
 	var half_px := TEX_SIZE * 0.5
-	_clear_light = _make_light(_cone_texture(), CLEAR_ENERGY,
-		TOTAL_RANGE_METERS * PIXELS_PER_METER / half_px, LIGHT_COLOR)
-	_dark_light = _make_light(_radial_texture(), DARK_ENERGY,
-		DARK_RADIUS_METERS * PIXELS_PER_METER / half_px, DARK_COLOR)
-	_self_light = _make_light(_radial_texture(), SELF_ENERGY,
-		SELF_RADIUS_METERS * PIXELS_PER_METER / half_px, Color(1.0, 0.95, 0.88))
+	var ring_dim := clampf(_cfg_float(&"ring_dim", RING_DIM), 0.0, 1.0)
+	_clear_light = _make_light(_cone_texture(ring_dim), _cfg_float(&"clear_energy", CLEAR_ENERGY),
+		TOTAL_RANGE_METERS * PIXELS_PER_METER / half_px, _cfg_color(&"light_color", LIGHT_COLOR))
+	_dark_light = _make_light(_radial_texture(), _cfg_float(&"dark_energy", DARK_ENERGY),
+		DARK_RADIUS_METERS * PIXELS_PER_METER / half_px, _cfg_color(&"dark_color", DARK_COLOR))
+	_self_light = _make_light(_radial_texture(), _cfg_float(&"self_energy", SELF_ENERGY),
+		SELF_RADIUS_METERS * PIXELS_PER_METER / half_px,
+		_cfg_color(&"self_color", Color(1.0, 0.95, 0.88)))
 	_self_light.shadow_enabled = false
 	set_debug(false)
 
@@ -89,7 +116,7 @@ func set_debug(enabled: bool) -> void:
 	if _self_light != null:
 		_self_light.visible = not enabled
 	if canvas_modulate != null:
-		canvas_modulate.color = Color(1, 1, 1) if enabled else AMBIENT
+		canvas_modulate.color = Color(1, 1, 1) if enabled else ambient_color
 	if enabled:
 		for enemy in get_tree().get_nodes_in_group("enemies"):
 			var node := enemy as Node2D
@@ -169,7 +196,8 @@ func _update_enemy_fade(delta: float) -> void:
 			_tiers.erase(node)
 			continue
 		var tier := int(_tiers[node])
-		var target_alpha := 1.0 if tier == 2 else (RING_ENEMY_ALPHA if tier == 1 else 0.0)
+		var ring_alpha := clampf(_cfg_float(&"ring_enemy_alpha", RING_ENEMY_ALPHA), 0.1, 1.0)
+		var target_alpha := 1.0 if tier == 2 else (ring_alpha if tier == 1 else 0.0)
 		var tint := Color.WHITE if tier == 2 else Color(0.78, 0.84, 0.95)
 		var alpha := move_toward(float(node.modulate.a), target_alpha, delta * 4.0)
 		node.modulate = Color(tint.r, tint.g, tint.b, alpha)
@@ -187,7 +215,8 @@ func refresh_enemies() -> void:
 		var tier := tier_for_enemy(node.global_position)
 		if not _tiers.has(node):
 			# 初次进入直接到位，避免开局在迷雾里的敌人先闪一下。
-			var alpha := 1.0 if tier == 2 else (RING_ENEMY_ALPHA if tier == 1 else 0.0)
+			var ring_alpha := clampf(_cfg_float(&"ring_enemy_alpha", RING_ENEMY_ALPHA), 0.1, 1.0)
+			var alpha := 1.0 if tier == 2 else (ring_alpha if tier == 1 else 0.0)
 			node.modulate.a = alpha
 			node.visible = alpha > 0.01
 		_tiers[node] = tier
@@ -327,10 +356,11 @@ static func widened_half_angle(base_deg: float, mul: float) -> float:
 	return atan(half)
 
 
-## 清晰视野锥：40° 内满亮，过渡到 40% 亮度的外圈余光，60° 收边；各段 smoothstep 连续衔接。
-static func _cone_texture() -> ImageTexture:
-	if _textures.has("cone"):
-		return _textures["cone"] as ImageTexture
+## 清晰视野锥：40° 内满亮，过渡到 ring_dim 亮度的外圈余光，60° 收边；各段 smoothstep 连续衔接。
+static func _cone_texture(ring_dim := RING_DIM) -> ImageTexture:
+	var key := "cone_%.3f" % ring_dim
+	if _textures.has(key):
+		return _textures[key] as ImageTexture
 	var clear_half := deg_to_rad(CLEAR_HALF_DEG)
 	var total_half := deg_to_rad(TOTAL_HALF_DEG)
 	var tex := _build_texture(func(angle: float, radius: float) -> float:
@@ -342,10 +372,10 @@ static func _cone_texture() -> ImageTexture:
 		radial *= lerpf(1.0, 0.50, edge)
 		# 角向：中心满亮 → 清晰边缘外 8° 降到余光 → 总视野边缘 22° 内渐隐为 0。
 		var core := 1.0 - smoothstep(clear_half - deg_to_rad(16.0), clear_half + deg_to_rad(8.0), angle)
-		var angular := lerpf(RING_DIM, 1.0, core)
+		var angular := lerpf(ring_dim, 1.0, core)
 		angular *= smoothstep(0.0, deg_to_rad(22.0), total_half - angle)
 		return radial * angular)
-	_textures["cone"] = tex
+	_textures[key] = tex
 	return tex
 
 

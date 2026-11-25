@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="CombatFeelConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/config/CombatFeelConfig.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+recoil_limit = Vector2(52, 78)
+recoil_recover = 95.0
+recoil_ads_mul = 0.55
+recoil_build_gain = 0.55
+recoil_cam_scale = 0.95
+recoil_cam_limit = 26.0
+recoil_cam_recover = 70.0
+recoil_roll_scale = 0.0016
+recoil_roll_limit = 0.028
+recoil_roll_recover = 0.16
+shake_scale_base = 5.0
+hitstop_time_scale = 0.12
+hurt_flash_color = Color(0.72, 0.04, 0.04, 1)
+hurt_flash_fade_sec = 0.34
+hurt_shake_amount = 2.2
+hurt_shake_roll_deg = 0.3
+hurt_shake_decay = 24.0

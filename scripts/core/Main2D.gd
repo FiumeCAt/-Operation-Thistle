@@ -23,6 +23,17 @@ signal run_finished(success: bool, stats: Dictionary)
 @onready var hud: RunHUD2D = $HUD2D
 @onready var reticle: AimReticle2D = $Reticle2D
 
+## 编辑器可调场景导出属性与配置资源（未挂载时全部平滑回退下方 const 默认值）。
+@export_group("Scene & Config")
+## 视口背景清屏色（替代硬编码 Color("08090a")，可在 Main2D 检查器直接调整）。
+@export var clear_color: Color = Color("08090a")
+## 镜头手感与前探配置资源（resources/config/camera_feel_default.tres）。
+@export var camera_config: Resource
+## 后坐力、震屏与受击反馈配置资源（resources/config/combat_feel_default.tres）。
+@export var combat_config: Resource
+## 视野光照强度与色温配置资源（resources/config/vision_lighting_default.tres）。
+@export var vision_config: Resource
+
 const ZOOM := 0.95
 ## 100% 现在对应旧版 50% 的镜头缩放，基础视野翻倍；镜内放大由 ScopeSight2D 独立处理。
 ## 镜头上移，让玩家在画面里偏下，前方视野更大。
@@ -192,6 +203,9 @@ var _burst_weapon: StringName:
 ## 整体视角缩放倍率与平滑值；滚轮改前者，镜头跟后者，避免跳变。
 var view_zoom_pct := 100.0
 var _view_zoom_visual := 100.0
+## 基准镜头缩放与环境色：启动时从 Main2D.tscn 的 Camera2D.zoom / CanvasModulate.color 读取，不再硬编码覆盖。
+var _base_zoom := ZOOM
+var _ambient_color := Color(0.40, 0.43, 0.48, 1.0)
 ## 倍镜接口：倍率 >1 时只在 ADS 期间生效；默认 1.0 表示当前无倍镜。
 var scope_magnification := 1.0
 var _ads_look := Vector2.ZERO
@@ -242,13 +256,29 @@ var _wave_popup: CanvasLayer:
 	set(v): wave_system.popup = v
 
 
+func _cam_float(prop: StringName, fallback: float) -> float:
+	if camera_config != null and prop in camera_config:
+		return float(camera_config.get(prop))
+	return fallback
+
+
 func _ready() -> void:
-	RenderingServer.set_default_clear_color(Color("08090a"))
+	RenderingServer.set_default_clear_color(clear_color)
+	if camera != null and camera.zoom.x > 0.05:
+		_base_zoom = clampf(camera.zoom.x, 0.2, 4.0)
+	else:
+		_base_zoom = ZOOM
+	if canvas_modulate != null:
+		_ambient_color = canvas_modulate.color
+	if debug_overlay != null and debug_overlay.visible:
+		debug_visual_mode = true
 	hud.setup(self)
 	hud.return_requested.connect(_return_to_base)
 	hud.restart_requested.connect(func() -> void: get_tree().reload_current_scene())
 	hud.fire_mode_toggle_requested.connect(_on_fire_mode_toggle_requested)
+	feedback_system.apply_config(combat_config)
 	feedback_system.setup(self, fx_layer, doll, hud)
+	combat_system.apply_config(combat_config)
 	loot_system = LOOT_SYSTEM.new()
 	loot_system.setup(fx_layer, level, doll, hud, wave_loot_scale, feedback_system.play_sfx, _add_loot)
 	wave_system.setup(self, sort_layer, level, doll, hud, enemies,
@@ -308,7 +338,7 @@ func _ready() -> void:
 	camera.limit_top = int(_camera_bounds.position.y)
 	camera.limit_right = int(_camera_bounds.end.x)
 	camera.limit_bottom = int(_camera_bounds.end.y)
-	camera.zoom = Vector2(ZOOM, ZOOM)
+	camera.zoom = Vector2(_base_zoom, _base_zoom)
 	doll.global_position = level.player_spawn
 	camera.global_position = doll.global_position
 	doll.bounds = Rect2(40, 40, size.x - 80, size.y - 80)
@@ -325,7 +355,7 @@ func _ready() -> void:
 	vision = VISION_FOG.new()
 	vision.name = "VisionFog2D"
 	$World2D.add_child(vision)
-	vision.setup(doll, level, canvas_modulate)
+	vision.setup(doll, level, canvas_modulate, _ambient_color, vision_config)
 	laser_sight = LASER_SIGHT.new()
 	laser_sight.name = "LaserSight2D"
 	fx_layer.add_child(laser_sight)
@@ -349,7 +379,10 @@ func _ready() -> void:
 	else:
 		_spawn_enemies()
 		hud.set_hint(HINT_DEFAULT)
-	debug_overlay.visible = debug_visual_mode
+	if debug_visual_mode:
+		_apply_debug_visual_mode()
+	else:
+		debug_overlay.visible = false
 	feedback_system.warm_muzzle_fx()
 	feedback_system.warm_combat_fx()
 
@@ -432,9 +465,11 @@ func _apply_talents() -> void:
 	bullet_trail_enabled = bool(progress.data.get("bullet_trail_enabled", true))
 	_apply_bullet_trail_setting()
 	# 整体视角缩放档位是持久设置；Alt+滚轮调整后立即保存。
+	var zoom_step := maxf(_cam_float(&"view_zoom_step", VIEW_ZOOM_STEP), 1.0)
 	view_zoom_pct = clampf(
-		roundf(float(progress.data.get("view_zoom", 100)) / 10.0) * 10.0,
-		VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+		roundf(float(progress.data.get("view_zoom", 100)) / zoom_step) * zoom_step,
+		_cam_float(&"view_zoom_min", VIEW_ZOOM_MIN),
+		_cam_float(&"view_zoom_max", VIEW_ZOOM_MAX))
 	if hud != null:
 		if progress.has_method("pickup_merge_window"):
 			hud.set_pickup_merge_window(float(progress.pickup_merge_window()))
@@ -476,9 +511,11 @@ func _on_settings_applied() -> void:
 	hit_fx_level = clampi(int(progress.data.get("hit_fx_level", 1)), 0, 2)
 	bullet_trail_enabled = bool(progress.data.get("bullet_trail_enabled", true))
 	_apply_bullet_trail_setting()
+	var zoom_step := maxf(_cam_float(&"view_zoom_step", VIEW_ZOOM_STEP), 1.0)
 	view_zoom_pct = clampf(
-		roundf(float(progress.data.get("view_zoom", 100)) / 10.0) * 10.0,
-		VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+		roundf(float(progress.data.get("view_zoom", 100)) / zoom_step) * zoom_step,
+		_cam_float(&"view_zoom_min", VIEW_ZOOM_MIN),
+		_cam_float(&"view_zoom_max", VIEW_ZOOM_MAX))
 	if hud != null:
 		if progress.has_method("pickup_merge_window"):
 			hud.set_pickup_merge_window(float(progress.pickup_merge_window()))
@@ -637,7 +674,7 @@ func _process(delta: float) -> void:
 		run_elapsed += delta
 	# 右键瞄准只负责前探视野与散布收紧；整体缩放由 Alt+滚轮独立控制。
 	var want_ads := 1.0 if (doll.ads and run_state == RunState.ACTIVE) else 0.0
-	var ads_speed := ADS_ZOOM_SPEED
+	var ads_speed := _cam_float(&"ads_zoom_speed", ADS_ZOOM_SPEED)
 	if doll.weapon_rig != null:
 		ads_speed *= doll.weapon_rig.ads_speed_mul
 	var dbg_progress := get_node_or_null("/root/Progress")
@@ -651,7 +688,10 @@ func _process(delta: float) -> void:
 	# 高倍镜（2×~8×）则随倍率平滑拉远主镜头（0.85×~0.62×），兼顾横纵视野大幅展开与角色不离屏，
 	# 镜内 SubViewport 仍保持额定 2×~8× 放大。
 	if scoped:
-		scope_magnification = scope_camera_zoom_mul(sight_mag)
+		scope_magnification = scope_camera_zoom_mul(
+			sight_mag,
+			_cam_float(&"scope_zoom_out_min_mag", 0.85),
+			_cam_float(&"scope_zoom_out_max_mag", 0.62))
 	elif doll.weapon_rig != null:
 		scope_magnification = doll.weapon_rig.aim_zoom_mul
 	else:
@@ -660,13 +700,15 @@ func _process(delta: float) -> void:
 		reticle.visible = not scope_sight.should_hide_reticle()
 	if waves_mode:
 		_update_waves(delta)
-	_view_zoom_visual = move_toward(_view_zoom_visual, view_zoom_pct, VIEW_ZOOM_LERP * delta)
-	var base_zoom := ZOOM * (_view_zoom_visual / 100.0)
+	_view_zoom_visual = move_toward(
+		_view_zoom_visual, view_zoom_pct, _cam_float(&"view_zoom_lerp", VIEW_ZOOM_LERP) * delta)
+	var base_zoom := _base_zoom * (_view_zoom_visual / 100.0)
 	var scope_mul := lerpf(1.0, scope_magnification, _ads_t)
 	var zoom := base_zoom * scope_mul
+	var cam_lift := _cam_float(&"camera_lift", CAMERA_LIFT)
 
 	var vrect := get_viewport().get_visible_rect().size
-	var half_view_default := vrect * 0.5 / ZOOM
+	var half_view_default := vrect * 0.5 / _base_zoom
 	var half_view_base := vrect * 0.5 / maxf(base_zoom, 0.001)
 	var half_view := vrect * 0.5 / maxf(zoom, 0.001)
 
@@ -695,7 +737,7 @@ func _process(delta: float) -> void:
 		if not _scope_ads_active:
 			_scope_ads_active = true
 			_scope_entry_mouse = get_viewport().get_mouse_position().clamp(Vector2.ZERO, vrect)
-			var ideal_base := doll.global_position - Vector2(0.0, CAMERA_LIFT)
+			var ideal_base := doll.global_position - Vector2(0.0, cam_lift)
 			_scope_entry_cam_bias = prev_cam_center - ideal_base
 			_scope_cam_offset = Vector2.ZERO
 	else:
@@ -707,22 +749,23 @@ func _process(delta: float) -> void:
 		var look_mul := 1.0
 		if doll.weapon_rig != null:
 			look_mul = maxf(float(doll.weapon_rig.sight_look_ahead_mul), 1.0)
-		var look_ahead := ADS_LOOK_AHEAD * look_mul
+		var look_ahead := _cam_float(&"ads_look_ahead", ADS_LOOK_AHEAD) * look_mul
 		if scoped:
-			# 高倍镜前探上限严格约束在半屏比例内（Y 轴计入 CAMERA_LIFT），角色全身始终留在屏内。
-			var max_x := minf(look_ahead, half_view.x * SCOPE_KEEP_PLAYER_RATIO_X)
-			var max_y := minf(look_ahead, half_view.y * SCOPE_KEEP_PLAYER_RATIO_Y)
-			var y_min := -max_y + CAMERA_LIFT
-			var y_max := max_y + CAMERA_LIFT
+			# 高倍镜前探上限严格约束在半屏比例内（Y 轴计入 cam_lift），角色全身始终留在屏内。
+			var max_x := minf(look_ahead, half_view.x * _cam_float(&"scope_keep_player_ratio_x", SCOPE_KEEP_PLAYER_RATIO_X))
+			var max_y := minf(look_ahead, half_view.y * _cam_float(&"scope_keep_player_ratio_y", SCOPE_KEEP_PLAYER_RATIO_Y))
+			var y_min := -max_y + cam_lift
+			var y_max := max_y + cam_lift
+			var deadzone := _cam_float(&"scope_deadzone_px", 6.0)
 			if mouse_aim_enabled:
 				var cur_m := get_viewport().get_mouse_position()
 				var dm := cur_m - _scope_entry_mouse
 				var dm_len := dm.length()
 				var desired_offset := Vector2.ZERO
-				if doll.ads and dm_len > 6.0:
-					# 减去 6px 静止防抖死区，并按外推方向剩余屏幕空间归一化，
+				if doll.ads and dm_len > deadzone:
+					# 减去静止防抖死区，并按外推方向剩余屏幕空间归一化，
 					# 即使开镜初始光标靠近屏边，继续轻推也能顺畅拉满 100% 前探。
-					var eff := dm * ((dm_len - 6.0) / dm_len)
+					var eff := dm * ((dm_len - deadzone) / dm_len)
 					var room_x := clampf(
 						(vrect.x - 40.0 - _scope_entry_mouse.x) if eff.x >= 0.0 else (_scope_entry_mouse.x - 40.0),
 						120.0, maxf(120.0, vrect.x * 0.40))
@@ -740,7 +783,8 @@ func _process(delta: float) -> void:
 						clampf(norm.x * max_x, -max_x, max_x),
 						clampf(norm.y * max_y, y_min, y_max),
 					)
-				_scope_cam_offset = _scope_cam_offset.lerp(desired_offset, clampf(delta * 10.0, 0.0, 1.0))
+				var scope_smooth := _cam_float(&"scope_look_smooth", 10.0)
+				_scope_cam_offset = _scope_cam_offset.lerp(desired_offset, clampf(delta * scope_smooth, 0.0, 1.0))
 				if _scope_cam_offset.distance_to(desired_offset) < 0.5:
 					_scope_cam_offset = desired_offset
 				_ads_look = desired_offset.normalized() if desired_offset.length_squared() > 1.0 else Vector2.ZERO
@@ -766,19 +810,20 @@ func _process(delta: float) -> void:
 				maxf(0.0, half_view_base.x - half_view.x),
 				maxf(0.0, half_view_base.y - half_view.y),
 			)
+			var ads_smooth := _cam_float(&"ads_look_smooth", ADS_LOOK_SMOOTH)
 			if mouse_aim_enabled:
 				var rel := (get_viewport().get_mouse_position() - vrect * 0.5) / maxf(minf(vrect.x, vrect.y) * 0.45, 1.0)
 				var raw_ratio := clampf(rel.length(), 0.0, 1.0)
 				var mag_ratio := lerpf(0.35, 1.0, raw_ratio) if raw_ratio > 0.04 else 0.0
 				var desired := rel.normalized() * mag_ratio if raw_ratio > 0.04 else Vector2.ZERO
-				_ads_look = _ads_look.lerp(desired, clampf(delta * ADS_LOOK_SMOOTH, 0.0, 1.0))
+				_ads_look = _ads_look.lerp(desired, clampf(delta * ads_smooth, 0.0, 1.0))
 			else:
 				var raw_aim := doll.aim_target - doll.global_position
 				var aim_dir := raw_aim.normalized() if raw_aim.length_squared() > 1.0 else Vector2.RIGHT
 				if raw_aim.length_squared() <= 1.0 and doll.weapon_rig != null:
 					aim_dir = doll.weapon_rig.get_barrel_direction()
 				_ads_look = _ads_look.lerp(
-					aim_dir.normalized(), clampf(delta * ADS_LOOK_SMOOTH, 0.0, 1.0))
+					aim_dir.normalized(), clampf(delta * ads_smooth, 0.0, 1.0))
 			look = Vector2(
 				_ads_look.x * (look_ahead + zoom_comp.x) * _ads_t,
 				_ads_look.y * (look_ahead + zoom_comp.y) * _ads_t,
@@ -799,7 +844,7 @@ func _process(delta: float) -> void:
 	var snap := 1.0 / maxf(zoom, 0.001)
 	var target := Vector2(
 		roundf((doll.global_position.x + look.x + _recoil_cam.x) / snap) * snap,
-		roundf((doll.global_position.y - CAMERA_LIFT + look.y + _recoil_cam.y) / snap) * snap,
+		roundf((doll.global_position.y - cam_lift + look.y + _recoil_cam.y) / snap) * snap,
 	)
 	var shake_step := feedback_system.step_shake(delta)
 	target += shake_step["offset"]
@@ -828,13 +873,13 @@ func _process(delta: float) -> void:
 			_update_debug_label()
 
 
-## 高倍镜开镜主镜头拉远倍率：2×→0.85 … 4×→0.76 … 8×→0.62，
+## 高倍镜开镜主镜头拉远倍率：2×→min_mag(默认0.85) … 8×→max_mag(默认0.62)，
 ## 在横纵双向大幅展开视野的同时让角色始终留在屏内；镜内 SubViewport 仍保持额定倍率。
-static func scope_camera_zoom_mul(sight_mag: float) -> float:
+static func scope_camera_zoom_mul(sight_mag: float, min_mag := 0.85, max_mag := 0.62) -> float:
 	if sight_mag <= 1.5:
 		return 1.0
 	var t := clampf((sight_mag - 2.0) / 6.0, 0.0, 1.0)
-	return lerpf(0.85, 0.62, pow(t, 0.85))
+	return lerpf(min_mag, max_mag, pow(t, 0.85))
 
 
 func _update_hud(delta: float) -> void:
@@ -1017,11 +1062,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			and (map_overlay == null or not map_overlay.visible) \
 			and Input.is_action_pressed("view_zoom"):
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_set_view_zoom(view_zoom_pct + VIEW_ZOOM_STEP)
+			_set_view_zoom(view_zoom_pct + _cam_float(&"view_zoom_step", VIEW_ZOOM_STEP))
 			get_viewport().set_input_as_handled()
 			return
 		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_set_view_zoom(view_zoom_pct - VIEW_ZOOM_STEP)
+			_set_view_zoom(view_zoom_pct - _cam_float(&"view_zoom_step", VIEW_ZOOM_STEP))
 			get_viewport().set_input_as_handled()
 			return
 	if event.is_action_pressed("ammo_display"):
@@ -1079,11 +1124,13 @@ func _cycle_ammo_display() -> void:
 		hud.update_weapon(doll.weapon_rig)
 
 
-## 整体视角缩放：夹在 20%–200% 并对齐 10% 档位。
+## 整体视角缩放：夹在可配上下限（默认 20%–200%）并按步进档位对齐。
 func _set_view_zoom(value: float) -> void:
+	var step := maxf(_cam_float(&"view_zoom_step", VIEW_ZOOM_STEP), 1.0)
 	view_zoom_pct = clampf(
-		roundf(value / VIEW_ZOOM_STEP) * VIEW_ZOOM_STEP,
-		VIEW_ZOOM_MIN, VIEW_ZOOM_MAX)
+		roundf(value / step) * step,
+		_cam_float(&"view_zoom_min", VIEW_ZOOM_MIN),
+		_cam_float(&"view_zoom_max", VIEW_ZOOM_MAX))
 	var progress := get_node_or_null("/root/Progress")
 	if progress != null:
 		progress.set_view_zoom(view_zoom_pct)
@@ -1288,7 +1335,7 @@ func _apply_debug_visual_mode() -> void:
 	if vision != null:
 		vision.set_debug(debug_visual_mode)
 	else:
-		canvas_modulate.color = Color(1, 1, 1) if debug_visual_mode else Color(0.9, 0.9, 0.92)
+		canvas_modulate.color = Color(1, 1, 1) if debug_visual_mode else _ambient_color
 	_update_debug_label()
 
 

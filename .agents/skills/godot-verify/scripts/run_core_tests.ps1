@@ -48,6 +48,7 @@ $DefaultCoreTests = @(
     "run_events_hud_test",
     "save_slots_2d_test",
     "save_system_test",
+    "scene_config_test",
     "settings_2d_test",
     "shoot_2d_test",
     "spread_accumulation_test",

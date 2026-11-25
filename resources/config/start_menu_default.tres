@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="StartMenuConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/config/StartMenuConfig.gd" id="1_cfg"]
+
+[resource]
+script = ExtResource("1_cfg")
+bg_hold_seconds = 8.5
+bg_fade_seconds = 1.8
+base_bg_color = Color(0.008, 0.011, 0.016, 1)
+slide_paths = PackedStringArray("res://assets/art/ui/menu_bg/bg_01_hangar.png", "res://assets/art/ui/menu_bg/bg_02_airlock.png", "res://assets/art/ui/menu_bg/bg_03_outpost.png")
+slide_labels = PackedStringArray("01 K-17 整备库", "02 隔离闸门", "03 雨夜哨站")
+left_mask_width_ratio = 0.42
+left_mask_alpha = 0.72
+right_mask_width_ratio = 0.34
+right_mask_alpha = 0.56
+top_vignette_ratio = 0.14
+top_vignette_alpha = 0.42
+bottom_vignette_ratio = 0.16
+bottom_vignette_alpha = 0.54
+mask_tint = Color(0.008, 0.011, 0.016, 1)
+scanline_alpha = 0.012
+scanline_step_px = 5.0
+sweep_speed = 0.045
+sweep_alpha = 0.05
+corner_bracket_alpha = 0.42
+corner_margin = 18.0
+corner_length = 56.0
