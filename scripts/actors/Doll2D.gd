@@ -10,6 +10,7 @@ class_name Doll2D
 ## 整身图集拆成「无头身体」与「独立头部」两张图，头部才能独立绕脖子摆动。
 const UNITS := preload("res://scripts/core/GameUnits.gd")
 const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
+const RIG_V2 := preload("res://scripts/actors/DollRigV2.gd")
 const BODY_SHEET := preload("res://assets/art/characters/doll_b/lod/doll_lod_256_body.png")
 const HEAD_SHEET := preload("res://assets/art/characters/doll_b/lod/doll_lod_256_head.png")
 const LOD_BODY := "res://assets/art/characters/doll_b/lod/doll_lod_%d_body.png"
@@ -101,8 +102,11 @@ var _weapon_sprite: Sprite2D
 var _stow_base := Vector2.ZERO
 ## 2D 持枪表现（武器 + 手 + 枪口焰），由 equip_weapon_id() 创建。
 var weapon_rig: WeaponRig2D
-## 模块化骨架；不为空时用它替代整张图集渲染。
+## 旧版实验模块化骨架（通过 --rig=normal/chibi 启用）。
 var rig: DollRig2D
+## Phase 7B 主力模块化像素骨骼（SubViewport 160×160 像素光栅化 + 二段腿 + 弹簧发/衣摆 + 眨眼）。
+var rig_v2: DollRigV2
+@export var use_modular_rig_v2 := true
 
 ## 生命值：受伤后短暂无敌，归零发 died 信号交给 Main2D 结算。
 signal died
@@ -166,8 +170,27 @@ func armor_rha() -> float:
 func effective_armor_rha() -> float:
 	return DAMAGE_MODEL.effective_player_rha(armor, armor_max, armor_rha())
 
-## 启用手/腿/头分件的骨架（normal 或 chibi），并隐藏旧的整图精灵。
+## 启用模块化骨架（"v2" 启用 Phase 7B 主力 Modular Doll Rig v2；"normal"/"chibi" 启用旧版实验骨架；"legacy" 退回图集）。
 func enable_rig(rig_style: String = "normal") -> void:
+	if rig_style == "v2":
+		if rig != null:
+			rig.queue_free()
+			rig = null
+		_enable_rig_v2()
+		return
+	if rig_style == "legacy":
+		if rig_v2 != null:
+			rig_v2.visible = false
+		if rig != null:
+			rig.queue_free()
+			rig = null
+		body.visible = true
+		var old_sh := get_node_or_null("Shadow") as CanvasItem
+		if old_sh != null:
+			old_sh.visible = true
+		return
+	if rig_v2 != null:
+		rig_v2.visible = false
 	if rig != null:
 		rig.queue_free()
 	rig = DollRig2D.new()
@@ -176,6 +199,27 @@ func enable_rig(rig_style: String = "normal") -> void:
 	rig.style = rig_style
 	add_child(rig)
 	body.visible = false
+
+
+func _enable_rig_v2() -> void:
+	if not ResourceLoader.exists(RIG_V2.PART_DIR + "head_front.png"):
+		return
+	if rig_v2 == null:
+		rig_v2 = RIG_V2.new()
+		rig_v2.name = "RigV2"
+		add_child(rig_v2)
+		rig_v2.footstep_planted.connect(_on_footstep_planted)
+	rig_v2.visible = true
+	body.visible = false
+	var old_sh := get_node_or_null("Shadow") as CanvasItem
+	if old_sh != null:
+		old_sh.visible = false
+
+
+func _on_footstep_planted(local_offset: Vector2, is_running: bool) -> void:
+	var dust_parent: Node = fx_layer if (fx_layer != null and is_instance_valid(fx_layer)) else get_parent()
+	if dust_parent != null and dust_parent.is_inside_tree():
+		Shot2D.footstep_dust(dust_parent, global_position + local_offset, is_running)
 
 func _cfg_float(prop: StringName, fallback: float) -> float:
 	if config != null and prop in config:
@@ -225,6 +269,8 @@ func _ready() -> void:
 	_apply_sheet(BODY_SHEET)
 	_base_body_scale = Vector2.ONE * (WORLD_BODY / float(DEFAULT_BODY_PX))
 	body.scale = _base_body_scale
+	if use_modular_rig_v2:
+		_enable_rig_v2()
 
 
 func _exit_tree() -> void:
@@ -233,8 +279,14 @@ func _exit_tree() -> void:
 		collision_mask = _saved_collision_mask
 		_dodge_collision_overridden = false
 
-## 切换到某一档素材：body_px 为该图集里角色的像素身高。
+## 切换到某一档素材：body_px 为该图集里角色的像素身高（供 LOD 对比与旧图集回退）。
 func configure(body_px: int) -> void:
+	if rig_v2 != null:
+		rig_v2.visible = false
+	body.visible = true
+	var old_sh := get_node_or_null("Shadow") as CanvasItem
+	if old_sh != null:
+		old_sh.visible = true
 	var split_body := LOD_BODY % body_px
 	var split_head := LOD_HEAD % body_px
 	var has_split := ResourceLoader.exists(split_body) and ResourceLoader.exists(split_head)
@@ -401,9 +453,20 @@ func _show_stowed_weapon() -> void:
 	sprite.modulate = _cfg_color(&"stow_tint", STOW_TINT)
 	_update_weapon_anchor()
 
-## 开火时整个人向后一顿，配合武器后坐让开火有反馈。
+## 开火时整个人向后一顿，配合武器后坐让开火有反馈，并联动 Modular Doll Rig v2 胸肩头与发梢震动。
 func _on_weapon_fired(muzzle: Vector2, dir: Vector2) -> void:
 	_flinch = -dir * _cfg_float(&"fire_flinch_px", 2.2)
+	if rig_v2 != null and rig_v2.visible:
+		var strength := 1.0
+		if weapon_rig != null and weapon_rig.data != null:
+			match weapon_rig.data.category:
+				&"sniper": strength = 1.85
+				&"shotgun": strength = 1.65
+				&"dmr": strength = 1.35
+				&"rifle": strength = 1.10
+				&"smg": strength = 0.72
+				_: strength = 0.85
+		rig_v2.trigger_recoil(strength, dir)
 	shot_fired.emit(muzzle, dir)
 
 func get_muzzle_position() -> Vector2:
@@ -475,6 +538,8 @@ func take_damage(amount: float, ap: float = 0.0) -> void:
 		died.emit()
 	else:
 		_flinch = Vector2(randf_range(-2.5, 2.5), randf_range(-2.5, 2.5))
+		if rig_v2 != null and rig_v2.visible:
+			rig_v2.trigger_hurt(_facing_vector(direction))
 
 
 func repair_armor(amount: int) -> void:
@@ -685,10 +750,21 @@ func _end_dodge() -> void:
 
 
 func _spawn_dodge_afterimage() -> void:
-	if body == null or body.sprite_frames == null:
-		return
 	var parent := get_parent()
 	if parent == null:
+		return
+	if rig_v2 != null and rig_v2.visible:
+		var snap := rig_v2.capture_snapshot_texture()
+		if snap != null:
+			# RigCanvas 为 160×160 centered=false，偏移 (-80, -148) 换算为 Sprite2D centered=true 的 offset = (0, -68)
+			var centered_off := Vector2(
+				float(RIG_V2.CANVAS_SIZE.x) * 0.5 - RIG_V2.GROUND_ORIGIN.x,
+				float(RIG_V2.CANVAS_SIZE.y) * 0.5 - RIG_V2.GROUND_ORIGIN.y
+			)
+			Shot2D.dodge_afterimage(parent, global_position, snap, null,
+				centered_off, Vector2.ONE, 0.0, _dodge_invuln_t > 0.0)
+			return
+	if body == null or body.sprite_frames == null:
 		return
 	var anim_name := body.animation
 	if not body.sprite_frames.has_animation(anim_name):
@@ -761,7 +837,12 @@ func _physics_process(delta: float) -> void:
 		if _dodge_afterimage_t >= ai_interval:
 			_dodge_afterimage_t = 0.0
 			_spawn_dodge_afterimage()
-		if rig != null:
+		if rig_v2 != null and rig_v2.visible:
+			var w_armed := weapon_rig != null and (not weapon_rig.is_holstered() or weapon_rig.is_stowing())
+			var w_holstered := weapon_rig == null or weapon_rig.is_holstered()
+			rig_v2.update_rig(velocity, walk_speed, sprint_speed, aim_target, aim_enabled,
+				w_armed, w_holstered, false, true, u, _dodge_dir, delta)
+		elif rig != null:
 			rig.set_state("run", direction, aim_target, false, delta)
 		_sync_head()
 		_update_head_tilt(delta)
@@ -776,6 +857,9 @@ func _physics_process(delta: float) -> void:
 			weapon_rig.ads = false
 			weapon_rig.sprinting = false
 			weapon_rig.dodging = is_dodging()
+			if rig_v2 != null and rig_v2.visible:
+				weapon_rig.dynamic_shoulder_offset = rig_v2.get_weapon_shoulder_offset()
+				weapon_rig.dodge_pose_rot = rig_v2.get_dodge_weapon_rotation()
 		return
 
 	var input_vector := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
@@ -808,7 +892,13 @@ func _physics_process(delta: float) -> void:
 			face = _direction_index(aim_target - global_position)
 		# 手臂由武器层程序化绘制，身体不再使用图集里伸臂的瞄准帧
 		_play("idle", face, 0.0)
-	if rig != null:
+	if rig_v2 != null and rig_v2.visible:
+		var w_holstered := weapon_rig == null or weapon_rig.is_holstered()
+		rig_v2.update_rig(velocity, walk_speed, sprint_speed, aim_target, aim_enabled,
+			armed, w_holstered, ads, false, 0.0, Vector2.ZERO, delta)
+		if armed and aim_enabled:
+			direction = rig_v2.upper_direction
+	elif rig != null:
 		var mode := "idle"
 		if moving:
 			mode = "run" if sprinting else "walk"
@@ -820,11 +910,17 @@ func _physics_process(delta: float) -> void:
 		weapon_rig.aim_world = aim_target
 		weapon_rig.aim_enabled = aim_enabled
 		weapon_rig.aiming = armed and not moving
-		weapon_rig.body_direction = direction
+		weapon_rig.body_direction = rig_v2.upper_direction if (rig_v2 != null and rig_v2.visible) else direction
 		weapon_rig.ads = ads
 		# 冲刺时枪保持在手，只是压低，不会自动收枪
 		weapon_rig.sprinting = sprinting and moving
 		weapon_rig.dodging = false
+		if rig_v2 != null and rig_v2.visible:
+			weapon_rig.dynamic_shoulder_offset = rig_v2.get_weapon_shoulder_offset()
+			weapon_rig.dodge_pose_rot = 0.0
+		else:
+			weapon_rig.dynamic_shoulder_offset = Vector2.ZERO
+			weapon_rig.dodge_pose_rot = 0.0
 
 ## 切换动画：方向或动作变化时保留迈步相位，避免每次都从第 0 帧重新起步。
 func _play(anim_name: String, target_direction: int, speed: float) -> void:
@@ -862,6 +958,8 @@ func _apply_bob(moving: bool) -> void:
 	_flinch = _flinch.move_toward(
 		Vector2.ZERO, _cfg_float(&"flinch_recover_speed", 40.0) * get_physics_process_delta_time())
 	body.position = _flinch
+	if rig_v2 != null and rig_v2.visible:
+		rig_v2.position = _flinch
 	if weapon_rig != null:
 		weapon_rig.position = _flinch
 	# 背后挂点的枪不挂在 Body 下，手动跟随走路起伏

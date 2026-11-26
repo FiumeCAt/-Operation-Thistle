@@ -17,6 +17,9 @@ const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
 const FEED_STATE := preload("res://scripts/weapons/WeaponFeedState2D.gd")
 const POSE_IK := preload("res://scripts/weapons/WeaponPoseIK2D.gd")
 
+const V2_UPPER_ARM_PATH := "res://assets/art/characters/doll_v2/arm2/upper_arm.png"
+const V2_FOREARM_PATH := "res://assets/art/characters/doll_v2/arm2/forearm.png"
+const V2_HAND_PATH := "res://assets/art/characters/doll_v2/arm2/hand.png"
 const UPPER_ARM_TEX := preload("res://assets/art/characters/doll_b/parts/arm2/upper_arm.png")
 const FOREARM_TEX := preload("res://assets/art/characters/doll_b/parts/arm2/forearm.png")
 const HAND_TEX := preload("res://assets/art/characters/doll_b/parts/arm2/hand.png")
@@ -113,6 +116,9 @@ var switch_t: float:
 var sprinting := false
 var dodging := false
 var ads := false
+## 由 DollRigV2 每帧注入的动态肩部偏移与翻滚收枪倾角，使武器紧贴呼吸/奔跑/后坐/翻滚中的躯干。
+var dynamic_shoulder_offset := Vector2.ZERO
+var dodge_pose_rot := 0.0
 var _ads_t := 0.0
 var _prev_ads := false
 var _cycle_sfx_t := 0.0
@@ -267,13 +273,26 @@ func setup(id: StringName) -> void:
 	_apply_pose()
 
 
+func _arm_tex(v2_path: String, fallback: Texture2D) -> Texture2D:
+	if ResourceLoader.exists(v2_path):
+		var res := load(v2_path)
+		if res is Texture2D:
+			return res
+	return fallback
+
+
 func _make_limb(parent: Node2D, node_name: String, tex: Texture2D) -> Sprite2D:
 	var limb := Sprite2D.new()
 	limb.name = node_name
-	limb.texture = tex
+	var use_tex := tex
+	if tex == UPPER_ARM_TEX:
+		use_tex = _arm_tex(V2_UPPER_ARM_PATH, tex)
+	elif tex == FOREARM_TEX:
+		use_tex = _arm_tex(V2_FOREARM_PATH, tex)
+	limb.texture = use_tex
 	limb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	limb.scale = Vector2.ONE * ARM_SCALE
-	limb.offset = Vector2(tex.get_width() * 0.5, 0.0)
+	limb.offset = Vector2(use_tex.get_width() * 0.5, 0.0)
 	parent.add_child(limb)
 	return limb
 
@@ -281,7 +300,7 @@ func _make_limb(parent: Node2D, node_name: String, tex: Texture2D) -> Sprite2D:
 func _make_hand(parent: Node2D, node_name: String) -> Sprite2D:
 	var hand := Sprite2D.new()
 	hand.name = node_name
-	hand.texture = HAND_TEX
+	hand.texture = _arm_tex(V2_HAND_PATH, HAND_TEX)
 	hand.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	hand.scale = Vector2.ONE * ARM_SCALE
 	parent.add_child(hand)
@@ -448,7 +467,8 @@ func _apply_pose() -> void:
 	if _pivot == null:
 		return
 	var flip := absf(aim_angle) > PI * 0.5
-	_wrist_local = POSE_IK.solve_primary_arm(_upper_arm, _forearm, _arm_length(), _elbow_sign)
+	var arm_reach := 2.0 if dodging else _arm_length()
+	_wrist_local = POSE_IK.solve_primary_arm(_upper_arm, _forearm, arm_reach, _elbow_sign)
 	_align_gun(flip)
 	if _hand != null:
 		_hand.position = _wrist_local
@@ -460,7 +480,8 @@ func _apply_pose() -> void:
 	var ads_lift := float(st.get("ads_lift", ADS_LIFT))
 	var shoulder_off: Vector2 = st.get("shoulder_offset", Vector2.ZERO)
 	var kick_mul := float(st.get("recoil_kick_mul", 1.0))
-	var anchor := _current_anchor() + shoulder_off - Vector2(0.0, ads_lift * _ads_t)
+	var base_anchor := _current_anchor() + shoulder_off + dynamic_shoulder_offset
+	var anchor := base_anchor - Vector2(0.0, ads_lift * _ads_t)
 	_pivot.rotation = aim_angle + _kick * kick_mul * recoil * lerpf(1.0, 0.45, _ads_t)
 	var toward_camera := clampf(Vector2.DOWN.dot(Vector2.from_angle(aim_angle)), 0.0, 1.0)
 	var foreshorten := lerpf(1.0, 0.45, toward_camera)
@@ -471,22 +492,28 @@ func _apply_pose() -> void:
 		_flash.scale = Vector2(FLASH_SCALE / maxf(foreshorten, 0.01), FLASH_SCALE)
 
 	var limbs := [_upper_arm, _forearm, _hand]
-	POSE_IK.apply_reload_pose(_pivot, _mag_sprite, _current_anchor(), reload_t, reload_total)
+	POSE_IK.apply_reload_pose(_pivot, _mag_sprite, base_anchor, reload_t, reload_total)
 	POSE_IK.apply_switch_pose(_pivot, _gun, limbs, _support_root, switch_t)
 	POSE_IK.apply_stow_pose(_pivot, _gun, limbs, _support_root, _flash,
 		holstered, feed.stow_t, feed.stow_total, feed.stow_kind)
 	var sprint_dip := float(st.get("sprint_dip", SPRINT_DIP))
 	if dodging and not holstered and feed.stow_t <= 0.0:
+		# 翻滚中段将武器紧贴胸口收拢保护，与 DollRigV2 团身翻滚衔接
 		_pivot.position.y += sprint_dip * 1.35
+		_pivot.rotation += dodge_pose_rot
+		if _gun != null:
+			_gun.modulate.a = 0.86
+		POSE_IK.set_limbs_visible(limbs, false)
 	elif sprinting and not aiming and not holstered and feed.stow_t <= 0.0:
 		_pivot.position.y += sprint_dip
 	var show_support := data != null and bool(st.get("support_arm", data.visual_length >= 0.5)) \
 		and data.visual_length >= 0.5 \
-		and (not holstered or feed.stow_t > 0.0)
+		and (not holstered or feed.stow_t > 0.0) and not dodging
+	var reload_prog := get_reload_progress() if reload_t > 0.0 else 0.0
 	POSE_IK.solve_support_arm(_support_root, _support_upper, _support_forearm, _support_hand,
-		_pivot, _current_anchor(), _wrist_local, _gun_len, _elbow_sign, _flipped, show_support,
+		_pivot, base_anchor, _wrist_local, _gun_len, _elbow_sign, _flipped, show_support,
 		float(st.get("support_ratio", POSE_IK.SUPPORT_GRIP_RATIO)),
-		float(st.get("support_lift", POSE_IK.SUPPORT_LIFT)))
+		float(st.get("support_lift", POSE_IK.SUPPORT_LIFT)), reload_prog)
 
 
 ## --- 供弹/动作接口（委托至 WeaponFeedState2D）--------------------------------

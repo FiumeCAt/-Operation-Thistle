@@ -39,23 +39,24 @@
 
 ---
 
-## 三、骨架方案定型：混合图集身躯 + 解耦双臂 IK 武器层（彻底杜绝“剪纸木偶感”）
+## 三、骨架方案定型（已修订）：Modular Doll Rig v2（模块化像素骨骼 + 次级物理飘动 + 统一像素光栅化）
 
-经过对比现存纯分件骨架 [DollRig2D.gd](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/scripts/actors/DollRig2D.gd) 与混合持枪架构 [Doll2D.gd](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/scripts/actors/Doll2D.gd) + [WeaponRig2D.gd](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/scripts/weapons/WeaponRig2D.gd)，Phase 7 正式采用 **「像素逐帧身躯图集 + 解耦双臂 IK 武器层」混合方案**：
+经 Phase 7 规格复核，最终**放弃纯整身 24 行逐帧图集与旧版僵硬单节木棍 `DollRig2D`**，正式定型为参考《Zed Zone / 末日地带》纸娃娃模块化思路并针对战术人偶升级的 **Modular Doll Rig v2**（像素规格锁死 **`128px×1`**，画布 `160×160`）：
 
-1. **为什么否决纯分件木偶骨架（`DollRig2D`）**：
-   - 纯 2D 刚体旋转分件在旋转手脚/头部时会暴露像素旋转锯齿、颈部/髋部接缝、以及衣摆/长发僵硬的“Flash 剪纸木偶感”。
-2. **混合方案结构**：
-   - **主体层（`Doll2D.Body` 整身无持枪双臂或收臂图集）**：统一 **4 列 × 24 行** 标准图集契约（已写入 `Doll2D.ANIM_BLOCKS`，100% 向下兼容旧 16 行图集）：
-     - `Row 0–3`：`idle_0..3`（下 / 上 / 左 / 右 站立呼吸）
-     - `Row 4–7`：`walk_0..3`（4 向战术行走）
-     - `Row 8–11`：`run_0..3`（4 向冲刺前倾）
-     - `Row 12–15`：`aim_0..3`（4 向举枪稳定躯干底架）
-     - `Row 16–19`：`hurt_0..3`（4 向受击后仰，不循环，12 FPS）
-     - `Row 20–23`：`dodge_0..3`（4 向 Phase 5 战术翻滚正式动画，不循环，13.3 FPS；加载 24 行图集时自动替代占位压缩旋转）
-   - **持枪臂与武器层（`WeaponRig2D` + `WeaponPoseIK2D`）**：
-     - 保持 360° 丝滑鼠标瞄准、左右镜像不倒置、背后/前景 `z_index` 自动遮挡、后坐力回弹、换弹掉匣插匣与 4 大标准持枪模板；
-     - Phase 7B 重绘主角时同步替换 `assets/art/characters/<char>/parts/arm2/{upper_arm,forearm,hand}.png`（与新主角衣袖/手套配色完全一致）。
+1. **纸娃娃模块化分层（预留未来换装/护甲槽位）**：
+   - `Shadow`：脚底软像素阴影，随迈步抬脚高度与翻滚腾空实时缩放；
+   - `Legs`：**左/右二段式关节（大腿 `Thigh` + 小腿/靴 `Shin`）**，带真实屈膝步态循环（静止 / 行走 / 冲刺 / 侧步 / 倒退走），踩实帧触发轻脚步扬尘；
+   - `Torso`：上身躯干/藏蓝外套主体 + 预留 `ArmorSlot`（未来护甲/胸挂外观挂点）；
+   - `BackGear`：背后战术枪盒/挂件，按朝向自动切换躯干前后 `z_index` 遮挡；
+   - `Head`：正/背/左/右 4 向头部 + **独立眨眼层 `BlinkLayer`**，颈部做 2–4px 圆角包边重叠，大角度摆头绝不露缝；
+   - `SecondaryMotion`（灵动感核心）：拆出 **后发/发梢** 与 **外套左右衣摆/格裙下摆**，挂载 2 节轻量弹簧阻尼物理，随移动加速度、急停惯性、转向、开火后坐与翻滚自然滞后飘动；
+   - `Arms + Weapon`：与 `WeaponRig2D` 360° 双臂 IK + 4 大持枪姿态模板深度整合，衣袖/手套配色与主角 100% 统一；收枪时由骨架驱动双臂自然垂摆，持枪时动态跟随躯干呼吸/前倾/后坐肩点，换弹时副手向弹匣井靠拢。
+2. **解决旋转“锯齿 / 露缝 / 剪纸木偶感”的核心机制**：
+   - 所有旋转零件在关节处制作 **2–4px 圆润重叠包边**；
+   - 整套模块化骨骼渲染在独立 **`160×160` 透明 `SubViewport`**（关闭抗锯齿 `MSAA_DISABLED`，显示节点 `RigCanvas` 挂 `TEXTURE_FILTER_NEAREST`、`scale = 1.0`），确保所有旋转四肢、头发与衣摆统一光栅化对齐到世界 1:1 像素格，彻底消除斜向高分锯齿与“剪纸贴图感”，同时完全兼容 `VisionFog2D` 2D 光照、受击闪白与翻滚像素残影。
+3. **衔接 Phase 5 翻滚与受击演出**：
+   - 受击时上半身短暂后仰闪白并触发发梢/衣摆轻震；
+   - 翻滚时驱动骨架执行**下蹲前扑 → 团身前滚（屈膝收枪、发梢衣摆甩动）→ 落地缓冲起身**，彻底替代占位压扁旋转。
 
 ---
 
@@ -72,25 +73,22 @@
 
 ---
 
-## 五、Seedream 5.5 生产管线规范（Phase 7B 标准作业流程）
+## 五、Seedream 5.5 模块化分件生产管线（Phase 7B 标准作业流程）
 
 严禁让文生图模型一次直接生成 64/96 帧小图（会导致角色脸型、服饰与比例严重漂移闪烁）。标准流程如下：
 
-1. **Step 1 — 参考一致性母版（Seedream 5.5 图生图 / 角色参考）**：
-   - 输入用户提供的主角参考立绘（如现有 `assets/art/concepts/angelia_3view.png` 或新提供参考图），用 [gen_seedream.py](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/tools/gen_seedream.py) 生成透明底 `2K` 正/背/左/右四向标准立绘母版，固定光照方向（顶部偏左柔光）、2.5D 俯斜视角（约 30° 俯角，与现有地图/敌人一致）与无持枪自然垂臂/收臂躯干。
-2. **Step 2 — 分组动作关键帧生成（每批仅 4 帧同向）**：
-   - 按「单方向 × 4 帧」（`walk` 接触-下沉-经过-抬脚、`run` 前倾步幅、`hurt` 受击后仰、`dodge` 翻滚起势-团身-滚过-起身）分批参考母版生成高清帧，保证每批角色身高、发色与装备 100% 锁定。
-3. **Step 3 — 程序化像素格下采样 + 全局锁定色板 + 轮廓清理**：
-   - 统一经 [pixel_char_pipeline.py](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/tools/pixel_char_pipeline.py) 执行：
-     - 预乘 Alpha 盒式下采样至锁定规格（`128px` 或 `64px`）→ 硬透明二值化（零半透明脏边）→ 去孤立噪点 → 全图集提取**单一锁定色板**（`48` 色或 `32` 色，杜绝帧间色彩闪烁）→ 1px 选择性暗色轮廓（`sel-out`）→ 严格脚底基线对齐（`FEET_RATIO = 0.95`）打包为 24 行标准图集。
-4. **Step 4 — 实机验收**：
-   - 导出主角图集与配套衣袖手臂 `arm2`，进入 `Main2D` 实拍 4 向行走/冲刺、4 大武器持姿与翻滚连拍帧验收。
+1. **Step 1 — 参考图透明三视图预处理**：
+   - 将选定主角参考图（`灰蓝猫耳少女三视图设定稿.png`）抠除白底生成透明三视图 `assets/art/characters/doll_v2/source/catgirl_3view_transparent.png`。
+2. **Step 2 — Seedream 5.5 图生图生成精修三视图与独立分件母版**：
+   - 以透明三视图 + 肖像细节作为参考输入 [gen_seedream.py](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/tools/gen_seedream.py)（`--image` + `--transparent`），生成统一画风、克制赛璐璐阴影、无持枪的高清三视图母版与纸娃娃独立分件母版（4 向头部 + 闭眼眨眼、无臂躯干外套、独立后发/发梢、独立外套下摆/格裙摆、二段式大腿/小腿+球鞋、二段式衣袖手臂与背后枪盒）。
+3. **Step 3 — 统一像素格下采样 + 48 色锁定色板 + 关节圆润包边**：
+   - 统一经 [build_doll_v2_parts.py](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/tools/build_doll_v2_parts.py) 调用 [pixel_char_pipeline.py](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/tools/pixel_char_pipeline.py)，以 **128px 世界身高**精确缩放所有分件、提取全局 48 色锁定色板、添加 1px 选择性暗色轮廓（`sel-out`）并在髋/膝/肩/肘/颈节点保留 2–4px 圆润重叠包边，输出至 `assets/art/characters/doll_v2/parts/`。
+4. **Step 4 — SubViewport 像素光栅化与实机验收**：
+   - 在 [DollRigV2.gd](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/scripts/actors/DollRigV2.gd) 内通过 `160×160` 无抗锯齿 `SubViewport` 统一光栅化，实拍多姿态截图与短录屏 GIF 验收灵动度、4 持枪模板融合与翻滚动画。
 
 ---
 
-## 六、进入 Phase 7B 前的用户确认清单
+## 六、Phase 7B 锁定配置（已由用户确认）
 
-请查看本次生成的 3 张实机同屏对比截图后，回复以下两项即可启动 Phase 7B：
-
-1. **锁死单一像素规格**：选择 **方案 B：`128px×1`（推荐，与地砖/道具/敌人最协调）** 还是 **方案 A：`64px×2`（强复古粗像素风）**？
-2. **主角参考图确认**：直接沿用仓库中已有的 [angelia_3view.png](file:///D:/AI%20Game/HellWalker/HellWalker_DollProtocol/assets/art/concepts/angelia_3view.png)（黑红汉风长袍/发饰战术化，或原样还原）作为主角母版，还是你会提供另一张新的主角参考图？
+1. **像素规格锁死**：**方案 B：`128px×1`（单画布 `160×160` SubViewport 统一像素光栅化，48 色锁定色板 + 1px 选择性暗轮廓）**。
+2. **主角参考图锁死**：沿用并升级 **灰蓝猫耳少女**（`灰蓝猫耳少女三视图设定稿.png` + 肖像参考），已抠除白底并接入 Seedream 5.5 模块化分件管线。

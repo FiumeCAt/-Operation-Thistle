@@ -15,7 +15,9 @@
 """
 
 import argparse
+import base64
 import json
+import mimetypes
 import os
 import sys
 import urllib.error
@@ -25,6 +27,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASE = "https://ark.cn-beijing.volces.com/api/v3"
 DEFAULT_MODEL = "doubao-seedream-5-5-261028"
+
+
+def _endpoint_url(base: str) -> str:
+    b = base.rstrip("/")
+    if b.endswith("/images/generations"):
+        return b
+    return b + "/images/generations"
+
+
+def _encode_image_data_uri(path: Path) -> str:
+    mime, _ = mimetypes.guess_type(str(path))
+    if not mime:
+        mime = "image/png"
+    b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{b64}"
 
 
 def load_env() -> dict:
@@ -48,9 +65,10 @@ def load_env() -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Seedream 5.5 image generation")
+    parser = argparse.ArgumentParser(description="Seedream 5.5 image generation (text2img & ref img2img)")
     parser.add_argument("--prompt", required=True, help="生成提示词")
     parser.add_argument("--out", required=True, help="输出图片路径")
+    parser.add_argument("--image", nargs="*", default=[], help="参考图路径（1 张或多张，自动转 base64 data URI 传入 Seedream 5.5）")
     parser.add_argument("--size", default="2K", help="2K / 1K / 4K 或宽x高")
     parser.add_argument("--format", default="png", choices=["png", "jpeg", "webp"])
     parser.add_argument("--transparent", action="store_true", help="透明背景")
@@ -76,8 +94,11 @@ def main() -> int:
         "stream": False,
         "watermark": not args.no_watermark,
     }
+    if args.image:
+        ref_uris = [_encode_image_data_uri(Path(p)) for p in args.image]
+        payload["image"] = ref_uris[0] if len(ref_uris) == 1 else ref_uris
     request = urllib.request.Request(
-        base + "/images/generations",
+        _endpoint_url(base),
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
         method="POST",

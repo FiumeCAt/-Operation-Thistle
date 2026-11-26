@@ -142,6 +142,32 @@ static func ground_dust(parent: Node, pos: Vector2, dir := Vector2.RIGHT) -> Nod
 	return root
 
 
+## Phase 7B 步态踩实轻尘：冲刺/快走落地瞬间在脚底扬起极轻 2–3 颗像素尘雾，增加脚踏实地感。
+static func footstep_dust(parent: Node, pos: Vector2, running := false) -> Node2D:
+	if parent == null or not parent.is_inside_tree():
+		return null
+	var root := Node2D.new()
+	root.z_index = 48
+	parent.add_child(root)
+	root.global_position = pos
+	var count := 3 if running else 2
+	var tw := root.create_tween()
+	tw.set_parallel(true)
+	for i in count:
+		var puff := Polygon2D.new()
+		var sz := randf_range(1.4, 2.3) if running else randf_range(1.1, 1.7)
+		puff.polygon = PackedVector2Array([
+			Vector2(-sz, -sz), Vector2(sz, -sz), Vector2(sz, sz), Vector2(-sz, sz),
+		])
+		puff.color = Color(0.80, 0.84, 0.88, 0.56 if running else 0.36)
+		root.add_child(puff)
+		var drift := Vector2(randf_range(-10.0, 10.0), randf_range(-6.0, -1.5)) * (1.25 if running else 0.7)
+		tw.tween_property(puff, "position", drift, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(puff, "modulate:a", 0.0, 0.22)
+	tw.chain().tween_callback(root.queue_free)
+	return root
+
+
 ## Phase 5 翻滚扬尘：起步蹬地与落地时在脚下扬起贴地像素尘雾与微椭圆尘环。
 static func dodge_dust(parent: Node, pos: Vector2, dir := Vector2.RIGHT,
 		landing := false) -> Node2D:
