@@ -539,6 +539,9 @@ func install_mod(slot: String, option_id: String) -> void:
 		return
 	var res := MOD_SERVICE.install_mod(p, mod_item, slot, option_id)
 	if bool(res["ok"]):
+		var sfx := p.get_node_or_null("/root/Sfx")
+		if sfx != null:
+			sfx.play_2d("mod_install", -6.5)
 		set_feedback(String(res["message"]), PixelUI.OK)
 		mod_choices.erase(slot)
 	else:

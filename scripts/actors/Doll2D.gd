@@ -451,6 +451,9 @@ func take_damage(amount: float, ap: float = 0.0) -> void:
 	hp = int(res["new_hp"])
 	invuln = _cfg_float(&"hurt_invuln_sec", 0.12)
 	_hurt_flash = _cfg_float(&"hurt_flash_sec", 0.16)
+	var hurt_sfx := get_node_or_null("/root/Sfx")
+	if hurt_sfx != null and hurt_sfx.has_method("play_player_damaged"):
+		hurt_sfx.play_player_damaged(armor_damage, hp_damage, armor, -8.5)
 	damaged.emit(total, armor_damage, hp_damage, global_position)
 	if hp <= 0:
 		died.emit()

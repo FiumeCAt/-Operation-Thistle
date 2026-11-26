@@ -119,6 +119,8 @@ var damage_dealt: float:
 	get: return combat_system.damage_dealt
 	set(v): combat_system.damage_dealt = v
 var run_elapsed := 0.0
+var _bgm_combat_hold := 0.0
+var _bgm_check_t := 0.0
 var enemies: Array[Enemy2D] = []
 ## 2D 天赋：枪械精度倍率与撤离资源倍率，在行动开始时从 Progress 读取。
 var talent_accuracy := 1.0
@@ -388,6 +390,9 @@ func _ready() -> void:
 	else:
 		_spawn_enemies()
 		hud.set_hint(HINT_DEFAULT)
+	var bgm_sfx := get_node_or_null("/root/Sfx")
+	if bgm_sfx != null and bgm_sfx.has_method("set_bgm_state"):
+		bgm_sfx.set_bgm_state("combat" if waves_mode else "explore", 1.2)
 	if debug_visual_mode:
 		_apply_debug_visual_mode()
 	else:
@@ -720,6 +725,7 @@ func _scaled_materials(ratio: float) -> Dictionary:
 func _process(delta: float) -> void:
 	if run_state == RunState.ACTIVE:
 		run_elapsed += delta
+		_update_bgm_state(delta)
 	# 右键瞄准只负责前探视野与散布收紧；整体缩放由 Alt+滚轮独立控制。
 	# 与 WeaponRig2D._ads_t 共用同一套开镜速率（1 / ads_time），高倍镜与枪型手感完全同步。
 	var want_ads := 1.0 if (doll.ads and run_state == RunState.ACTIVE) else 0.0
@@ -1062,7 +1068,30 @@ func _trace_pellet(origin: Vector2, direction: Vector2, length: float) -> Dictio
 
 
 func _on_weapon_fired(muzzle: Vector2, dir: Vector2) -> void:
+	_bgm_combat_hold = 8.0
 	combat_system.on_weapon_fired(muzzle, dir)
+
+
+func _update_bgm_state(delta: float) -> void:
+	if _bgm_combat_hold > 0.0:
+		_bgm_combat_hold = maxf(_bgm_combat_hold - delta, 0.0)
+	_bgm_check_t -= delta
+	if _bgm_check_t > 0.0:
+		return
+	_bgm_check_t = 0.40
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx == null or not sfx.has_method("set_bgm_state"):
+		return
+	var in_combat := waves_mode or _bgm_combat_hold > 0.0
+	if not in_combat:
+		for enemy in enemies:
+			if is_instance_valid(enemy) and not enemy._dead and String(enemy.state) == "combat":
+				in_combat = true
+				break
+	if in_combat:
+		sfx.set_bgm_state("combat", 0.9)
+	else:
+		sfx.set_bgm_state("explore", 2.2)
 
 
 func spawn_player_bullet(origin: Vector2, direction: Vector2, speed_px_s: float,
@@ -1307,6 +1336,11 @@ func _finish_run(success: bool, via_switch := false,
 		"time": run_elapsed,
 	}
 	hud.show_result(success, display_loot, display_advanced, meta_reward, xp_reward, bonus_note, stats)
+	var end_sfx := get_node_or_null("/root/Sfx")
+	if end_sfx != null:
+		end_sfx.play_2d("extract_success" if success else "mission_fail", -5.0)
+		if end_sfx.has_method("set_bgm_state"):
+			end_sfx.set_bgm_state("explore" if success else "menu", 1.8)
 	doll.set_physics_process(false)
 	if doll.weapon_rig != null:
 		doll.weapon_rig.set_process(false)
@@ -1315,6 +1349,7 @@ func _finish_run(success: bool, via_switch := false,
 
 
 func _on_player_damaged(_amount: int, armor_damage: int, hp_damage: int, pos: Vector2) -> void:
+	_bgm_combat_hold = 8.0
 	feedback_system.on_player_damaged(armor_damage, hp_damage, pos)
 
 

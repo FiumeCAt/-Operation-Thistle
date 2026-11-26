@@ -420,9 +420,12 @@ func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 	if _shake_fn.is_valid():
 		_shake_fn.call(data.shake_amount * ads_mul * lerpf(1.0, 1.35, build),
 			data.shake_roll * ads_mul, data.shake_decay)
-	if _sfx_fn.is_valid():
+	var audio := _owner.get_node_or_null("/root/Sfx") if _owner != null else null
+	var sfx_db := -4.5 if suppressed else -3.0
+	if audio != null and audio.has_method("play_weapon_fire"):
+		audio.play_weapon_fire(data.id, data.sfx_kind, suppressed, sfx_db)
+	elif _sfx_fn.is_valid():
 		var sfx_kind := data.sfx_kind + "_sup" if suppressed else data.sfx_kind
-		var sfx_db := -4.5 if suppressed else -3.0
 		_sfx_fn.call(sfx_kind, sfx_db)
 	shot_fired.emit(data.id, ammo.id, pellet_count)
 

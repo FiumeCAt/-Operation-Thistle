@@ -67,10 +67,6 @@ func _physics_process(delta: float) -> void:
 			var closest: Vector2 = Geometry2D.get_closest_point_to_segment(center, prev, next)
 			if center.distance_to(closest) <= radius + PLAYER_HIT_RADIUS:
 				Shot2D.hit_burst(get_parent(), center, velocity.normalized(), "flesh", 0.6)
-				var sfx := get_node_or_null("/root/Sfx")
-				if sfx != null:
-					# 玩家受击先沿用原有合成音，不混采样。
-					sfx.play_player_hurt(-9.0)
 				player.take_damage(damage, ap)
 				queue_free()
 				return

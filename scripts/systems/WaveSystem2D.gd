@@ -174,7 +174,7 @@ func begin_wave(index: int) -> void:
 	if _hud != null:
 		_hud.flash("第 %d 波来袭 · %d 个目标" % [wave_index, count])
 	if _sfx_fn.is_valid():
-		_sfx_fn.call("ui", -6.0)
+		_sfx_fn.call("wave_start", -6.0)
 	wave_changed.emit(wave_index, "started")
 
 
@@ -192,7 +192,7 @@ func on_wave_cleared() -> void:
 	if _hud != null:
 		_hud.flash(clear_text)
 	if _sfx_fn.is_valid():
-		_sfx_fn.call("ui", -6.0)
+		_sfx_fn.call("wave_clear", -6.0)
 	if wave_index % EXTRACT_EVERY == 0 and popup != null:
 		intermission = 0.0
 		# 设施浪潮每 5 波刷新补给；竞技场没有容器，只弹撤离窗口。

@@ -124,5 +124,98 @@ func _run() -> void:
 	_check(cue1 and not cue2 and not cue3 and cue4,
 		"wave spawn cue plays at most once within a 5-second window")
 
+	# ==== Phase 6B 音频重制专项断言 ====
+	# 8) 7 轨混音总线架构与 Master 压限器存在 + 子总线路由正确。
+	AudioBusService.ensure_layout()
+	_check(AudioBusService.has_master_limiter(),
+		"Master bus carries AudioEffectLimiter to prevent clipping")
+	var bus_ok := AudioServer.get_bus_index(AudioBusService.MUSIC_BUS) >= 0 \
+		and AudioServer.get_bus_index(AudioBusService.SFX_BUS) >= 0
+	for sub in AudioBusService.SFX_SUB_BUSES:
+		var idx := AudioServer.get_bus_index(sub)
+		if idx < 0 or AudioServer.get_bus_send(idx) != AudioBusService.SFX_BUS:
+			bus_ok = false
+	_check(bus_ok, "Music and SFX -> Weapons/Impacts/UI/Ambience bus hierarchy is intact")
+	_check(AudioBusService.bus_for_kind("weapon_akm") == AudioBusService.WEAPONS_BUS
+		and AudioBusService.bus_for_kind("weakspot_hit") == AudioBusService.IMPACTS_BUS
+		and AudioBusService.bus_for_kind("ui_click") == AudioBusService.UI_BUS
+		and AudioBusService.bus_for_kind("dodge") == AudioBusService.AMBIENCE_BUS,
+		"AudioBusService routes weapons, impacts, UI, and ambience kinds to their sub-buses")
+
+	# 9) 18 把武器差异化外部采样 + 消音分流 + VSS 一体消音解析 + 高频连射节流与并发上限。
+	sfx.warm_impact_samples()
+	var missing_weapons: Array[String] = []
+	for wid in WeaponDB.WEAPON_ORDER:
+		var normal_key: String = sfx.resolve_weapon_fire_key(wid, false)
+		var sup_key: String = sfx.resolve_weapon_fire_key(wid, true)
+		if sfx.sfx_sample_count(normal_key) < 1 or sfx.sfx_sample_count(sup_key) < 1:
+			missing_weapons.append(String(wid))
+	_check(missing_weapons.is_empty(),
+		"all 18 weapons have differentiated normal and suppressed samples (%d missing)" % missing_weapons.size())
+	_check(sfx.resolve_weapon_fire_key(&"vss", false) == "weapon_vss_sup"
+		and sfx.resolve_weapon_fire_key(&"akm", false) == "weapon_akm"
+		and sfx.resolve_weapon_fire_key(&"akm", true) == "weapon_akm_sup",
+		"VSS resolves as integrally suppressed while AKM splits normal vs suppressed")
+	sfx._last_fire_ms = 0
+	var fire1: bool = sfx.play_weapon_fire(&"awm", "sniper", false, -14.0, 1000)
+	var fire2: bool = sfx.play_weapon_fire(&"awm", "sniper", false, -14.0, 1010)
+	var fire3: bool = sfx.play_weapon_fire(&"awm", "sniper", false, -14.0, 1060)
+	_check(fire1 and not fire2 and fire3,
+		"rapid weapon firing throttles overlap within 36ms window")
+
+	# 10) 装填/动作/受击/弱点/翻滚/UI 外部采样完整 + 合成兜底完整 + 并发声道封顶保护。
+	var required_sfx := [
+		"reload_mag", "reload_shell", "reload_cylinder", "pump", "bolt_cycle",
+		"empty", "ammo_switch", "switch", "fire_select", "ads_in", "ads_out",
+		"dodge", "player_armor_block", "player_armor_break", "player_hurt_hp",
+		"weakspot_hit", "armor_pierce", "ground_dust", "mod_install", "upgrade",
+		"pickup", "pickup_rare", "pickup_ammo", "wave_start", "wave_clear",
+		"extract_success", "mission_fail",
+	]
+	var missing_sfx: Array[String] = []
+	for k in required_sfx:
+		if sfx.sfx_sample_count(k) < 1:
+			missing_sfx.append(k)
+	_check(missing_sfx.is_empty(),
+		"all 27 weapon-action, combat, weakspot, dodge, and UI samples are loaded (%d missing)" % missing_sfx.size())
+	var ext_bank := SfxSynth.build_extended(bank)
+	_check(ext_bank.has("reload_mag") and ext_bank.has("player_armor_break")
+		and ext_bank.has("upgrade") and ext_bank.has("extract_success"),
+		"SfxSynth.build_extended provides procedural fallbacks for new Phase 6B sounds")
+	# 武器动作按供弹样式分派 + 玩家护甲碎裂/格挡受击音效不报错。
+	sfx.play_weapon_action("reload", WeaponDB.get_weapon(&"python"), -18.0)
+	sfx.play_weapon_action("reload", WeaponDB.get_weapon(&"m870"), -18.0)
+	sfx.play_weapon_action("reload", WeaponDB.get_weapon(&"akm"), -18.0)
+	sfx._last_hurt_ms = 0
+	sfx.play_player_damaged(25, 0, 0, -18.0)
+	for i in 35:
+		sfx.play_stream(bank["ui_click"], -30.0, 1.0, AudioBusService.UI_BUS)
+	_check(sfx.active_voice_count() <= sfx.MAX_ACTIVE_VOICES,
+		"polyphony limiter caps concurrent voices at <= %d (actual %d)" % [
+			sfx.MAX_ACTIVE_VOICES, sfx.active_voice_count()])
+
+	# 11) 状态化双轨 Crossfade BGM（menu / explore / combat）与静音零浪费停播/恢复。
+	var bgm_ok := true
+	for st in ["menu", "explore", "combat"]:
+		if sfx._samples.load_bgm(st) == null:
+			bgm_ok = false
+	_check(bgm_ok, "all 3 stereo looping BGM tracks (menu/explore/combat) load cleanly")
+	sfx.apply_music_volume(0.8)
+	sfx.set_bgm_state("menu", 0.15)
+	_check(sfx.bgm_state() == "menu", "BGM enters menu state")
+	sfx.set_bgm_state("combat", 0.15)
+	_check(sfx.bgm_state() == "combat", "BGM crossfades to combat state")
+	sfx.set_bgm_state("explore", 0.15)
+	_check(sfx.bgm_state() == "explore", "BGM crossfades to explore state")
+	sfx.apply_music_volume(0.0)
+	await process_frame
+	_check(sfx._bgm != null and not sfx._bgm.is_playing(),
+		"BGM pauses playback when Music bus is muted for zero waste")
+	sfx.apply_music_volume(0.8)
+	await process_frame
+	_check(sfx._bgm != null and sfx._bgm.current_state() == "explore",
+		"BGM restores current state cleanly when unmuted")
+	sfx.stop_bgm(0.05)
+
 	print("\n=== impact audio: %s (%d ok / %d fail) ===" % ["PASS" if _fail == 0 else "FAIL", _pass, _fail])
 	quit()

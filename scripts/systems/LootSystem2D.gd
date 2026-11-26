@@ -229,7 +229,12 @@ func on_pickup_collected(kind: String, id: StringName, amount: int) -> void:
 				"merge_fmt": "+%d " + disp,
 			})
 	if sfx_fn.is_valid():
-		sfx_fn.call("pickup", -7.0)
+		if kind == "ammo":
+			sfx_fn.call("pickup_ammo", -7.0)
+		elif not ResourceDB.is_basic(id):
+			sfx_fn.call("pickup_rare", -6.0)
+		else:
+			sfx_fn.call("pickup", -7.0)
 
 
 ## 拾取弹药：id 为通用弹药种类（light/medium/heavy/shotgun/special）。

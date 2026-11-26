@@ -114,6 +114,9 @@ var sprinting := false
 var dodging := false
 var ads := false
 var _ads_t := 0.0
+var _prev_ads := false
+var _cycle_sfx_t := 0.0
+var _last_empty_ms := 0
 var holstered: bool:
 	get: return feed.holstered
 	set(v): feed.holstered = v
@@ -327,7 +330,15 @@ func _process(delta: float) -> void:
 	var dbg_progress := get_node_or_null("/root/Progress")
 	if dbg_progress != null and dbg_progress.has_method("debug_mul"):
 		ads_rate *= float(dbg_progress.debug_mul("ads"))
-	_ads_t = move_toward(_ads_t, 1.0 if ads and not holstered else 0.0, ads_rate * delta)
+	var want_ads := ads and not holstered
+	if want_ads != _prev_ads:
+		_prev_ads = want_ads
+		_play_weapon_action_sfx("ads_in" if want_ads else "ads_out", -14.5)
+	if _cycle_sfx_t > 0.0:
+		_cycle_sfx_t -= delta
+		if _cycle_sfx_t <= 0.0:
+			_play_weapon_action_sfx("cycle", -8.5)
+	_ads_t = move_toward(_ads_t, 1.0 if want_ads else 0.0, ads_rate * delta)
 	_apply_pose()
 
 	if InputMap.has_action("holster") and Input.is_action_just_pressed("holster"):
@@ -468,7 +479,11 @@ func try_fire() -> bool:
 			draw()
 			return false
 		&"need_reload":
-			reload()
+			if not reload():
+				var now := Time.get_ticks_msec()
+				if now - _last_empty_ms >= 220:
+					_last_empty_ms = now
+					_play_weapon_action_sfx("empty", -7.5)
 			return false
 		&"fired":
 			recoil = recoil_mul
@@ -477,28 +492,40 @@ func try_fire() -> bool:
 				_flash_timer = FLASH_TIME
 				_flash.visible = true
 				_flash.frame = 0
+			if data != null and (data.category == &"sniper" or (data.feed_mode == &"shell" and not data.auto_cycle)):
+				_cycle_sfx_t = 0.16 if data.category == &"sniper" else 0.12
 			fired.emit(get_muzzle_position(), Vector2.from_angle(aim_angle))
 			return true
 		_:
 			return false
 
-func reload() -> bool: return feed.reload(data)
-func process_hold_reload() -> void: feed.process_hold_reload(data)
+func reload() -> bool:
+	var ok := feed.reload(data)
+	if ok:
+		_play_weapon_action_sfx("reload", -8.5)
+	return ok
+
+func process_hold_reload() -> void:
+	if feed.process_hold_reload(data):
+		_play_weapon_action_sfx("reload", -9.0)
+
 func get_pending_ammo_id() -> StringName: return feed.pending_ammo_id
 
 
 func switch_ammo(step := 1) -> Dictionary:
 	var res := feed.start_ammo_switch(data, step)
 	if bool(res.get("ok", false)):
-		_play_fire_select_sfx(1.12 if not bool(res.get("cancelled", false)) else 0.85)
+		_play_weapon_action_sfx("ammo_switch", -8.0, 1.06 if not bool(res.get("cancelled", false)) else 0.86)
 	return res
 
 func switch_to(id: StringName) -> bool:
 	var result := feed.start_switch(id, data)
 	if result == &"rejected":
 		return false
+	_cycle_sfx_t = 0.0
 	if _mag_sprite != null:
 		_mag_sprite.visible = false
+	_play_stow_sfx()
 	if result == &"instant_holstered":
 		setup(id)
 		weapon_switched.emit(id)
@@ -581,3 +608,12 @@ func _play_stow_sfx() -> void:
 	var sfx := tree.root.get_node_or_null("Sfx")
 	if sfx != null:
 		sfx.play_2d("switch", -10.0, randf_range(0.95, 1.05))
+
+
+func _play_weapon_action_sfx(action: String, volume_db := -8.5, pitch := 1.0) -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	var sfx := tree.root.get_node_or_null("Sfx")
+	if sfx != null and sfx.has_method("play_weapon_action"):
+		sfx.play_weapon_action(action, data, volume_db, pitch)

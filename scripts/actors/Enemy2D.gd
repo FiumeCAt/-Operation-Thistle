@@ -324,7 +324,10 @@ func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO
 				var broke_armor := def.armor > 0.0 and DAMAGE_MODEL.is_penetrated(ap, ws_armor)
 				sfx.play_weakspot_hit(broke_armor, hit_material(), -7.5)
 			else:
-				sfx.play_hit(hit_material(), hit_weight(), -11.0)
+				var armor_state := ""
+				if def.armor > 0.0:
+					armor_state = "pierce" if DAMAGE_MODEL.is_penetrated(ap, def.armor) else "ricochet"
+				sfx.play_hit(hit_material(), hit_weight(), -11.0, armor_state)
 	_enter("combat")
 	if def.is_self_destruct_unit():
 		combat.on_self_destruct_damaged(self, dmg)

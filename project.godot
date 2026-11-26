@@ -16,6 +16,10 @@ run/main_scene="res://scenes/ui/StartMenu2D.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="uid://dc55gygyxky7g"
 
+[audio]
+
+buses/default_bus_layout="res://default_bus_layout.tres"
+
 [autoload]
 
 Sfx="*res://scripts/audio/Sfx.gd"

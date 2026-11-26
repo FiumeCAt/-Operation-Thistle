@@ -87,7 +87,10 @@ func _ready() -> void:
 	PixelUI.apply_theme(self)
 	var sfx := get_node_or_null("/root/Sfx")
 	if sfx != null:
-		sfx.start_ambient()
+		if sfx.has_method("set_bgm_state"):
+			sfx.set_bgm_state("menu", 0.9)
+		else:
+			sfx.start_ambient()
 	_load_bg_textures()
 	_build()
 	_apply_menu_theme()

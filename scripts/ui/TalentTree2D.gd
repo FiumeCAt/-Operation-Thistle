@@ -700,6 +700,9 @@ func _buy(id: StringName) -> void:
 		return
 	_selected = id
 	if p.buy_talent_2d(id):
+		var sfx := get_node_or_null("/root/Sfx")
+		if sfx != null:
+			sfx.play_2d("upgrade", -6.0)
 		_feedback.text = "已强化「%s」· 开始行动后生效" % _title(id)
 		_feedback.add_theme_color_override("font_color", PixelUI.OK)
 	else:

@@ -13,6 +13,34 @@ static func build_all() -> Dictionary:
 	return synth._build_bank()
 
 
+## Phase 6B 扩展程序化兜底表：为新增的装填/受击/UI/波次音效提供无外部采样时的完整合成回退，
+## 独立于 build_all() 的 41 条基础音色库，确保既有 41 条波形逐采样不变。
+static func build_extended(base_bank: Dictionary = {}) -> Dictionary:
+	var synth := SfxSynth.new()
+	synth._rng.seed = SEED + 602
+	var ext: Dictionary = {}
+	ext["reload_mag"] = synth._build_reload_mag()
+	ext["reload_shell"] = base_bank.get("load", synth._build_load())
+	ext["reload_cylinder"] = synth._build_reload_cylinder()
+	ext["bolt_cycle"] = synth._build_bolt_cycle()
+	ext["ammo_switch"] = synth._build_ammo_switch()
+	ext["ads_in"] = synth._build_ads(true)
+	ext["ads_out"] = synth._build_ads(false)
+	ext["player_armor_block"] = synth._build_player_armor_block()
+	ext["player_armor_break"] = synth._build_player_armor_break()
+	ext["player_hurt_hp"] = synth._build_player_hurt_hp()
+	ext["ground_dust"] = synth._build_ground_dust()
+	ext["mod_install"] = synth._build_mod_install()
+	ext["upgrade"] = synth._build_upgrade()
+	ext["pickup_rare"] = synth._build_pickup_rare()
+	ext["pickup_ammo"] = synth._build_pickup_ammo()
+	ext["wave_start"] = synth._build_wave_cue(true)
+	ext["wave_clear"] = synth._build_wave_cue(false)
+	ext["extract_success"] = synth._build_extract_cue(true)
+	ext["mission_fail"] = synth._build_extract_cue(false)
+	return ext
+
+
 var _rng := RandomNumberGenerator.new()
 
 
@@ -771,4 +799,232 @@ func _build_dodge() -> AudioStreamWAV:
 		var whoosh := (lp_hi - lp * 0.65) * env * 0.62
 		var scuff := lp * exp(-maxf(t - 0.14, 0.0) * 35.0) * (0.20 if t >= 0.14 else 0.0)
 		a[i] = (push + whoosh + scuff) * 0.88
+	return _stream(a)
+
+
+func _build_reload_mag() -> AudioStreamWAV:
+	var n := int(0.36 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		var s := 0.0
+		if t < 0.05:
+			s += (sin(TAU * 980.0 * t) * 0.35 + wn * 0.18) * exp(-t * 85.0)
+		var u1 := t - 0.14
+		if u1 >= 0.0 and u1 < 0.09:
+			s += (sin(TAU * 155.0 * u1) * 0.42 + sin(TAU * 720.0 * u1) * 0.25 + wn * 0.15) * exp(-u1 * 48.0)
+		var u2 := t - 0.25
+		if u2 >= 0.0 and u2 < 0.08:
+			s += (sin(TAU * 1420.0 * u2) * 0.38 + wn * 0.20) * exp(-u2 * 85.0)
+		a[i] = s * 0.85
+	return _stream(a)
+
+
+func _build_reload_cylinder() -> AudioStreamWAV:
+	var n := int(0.40 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var s := 0.0
+		for pair in [[0.01, 1450.0], [0.11, 2150.0], [0.20, 1920.0], [0.30, 920.0]]:
+			var u := t - float(pair[0])
+			if u >= 0.0 and u < 0.07:
+				s += sin(TAU * float(pair[1]) * u) * exp(-u * 68.0) * 0.38
+		a[i] = s * 0.88
+	return _stream(a)
+
+
+func _build_bolt_cycle() -> AudioStreamWAV:
+	var n := int(0.40 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		var s := 0.0
+		for pair in [[0.01, 1380.0], [0.10, 980.0], [0.24, 1080.0], [0.33, 1520.0]]:
+			var u := t - float(pair[0])
+			if u >= 0.0 and u < 0.07:
+				s += (sin(TAU * float(pair[1]) * u) * 0.35 + wn * 0.18) * exp(-u * 72.0)
+		a[i] = s * 0.85
+	return _stream(a)
+
+
+func _build_ammo_switch() -> AudioStreamWAV:
+	var n := int(0.15 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var s := sin(TAU * 1240.0 * t) * exp(-t * 85.0) * 0.32
+		var u := t - 0.065
+		if u >= 0.0:
+			s += sin(TAU * 1680.0 * u) * exp(-u * 75.0) * 0.38
+		a[i] = s * 0.85
+	return _stream(a)
+
+
+func _build_ads(entering: bool) -> AudioStreamWAV:
+	var n := int(0.11 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var u := clampf(t / 0.11, 0.0, 1.0)
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * (0.24 if entering else 0.16)
+		var env := sin(PI * u)
+		var click := sin(TAU * (1150.0 if entering else 760.0) * maxf(t - 0.03, 0.0)) * exp(-maxf(t - 0.03, 0.0) * 110.0) * (0.14 if t >= 0.03 else 0.0)
+		a[i] = (lp * env * 0.22 + click) * 0.75
+	return _stream(a)
+
+
+func _build_player_armor_block() -> AudioStreamWAV:
+	var n := int(0.14 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * 0.26
+		a[i] = (sin(TAU * 165.0 * t) * exp(-t * 34.0) * 0.55 + lp * exp(-t * 50.0) * 0.42 + sin(TAU * 1180.0 * t) * exp(-t * 95.0) * 0.20) * 0.88
+	return _stream(a)
+
+
+func _build_player_armor_break() -> AudioStreamWAV:
+	var n := int(0.32 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		var s := wn * exp(-t * 24.0) * 0.46 + sin(TAU * 92.0 * t) * exp(-t * 16.0) * 0.52
+		var u1 := t - 0.07
+		if u1 >= 0.0:
+			s += sin(TAU * 1320.0 * u1) * exp(-u1 * 28.0) * 0.28
+		var u2 := t - 0.16
+		if u2 >= 0.0:
+			s += sin(TAU * 880.0 * u2) * exp(-u2 * 26.0) * 0.28
+		a[i] = s * 0.88
+	return _stream(a)
+
+
+func _build_player_hurt_hp() -> AudioStreamWAV:
+	var n := int(0.17 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * 0.16
+		a[i] = (sin(TAU * 78.0 * t) * exp(-t * 24.0) * 0.68 + lp * exp(-t * 32.0) * 0.48) * 0.9
+	return _stream(a)
+
+
+func _build_ground_dust() -> AudioStreamWAV:
+	var n := int(0.15 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * 0.14
+		a[i] = (lp * exp(-t * 26.0) * 0.62 + sin(TAU * 82.0 * t) * exp(-t * 30.0) * 0.34) * 0.85
+	return _stream(a)
+
+
+func _build_mod_install() -> AudioStreamWAV:
+	var n := int(0.20 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var s := sin(TAU * 1120.0 * t) * exp(-t * 75.0) * 0.30
+		var u := t - 0.075
+		if u >= 0.0:
+			s += (sin(TAU * 1620.0 * u) * 0.32 + sin(TAU * 1046.5 * u) * 0.24) * exp(-u * 35.0)
+		a[i] = s * 0.88
+	return _stream(a)
+
+
+func _build_upgrade() -> AudioStreamWAV:
+	var n := int(0.36 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var s := 0.0
+		for pair in [[0.0, 523.25], [0.06, 659.25], [0.12, 783.99], [0.18, 1046.5]]:
+			var u := t - float(pair[0])
+			if u >= 0.0:
+				s += sin(TAU * float(pair[1]) * u) * exp(-u * 18.0) * 0.24
+		a[i] = s * 0.9
+	return _stream(a)
+
+
+func _build_pickup_rare() -> AudioStreamWAV:
+	var n := int(0.32 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var s := 0.0
+		for pair in [[0.0, 659.25], [0.05, 987.77], [0.10, 1318.5]]:
+			var u := t - float(pair[0])
+			if u >= 0.0:
+				s += sin(TAU * float(pair[1]) * u) * exp(-u * 20.0) * 0.25
+		a[i] = s * 0.88
+	return _stream(a)
+
+
+func _build_pickup_ammo() -> AudioStreamWAV:
+	var n := int(0.15 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var s := sin(TAU * 1750.0 * t) * exp(-t * 95.0) * 0.26 + sin(TAU * 620.0 * t) * exp(-t * 36.0) * 0.22
+		var u := t - 0.048
+		if u >= 0.0:
+			s += sin(TAU * 1980.0 * u) * exp(-u * 85.0) * 0.28
+		a[i] = s * 0.88
+	return _stream(a)
+
+
+func _build_wave_cue(is_start: bool) -> AudioStreamWAV:
+	var n := int(0.55 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var seq := [[0.0, 220.0], [0.13, 330.0], [0.26, 440.0]] if is_start else [[0.0, 440.0], [0.09, 554.37], [0.18, 659.25], [0.27, 880.0]]
+	for i in n:
+		var t := float(i) / SR
+		var s := 0.0
+		for pair in seq:
+			var u := t - float(pair[0])
+			if u >= 0.0:
+				s += sin(TAU * float(pair[1]) * u) * exp(-u * 12.0) * 0.24
+		a[i] = s * 0.88
+	return _stream(a)
+
+
+func _build_extract_cue(success: bool) -> AudioStreamWAV:
+	var n := int(0.70 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var seq := [[0.0, 392.0], [0.11, 493.88], [0.22, 587.33], [0.34, 783.99]] if success else [[0.0, 293.66], [0.18, 246.94], [0.36, 196.0]]
+	for i in n:
+		var t := float(i) / SR
+		var s := 0.0
+		for pair in seq:
+			var u := t - float(pair[0])
+			if u >= 0.0:
+				s += sin(TAU * float(pair[1]) * u) * exp(-u * 9.5) * 0.26
+		a[i] = s * 0.88
 	return _stream(a)
