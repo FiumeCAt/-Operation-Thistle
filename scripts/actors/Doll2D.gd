@@ -20,7 +20,16 @@ const WORLD_BODY := UNITS.DOLL_WORLD_HEIGHT_PX  # 角色在世界里的身高（
 const FEET_RATIO := 0.95
 const COLUMNS := 4
 const DIRECTIONS := 4
-const ANIM_BLOCKS := {"idle": 0, "walk": 4, "run": 8, "aim": 12}
+## 4 向角色图集行契约（Phase 7A 兼容 16 行旧图集与 24 行 Phase 7B 新图集）：
+##   0-3   站立 idle_0..3（下 / 上 / 左 / 右）
+##   4-7   行走 walk_0..3
+##   8-11  跑步 run_0..3
+##   12-15 瞄准 aim_0..3
+##   16-19 受击 hurt_0..3（可选，图集 ≥ 20 行时自动注册）
+##   20-23 翻滚 dodge_0..3（可选，图集 ≥ 24 行时自动注册）
+const ANIM_BLOCKS := {"idle": 0, "walk": 4, "run": 8, "aim": 12, "hurt": 16, "dodge": 20}
+const DODGE_FPS := 13.3
+const HURT_FPS := 12.0
 ## 4 帧一循环；行走约 0.38 秒一圈，跑步约 0.27 秒一圈。
 const WALK_FPS := 10.4
 const RUN_FPS := 14.8
@@ -411,17 +420,24 @@ func _build_frames(tex: Texture2D) -> SpriteFrames:
 		if block + DIRECTIONS > rows_available:
 			continue
 		var fps := _cfg_float(&"walk_fps", WALK_FPS)
+		var loop := true
 		if anim_name == "run":
 			fps = _cfg_float(&"run_fps", RUN_FPS)
 		elif anim_name == "idle":
 			fps = 1.0
 		elif anim_name == "aim":
 			fps = 4.0
+		elif anim_name == "hurt":
+			fps = HURT_FPS
+			loop = false
+		elif anim_name == "dodge":
+			fps = DODGE_FPS
+			loop = false
 		for row in DIRECTIONS:
 			var anim := "%s_%d" % [anim_name, row]
 			frames.add_animation(anim)
 			frames.set_animation_speed(anim, fps)
-			frames.set_animation_loop(anim, true)
+			frames.set_animation_loop(anim, loop)
 			var source_row := block + row
 			for column in COLUMNS:
 				var atlas := AtlasTexture.new()

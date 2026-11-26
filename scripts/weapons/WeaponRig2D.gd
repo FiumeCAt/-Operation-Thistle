@@ -391,8 +391,20 @@ func get_mount_local(px: Vector2) -> Vector2:
 	return POSE_IK.pixel_to_pivot(px, _grip_px, _barrel_angle, _gun_scale, _wrist_local, _flipped)
 
 
+func get_stance_id() -> StringName:
+	if data == null:
+		return &"rifle"
+	return POSE_IK.resolve_stance_id(data.category, data.visual_length)
+
+
+func get_stance() -> Dictionary:
+	return POSE_IK.get_stance(get_stance_id())
+
+
 func _arm_length() -> float:
-	return lerpf(ARM_LENGTH, ADS_ARM_LENGTH, _ads_t)
+	var st := get_stance()
+	return lerpf(float(st.get("hip_arm_len", ARM_LENGTH)),
+		float(st.get("ads_arm_len", ADS_ARM_LENGTH)), _ads_t)
 
 
 func get_ads_blend() -> float:
@@ -444,8 +456,12 @@ func _apply_pose() -> void:
 		_hand.flip_v = _flipped
 	if _flash != null:
 		_flash.position = _muzzle.position + Vector2(2.0, 0.0)
-	var anchor := _current_anchor() - Vector2(0.0, ADS_LIFT * _ads_t)
-	_pivot.rotation = aim_angle + _kick * recoil * lerpf(1.0, 0.45, _ads_t)
+	var st := get_stance()
+	var ads_lift := float(st.get("ads_lift", ADS_LIFT))
+	var shoulder_off: Vector2 = st.get("shoulder_offset", Vector2.ZERO)
+	var kick_mul := float(st.get("recoil_kick_mul", 1.0))
+	var anchor := _current_anchor() + shoulder_off - Vector2(0.0, ads_lift * _ads_t)
+	_pivot.rotation = aim_angle + _kick * kick_mul * recoil * lerpf(1.0, 0.45, _ads_t)
 	var toward_camera := clampf(Vector2.DOWN.dot(Vector2.from_angle(aim_angle)), 0.0, 1.0)
 	var foreshorten := lerpf(1.0, 0.45, toward_camera)
 	_pivot.scale = Vector2(foreshorten, 1.0)
@@ -459,14 +475,18 @@ func _apply_pose() -> void:
 	POSE_IK.apply_switch_pose(_pivot, _gun, limbs, _support_root, switch_t)
 	POSE_IK.apply_stow_pose(_pivot, _gun, limbs, _support_root, _flash,
 		holstered, feed.stow_t, feed.stow_total, feed.stow_kind)
+	var sprint_dip := float(st.get("sprint_dip", SPRINT_DIP))
 	if dodging and not holstered and feed.stow_t <= 0.0:
-		_pivot.position.y += SPRINT_DIP * 1.35
+		_pivot.position.y += sprint_dip * 1.35
 	elif sprinting and not aiming and not holstered and feed.stow_t <= 0.0:
-		_pivot.position.y += SPRINT_DIP
-	var show_support := data != null and data.visual_length >= 0.5 \
+		_pivot.position.y += sprint_dip
+	var show_support := data != null and bool(st.get("support_arm", data.visual_length >= 0.5)) \
+		and data.visual_length >= 0.5 \
 		and (not holstered or feed.stow_t > 0.0)
 	POSE_IK.solve_support_arm(_support_root, _support_upper, _support_forearm, _support_hand,
-		_pivot, _current_anchor(), _wrist_local, _gun_len, _elbow_sign, _flipped, show_support)
+		_pivot, _current_anchor(), _wrist_local, _gun_len, _elbow_sign, _flipped, show_support,
+		float(st.get("support_ratio", POSE_IK.SUPPORT_GRIP_RATIO)),
+		float(st.get("support_lift", POSE_IK.SUPPORT_LIFT)))
 
 
 ## --- 供弹/动作接口（委托至 WeaponFeedState2D）--------------------------------

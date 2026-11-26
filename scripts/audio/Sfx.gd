@@ -30,6 +30,27 @@ const UI_HOVER_MIN_GAP_MS := 45
 
 ## 一体消音武器集合（无论是否安装枪口配件始终走消音/亚音速声学特征）。
 const INTEGRAL_SUPPRESSED_WEAPONS: Array[StringName] = [&"vss"]
+## 按口径阶梯微调枪声响度（dB）：大口径狙击 / 霰弹 / 左轮 / 7.62 NATO 更有分量与压迫感，Master Limiter 防削波。
+const WEAPON_GAIN_DB := {
+	&"awm": 3.2,
+	&"python": 2.4,
+	&"m870": 2.2,
+	&"m1014": 1.9,
+	&"saiga12k": 1.8,
+	&"sr25": 1.8,
+	&"fal": 1.6,
+	&"akm": 0.8,
+	&"m1911": 0.6,
+	&"ump45": 0.5,
+	&"l85a2": 0.2,
+	&"vss": 0.0,
+	&"g17": -0.5,
+	&"g18": -0.6,
+	&"tmp": -0.6,
+	&"fn57": -0.4,
+	&"mp7": -0.4,
+	&"p90": -0.4,
+}
 
 var streams: Dictionary = {}
 var _ext_streams: Dictionary = {}
@@ -134,7 +155,10 @@ func play_weapon_fire(weapon_id: StringName, fallback_sfx_kind := "rifle",
 		stream = streams.get(fb_key, streams.get(fallback_sfx_kind))
 	if stream == null:
 		return false
-	var db := volume_db - (2.0 if is_sup and not INTEGRAL_SUPPRESSED_WEAPONS.has(weapon_id) else 0.0)
+	var caliber_trim := float(WEAPON_GAIN_DB.get(weapon_id, 0.0))
+	if is_sup and not INTEGRAL_SUPPRESSED_WEAPONS.has(weapon_id):
+		caliber_trim = caliber_trim * 0.45 - 2.0
+	var db := volume_db + caliber_trim
 	play_stream(stream, db, pitch, WEAPONS_BUS)
 	return true
 

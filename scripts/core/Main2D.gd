@@ -466,7 +466,6 @@ func _apply_visual_override() -> void:
 			var body_px := int(arg.get_slice("=", 1))
 			if body_px > 0:
 				doll.configure(body_px)
-				return
 	if weapon != "off":
 		var rig := doll.equip_weapon_id(StringName(weapon))
 		if not loadout_ids.has(StringName(weapon)):

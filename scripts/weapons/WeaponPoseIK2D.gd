@@ -49,6 +49,78 @@ const SUPPORT_MAX_SEG := 28.0
 const SUPPORT_UPPER_BASE := 13.0
 const SUPPORT_FORE_BASE := 13.5
 
+## Phase 7A 定型：4 大标准持枪/瞄准姿态模板（手枪 / 冲锋枪 CQB / 步枪霰弹抵肩 / 射手狙击长托）。
+## 与 18 把武器 category 映射解耦，供 WeaponRig2D 实时插值腰射、ADS 抵肩、支撑手护木位置与冲刺压枪。
+const STANCE_TEMPLATES := {
+	&"pistol": {
+		"label": "手枪标准持姿（Weaver）",
+		"hip_arm_len": 22.4,
+		"ads_arm_len": 17.8,
+		"ads_lift": 4.4,
+		"support_arm": false,
+		"support_ratio": 0.0,
+		"support_lift": -1.5,
+		"sprint_dip": 2.2,
+		"recoil_kick_mul": 1.12,
+		"shoulder_offset": Vector2(1.0, 0.0),
+	},
+	&"smg": {
+		"label": "冲锋枪近战收紧（CQB）",
+		"hip_arm_len": 21.8,
+		"ads_arm_len": 17.0,
+		"ads_lift": 4.8,
+		"support_arm": true,
+		"support_ratio": 0.16,
+		"support_lift": -1.8,
+		"sprint_dip": 2.6,
+		"recoil_kick_mul": 0.92,
+		"shoulder_offset": Vector2(0.0, 1.0),
+	},
+	&"rifle": {
+		"label": "步枪/霰弹战术抵肩",
+		"hip_arm_len": 22.8,
+		"ads_arm_len": 18.0,
+		"ads_lift": 5.4,
+		"support_arm": true,
+		"support_ratio": 0.21,
+		"support_lift": -2.0,
+		"sprint_dip": 3.2,
+		"recoil_kick_mul": 1.0,
+		"shoulder_offset": Vector2(0.0, 0.0),
+	},
+	&"sniper": {
+		"label": "射手/狙击长托稳定持姿",
+		"hip_arm_len": 23.4,
+		"ads_arm_len": 16.6,
+		"ads_lift": 6.2,
+		"support_arm": true,
+		"support_ratio": 0.27,
+		"support_lift": -2.2,
+		"sprint_dip": 4.0,
+		"recoil_kick_mul": 1.08,
+		"shoulder_offset": Vector2(-1.5, -0.5),
+	},
+}
+
+
+## 将 6 类武器分类收口映射到 4 大标准持枪/瞄准姿态模板 ID。
+static func resolve_stance_id(category: StringName, visual_length := 0.5) -> StringName:
+	match category:
+		&"pistol":
+			return &"pistol"
+		&"smg":
+			return &"smg"
+		&"dmr", &"sniper":
+			return &"sniper"
+		&"rifle", &"shotgun":
+			return &"rifle"
+		_:
+			return &"pistol" if visual_length < 0.5 else &"rifle"
+
+
+static func get_stance(stance_id: StringName) -> Dictionary:
+	return STANCE_TEMPLATES.get(stance_id, STANCE_TEMPLATES[&"rifle"])
+
 
 ## 读取武器 side.png 与 meta.json，计算视觉缩放、枪管倾角与握把/枪口像素锚点。
 static func load_weapon_metrics(id: StringName, visual_length: float) -> Dictionary:
@@ -134,18 +206,19 @@ static func solve_primary_arm(upper_arm: Sprite2D, forearm: Sprite2D,
 	return wrist_local
 
 
-## 长枪支撑手两段 IK：肩点固定在身体，手掌目标跟随枪的护木位置。
+## 长枪支撑手两段 IK：肩点固定在身体，手掌目标跟随枪的护木位置（支持 4 类姿态模板自定义护木比例与抬升）。
 static func solve_support_arm(support_root: Node2D, support_upper: Sprite2D,
 		support_forearm: Sprite2D, support_hand: Sprite2D, pivot: Node2D,
 		anchor: Vector2, wrist_local: Vector2, gun_len: float,
-		elbow_sign: float, flipped: bool, show: bool) -> void:
+		elbow_sign: float, flipped: bool, show: bool,
+		grip_ratio: float = SUPPORT_GRIP_RATIO, lift: float = SUPPORT_LIFT) -> void:
 	if support_root == null or support_upper == null or pivot == null:
 		return
 	support_root.visible = show
 	if not show:
 		return
 	support_root.position = anchor + SUPPORT_SHOULDER_OFFSET
-	var support_local := wrist_local + Vector2(gun_len * SUPPORT_GRIP_RATIO, SUPPORT_LIFT)
+	var support_local := wrist_local + Vector2(gun_len * grip_ratio, lift)
 	var target := support_root.to_local(pivot.to_global(support_local))
 	var dist := target.length()
 	if dist < 0.5:

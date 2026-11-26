@@ -160,6 +160,9 @@ func _run() -> void:
 		and sfx.resolve_weapon_fire_key(&"akm", false) == "weapon_akm"
 		and sfx.resolve_weapon_fire_key(&"akm", true) == "weapon_akm_sup",
 		"VSS resolves as integrally suppressed while AKM splits normal vs suppressed")
+	_check(float(sfx.WEAPON_GAIN_DB.get(&"awm", 0.0)) > float(sfx.WEAPON_GAIN_DB.get(&"g17", 0.0))
+		and float(sfx.WEAPON_GAIN_DB.get(&"python", 0.0)) > float(sfx.WEAPON_GAIN_DB.get(&"g17", 0.0)),
+		"heavy calibers (AWM / Python .357) carry stronger loudness weight than 9mm pistols")
 	sfx._last_fire_ms = 0
 	var fire1: bool = sfx.play_weapon_fire(&"awm", "sniper", false, -14.0, 1000)
 	var fire2: bool = sfx.play_weapon_fire(&"awm", "sniper", false, -14.0, 1010)

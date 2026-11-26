@@ -63,6 +63,24 @@ func _run() -> void:
 	_check(not POSE_IK.is_behind_body(-PI * 0.5, 1), "up-facing body keeps straight-up aim in front")
 	_check(POSE_IK.is_behind_body(-2.1, 1), "up-facing body sends up-left aim behind head")
 
+	# 5. Phase 7A：4 大标准持枪/瞄准姿态模板映射（手枪 / 冲锋枪 CQB / 步枪霰弹 / 射手狙击）
+	_check(POSE_IK.resolve_stance_id(&"pistol") == &"pistol"
+		and POSE_IK.resolve_stance_id(&"smg") == &"smg"
+		and POSE_IK.resolve_stance_id(&"rifle") == &"rifle"
+		and POSE_IK.resolve_stance_id(&"shotgun") == &"rifle"
+		and POSE_IK.resolve_stance_id(&"dmr") == &"sniper"
+		and POSE_IK.resolve_stance_id(&"sniper") == &"sniper",
+		"resolve_stance_id maps all 6 weapon categories cleanly onto the 4 standard stances")
+	var st_pistol: Dictionary = POSE_IK.get_stance(&"pistol")
+	var st_smg: Dictionary = POSE_IK.get_stance(&"smg")
+	var st_rifle: Dictionary = POSE_IK.get_stance(&"rifle")
+	var st_sniper: Dictionary = POSE_IK.get_stance(&"sniper")
+	_check(not bool(st_pistol["support_arm"])
+		and bool(st_smg["support_arm"]) and bool(st_rifle["support_arm"]) and bool(st_sniper["support_arm"])
+		and float(st_sniper["ads_arm_len"]) < float(st_rifle["ads_arm_len"])
+		and float(st_sniper["support_ratio"]) > float(st_smg["support_ratio"]),
+		"4 stance templates differentiate support arm, ADS tuck depth, and forend grip ratio")
+
 	await process_frame
 	print("\n=== weapon pose ik: %s (%d ok / %d fail) ===" % [
 		"PASS" if _fail == 0 else "FAIL", _pass, _fail])
