@@ -5,12 +5,14 @@ class_name ProgressService
 ## 内部职责分别委托给 SaveStore / SettingsStore / MetaProgress / LoadoutStore / TalentStore。
 
 signal ui_theme_changed(theme_id: String, accent: Color)
+signal progress_mutated
 
 const SAVE_STORE := preload("res://scripts/core/progress/SaveStore.gd")
 const SETTINGS_STORE := preload("res://scripts/core/progress/SettingsStore.gd")
 const META_STORE := preload("res://scripts/core/progress/MetaProgress.gd")
 const LOADOUT_STORE := preload("res://scripts/core/progress/LoadoutStore.gd")
 const TALENT_STORE := preload("res://scripts/core/progress/TalentStore.gd")
+const FPS_OVERLAY := preload("res://scripts/ui/FpsOverlay2D.gd")
 
 const VERSION := SAVE_STORE.VERSION
 const DEFAULT_PATH := SAVE_STORE.DEFAULT_PATH
@@ -45,10 +47,14 @@ var TALENT_2D_MATERIAL := {
 var save_path := DEFAULT_PATH
 var data: Dictionary = {}
 var _last_saved_text := ""
+var fps_overlay: FpsOverlay2D
 
 
 func _ready() -> void:
 	_load_progression_tables()
+	fps_overlay = FPS_OVERLAY.new()
+	fps_overlay.name = "FpsOverlay2D"
+	add_child(fps_overlay)
 	var args := OS.get_cmdline_user_args()
 	var explicit := false
 	for i in args.size():
@@ -198,6 +204,66 @@ func autosave_on_exit() -> void:
 		push_warning("退出自动存档写入槽位失败：%d" % index)
 
 
+## ---- 存档重置、清空槽位与 JSON 导出/导入（Phase 5B）----
+
+## 重置当前游戏进度（默认保留画面/音量/显示偏好）；重置前确保当前状态写入并滚入 .bak 备份。
+func reset_current_progress(keep_settings := true) -> bool:
+	if not data.is_empty():
+		save_data()
+	var prev := data.duplicate(true)
+	data = SAVE_STORE.reset_progress_data(data, keep_settings, UPGRADE_MAX, TALENT_2D_MAX)
+	_last_saved_text = ""
+	if not save_data():
+		data = prev
+		return false
+	_sync_ui_theme()
+	ui_theme_changed.emit(ui_theme(), PixelUI.theme_accent())
+	progress_mutated.emit()
+	return true
+
+
+## 清空指定槽位（删除前自动生成槽位 .bak 备份）。
+func clear_slot(slot: int) -> bool:
+	return SAVE_STORE.clear_slot(save_path, slot)
+
+
+## 导出当前存档到指定 .json 文件。
+func export_save_to_file(export_path: String) -> Dictionary:
+	return SAVE_STORE.export_to_file(export_path, data)
+
+
+## 预检待导入的 .json 文件（只读校验，不修改当前存档）。
+func preview_import_file(import_path: String) -> Dictionary:
+	return SAVE_STORE.parse_import_file(import_path, UPGRADE_MAX, TALENT_2D_MAX)
+
+
+## 导入 .json 存档：先严格校验，失败绝不覆盖现存档；成功前将现存档滚入 .bak 备份。
+func import_save_from_file(import_path: String, overwrite_settings := false) -> Dictionary:
+	var parsed := SAVE_STORE.parse_import_file(import_path, UPGRADE_MAX, TALENT_2D_MAX)
+	if not bool(parsed.get("ok", false)):
+		return parsed
+	if not data.is_empty():
+		save_data()
+	var prev := data.duplicate(true)
+	var merged := SAVE_STORE.merge_imported_data(
+		data, parsed["data"], overwrite_settings, UPGRADE_MAX, TALENT_2D_MAX)
+	data = merged
+	_last_saved_text = ""
+	if not save_data():
+		data = prev
+		return {"ok": false, "data": {}, "summary": {}, "error": "写入主存档失败，已保留原存档"}
+	_sync_ui_theme()
+	ui_theme_changed.emit(ui_theme(), PixelUI.theme_accent())
+	progress_mutated.emit()
+	return {
+		"ok": true,
+		"data": data.duplicate(true),
+		"summary": SAVE_STORE.slot_summary(data),
+		"migrated": bool(parsed.get("migrated", false)),
+		"error": "",
+	}
+
+
 ## ---- 资源 / 元进度 / 部署（MetaProgress）----
 
 func add_resources(amount: int) -> void:
@@ -226,6 +292,50 @@ func add_materials(counts: Dictionary) -> void:
 func add_xp(amount: int) -> bool:
 	META_STORE.add_xp(data, amount)
 	return save_data()
+
+func set_credits(value: int) -> bool:
+	META_STORE.set_credits(data, value)
+	var ok := save_data()
+	if ok:
+		progress_mutated.emit()
+	return ok
+
+func adjust_credits_raw(delta: int) -> bool:
+	META_STORE.adjust_credits_raw(data, delta)
+	var ok := save_data()
+	if ok:
+		progress_mutated.emit()
+	return ok
+
+func set_material_count(id: StringName, value: int) -> bool:
+	if not META_STORE.set_material_count(data, id, value):
+		return false
+	var ok := save_data()
+	if ok:
+		progress_mutated.emit()
+	return ok
+
+func adjust_material_count(id: StringName, delta: int) -> bool:
+	if not META_STORE.adjust_material_count(data, id, delta):
+		return false
+	var ok := save_data()
+	if ok:
+		progress_mutated.emit()
+	return ok
+
+func set_xp(value: int) -> bool:
+	META_STORE.set_xp(data, value)
+	var ok := save_data()
+	if ok:
+		progress_mutated.emit()
+	return ok
+
+func set_skill_level(level: int) -> bool:
+	META_STORE.set_skill_level(data, level)
+	var ok := save_data()
+	if ok:
+		progress_mutated.emit()
+	return ok
 
 func set_deployment(spawn_id: StringName, extract_id: StringName) -> bool:
 	return save_data() if META_STORE.set_deployment(data, spawn_id, extract_id) else false
@@ -376,6 +486,8 @@ func set_ui_theme_color(color: Color) -> bool:
 func _sync_ui_theme() -> void:
 	PixelUI.set_theme_palette(ui_theme(), ui_theme_color())
 	PixelUI.set_typewriter_config(typewriter_enabled(), typewriter_speed())
+	if fps_overlay != null:
+		fps_overlay.set_enabled(show_fps())
 
 func ammo_display() -> String:
 	return SETTINGS_STORE.ammo_display(data)
@@ -528,6 +640,15 @@ func set_reticle_style(sight_id: String, style: String) -> bool:
 	SETTINGS_STORE.set_reticle_style(data, sight_id, style)
 	return save_data()
 
+func show_fps() -> bool:
+	return SETTINGS_STORE.show_fps(data)
+
+func set_show_fps(enabled: bool) -> bool:
+	SETTINGS_STORE.set_show_fps(data, enabled)
+	if fps_overlay != null:
+		fps_overlay.set_enabled(enabled)
+	return save_data()
+
 func debug_enabled() -> bool:
 	return SETTINGS_STORE.debug_enabled(data)
 
@@ -540,6 +661,9 @@ func debug_value(key: String) -> float:
 
 func debug_mul(key: String) -> float:
 	return SETTINGS_STORE.debug_mul(data, key)
+
+func debug_flat(key: String) -> float:
+	return SETTINGS_STORE.debug_flat(data, key)
 
 func set_debug_value(key: String, value: float) -> void:
 	SETTINGS_STORE.set_debug_value(data, key, value)

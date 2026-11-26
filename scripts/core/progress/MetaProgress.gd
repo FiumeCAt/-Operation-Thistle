@@ -56,6 +56,51 @@ static func add_xp(data: Dictionary, amount: int) -> void:
 	data["skill_level"] = 1 + int(data["xp"]) / 20
 
 
+## ---- 调试快捷设值 / 原始增减（Phase 5B，直接写入存档字典，不乘经济倍率）----
+
+static func set_credits(data: Dictionary, value: int) -> void:
+	data["resources"] = maxi(0, value)
+
+
+static func adjust_credits_raw(data: Dictionary, delta: int) -> void:
+	data["resources"] = maxi(0, int(data.get("resources", 0)) + delta)
+
+
+static func set_material_count(data: Dictionary, id: StringName, value: int) -> bool:
+	var clean := maxi(0, value)
+	if ResourceDB.BASIC.has(id):
+		var materials: Dictionary = data.get("materials_2d", {})
+		materials[String(id)] = clean
+		data["materials_2d"] = materials
+		return true
+	if ResourceDB.ADVANCED.has(id):
+		var advanced: Dictionary = data.get("advanced_2d", {})
+		advanced[String(id)] = clean
+		data["advanced_2d"] = advanced
+		return true
+	return false
+
+
+static func adjust_material_count(data: Dictionary, id: StringName, delta: int) -> bool:
+	if ResourceDB.BASIC.has(id):
+		return set_material_count(data, id, material_count(data, id) + delta)
+	if ResourceDB.ADVANCED.has(id):
+		return set_material_count(data, id, advanced_count(data, id) + delta)
+	return false
+
+
+static func set_xp(data: Dictionary, value: int) -> void:
+	var clean := maxi(0, value)
+	data["xp"] = clean
+	data["skill_level"] = 1 + clean / 20
+
+
+static func set_skill_level(data: Dictionary, level: int) -> void:
+	var lv := maxi(1, level)
+	data["xp"] = (lv - 1) * 20
+	data["skill_level"] = lv
+
+
 static func set_deployment(data: Dictionary, spawn_id: StringName,
 		extract_id: StringName) -> bool:
 	var spawn_key := String(spawn_id)

@@ -7,6 +7,8 @@ const DEFAULT_LASER_COLOR := SAVE_STORE.DEFAULT_LASER_COLOR
 const DEFAULT_RETICLE_COLOR := SAVE_STORE.DEFAULT_RETICLE_COLOR
 const AMMO_DISPLAY_MODES := SAVE_STORE.AMMO_DISPLAY_MODES
 const MUZZLE_FLASH_MODES := SAVE_STORE.MUZZLE_FLASH_MODES
+const DEBUG_FLAT_KEYS := ["hp_regen", "armor_regen"]
+const DEBUG_POSITIVE_MUL_KEYS := ["hp_max_mul", "armor_max_mul"]
 
 
 static func laser_color(data: Dictionary) -> Color:
@@ -270,6 +272,14 @@ static func set_reticle_style(data: Dictionary, sight_id: String, style: String)
 	data["reticle_styles"] = styles
 
 
+static func show_fps(data: Dictionary) -> bool:
+	return bool(data.get("show_fps", false))
+
+
+static func set_show_fps(data: Dictionary, enabled: bool) -> void:
+	data["show_fps"] = enabled
+
+
 static func debug_enabled(data: Dictionary) -> bool:
 	return bool(data.get("debug_enabled", false))
 
@@ -278,9 +288,22 @@ static func set_debug_enabled(data: Dictionary, enabled: bool) -> void:
 	data["debug_enabled"] = enabled
 
 
+static func debug_default(key: String) -> float:
+	return 0.0 if DEBUG_FLAT_KEYS.has(key) else 1.0
+
+
+static func debug_bounds(key: String) -> Vector2:
+	if DEBUG_FLAT_KEYS.has(key):
+		return Vector2(0.0, 1000.0)
+	if DEBUG_POSITIVE_MUL_KEYS.has(key):
+		return Vector2(0.1, 100.0)
+	return Vector2(0.0, 100.0)
+
+
 static func debug_value(data: Dictionary, key: String) -> float:
 	var dbg: Dictionary = data.get("debug", {})
-	return clampf(float(dbg.get(key, 1.0)), 0.0, 100.0)
+	var bounds := debug_bounds(key)
+	return clampf(float(dbg.get(key, debug_default(key))), bounds.x, bounds.y)
 
 
 static func debug_mul(data: Dictionary, key: String) -> float:
@@ -289,9 +312,16 @@ static func debug_mul(data: Dictionary, key: String) -> float:
 	return debug_value(data, key)
 
 
+static func debug_flat(data: Dictionary, key: String) -> float:
+	if not debug_enabled(data):
+		return 0.0
+	return debug_value(data, key)
+
+
 static func set_debug_value(data: Dictionary, key: String, value: float) -> void:
 	var dbg: Dictionary = data.get("debug", {})
-	dbg[key] = clampf(value, 0.0, 100.0)
+	var bounds := debug_bounds(key)
+	dbg[key] = clampf(value, bounds.x, bounds.y)
 	data["debug"] = dbg
 
 
@@ -299,6 +329,7 @@ static func reset_debug(data: Dictionary) -> void:
 	data["debug"] = {
 		"recoil_v": 1.0, "recoil_h": 1.0, "recoil_cap": 1.0,
 		"spread": 1.0, "damage": 1.0, "ads": 1.0, "move": 1.0, "vision": 1.0,
+		"hp_max_mul": 1.0, "armor_max_mul": 1.0, "hp_regen": 0.0, "armor_regen": 0.0,
 	}
 	data["minimap_zoom_min"] = SAVE_STORE.DEFAULT_MINIMAP_ZOOM_MIN
 	data["minimap_zoom_max"] = SAVE_STORE.DEFAULT_MINIMAP_ZOOM_MAX

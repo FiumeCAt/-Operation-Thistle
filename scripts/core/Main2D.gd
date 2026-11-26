@@ -458,8 +458,7 @@ func _apply_talents() -> void:
 	if progress == null:
 		return
 	var hp_level := int(progress.talent_2d_level(&"hp"))
-	doll.hp_max = 100 + hp_level * 15
-	doll.hp = doll.hp_max
+	var base_hp := 100 + hp_level * 15
 	var move_mul := 1.0 + float(progress.talent_2d_level(&"move")) * 0.05
 	doll.walk_speed *= move_mul
 	doll.sprint_speed *= move_mul
@@ -490,12 +489,12 @@ func _apply_talents() -> void:
 		elif progress.data is Dictionary:
 			hud.set_ammo_exact_rounds(bool(progress.data.get("ammo_exact_rounds", false)))
 	_view_zoom_visual = view_zoom_pct
-	# 护甲：基础存档值 + 护甲组件 + 护甲强化天赋，进入行动时补满。
+	# 护甲：基础存档值 + 护甲组件 + 护甲强化天赋，进入行动时补满（同步叠加调试上限倍率）。
 	var armor_mods := ModDB.modifiers(progress.armor_mods_2d(), true)
-	doll.armor_max = maxi(10, int(progress.data.get("armor_max", 100))
+	var base_armor := maxi(10, int(progress.data.get("armor_max", 100))
 		+ int(armor_mods["armor_max_add"]))
-	doll.armor_max += int(progress.talent_2d_level(&"armor")) * 20
-	doll.armor = doll.armor_max
+	base_armor += int(progress.talent_2d_level(&"armor")) * 20
+	doll.set_base_vitals(base_hp, base_armor, true)
 	doll.armor_level = int(progress.data.get("armor_level", 1)) \
 		+ int(armor_mods["armor_level_add"])
 	doll.armor_absorb_bonus = float(armor_mods["absorb_add"])
@@ -537,6 +536,13 @@ func _on_settings_applied() -> void:
 			hud.set_ammo_exact_rounds(bool(progress.ammo_exact_rounds()))
 		elif progress.data is Dictionary:
 			hud.set_ammo_exact_rounds(bool(progress.data.get("ammo_exact_rounds", false)))
+	if doll != null and progress.has_method("debug_mul"):
+		doll.sync_debug_vitals(
+			float(progress.debug_mul("hp_max_mul")),
+			float(progress.debug_mul("armor_max_mul")))
+		if hud != null:
+			hud.set_hp(doll.hp, doll.hp_max)
+			hud.set_armor(doll.armor, doll.armor_max)
 
 
 ## 立即套用弹道线条开关：只隐藏枪口到弹丸的长线，弹丸实体与命中不受影响。

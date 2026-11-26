@@ -42,6 +42,7 @@ $DefaultCoreTests = @(
     "nav_grid_2d_test",
     "navigation_2d_test",
     "new_enemies_2d_test",
+    "phase5b_debug_save_fps_test",
     "player_bullet_test",
     "progress_stores_test",
     "resources_2d_test",

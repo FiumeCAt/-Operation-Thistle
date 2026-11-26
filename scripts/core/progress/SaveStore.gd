@@ -23,6 +23,25 @@ const PICKUP_MERGE_MAX := 10.0
 
 const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
 const MUZZLE_FLASH_MODES := ["full", "partial", "off"]
+const EXPORT_FORMAT := "operation_thistle_save"
+const EXPORT_VERSION := 1
+## 本地偏好设置键集合：重置游戏进度（默认保留设置）或导入存档（可选不覆盖本地偏好）时保留这些键。
+const PREFERENCE_KEYS := [
+	"ammo_display", "fire_rate_display", "armor_display",
+	"volume", "sfx_volume", "music_volume",
+	"screen_shake", "bullet_trail_enabled", "hitstop_enabled", "shake_scale",
+	"sample_impacts", "hit_fx_level", "muzzle_flash_mode",
+	"view_zoom", "minimap_shape", "minimap_scale",
+	"minimap_zoom", "minimap_zoom_min", "minimap_zoom_max",
+	"typewriter_enabled", "typewriter_speed",
+	"ammo_exact_rounds", "pickup_merge_window",
+	"motion_blur", "scope_motion_blur", "scope_lens_distortion",
+	"reticle_styles", "laser_color", "reticle_color",
+	"ui_theme", "ui_theme_color",
+	"show_fps",
+	"debug_enabled", "debug",
+	"camera_mode", "bright_test", "settings_rev",
+]
 const WEAPON_IDS := [
 	"m870", "m1014", "saiga12k", "g17",
 	"g18", "m1911", "fn57", "python",
@@ -91,10 +110,12 @@ static func defaults() -> Dictionary:
 		"reticle_color": DEFAULT_RETICLE_COLOR,
 		"ui_theme": DEFAULT_UI_THEME,
 		"ui_theme_color": DEFAULT_UI_THEME_COLOR,
+		"show_fps": false,
 		"debug_enabled": false,
 		"debug": {
 			"recoil_v": 1.0, "recoil_h": 1.0, "recoil_cap": 1.0,
 			"spread": 1.0, "damage": 1.0, "ads": 1.0, "move": 1.0, "vision": 1.0,
+			"hp_max_mul": 1.0, "armor_max_mul": 1.0, "hp_regen": 0.0, "armor_regen": 0.0,
 		},
 		"camera_mode": 1,
 		"bright_test": true,
@@ -124,6 +145,7 @@ static func save_family_paths(save_path: String) -> Array[String]:
 		var path := slot_path(save_path, slot)
 		paths.append(path)
 		paths.append(path + ".tmp")
+		paths.append(path + ".bak")
 	return paths
 
 
@@ -367,9 +389,19 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 	data["ui_theme"] = raw_theme if UI_THEME_IDS.has(raw_theme) else DEFAULT_UI_THEME
 	var raw_theme_col := String(data.get("ui_theme_color", DEFAULT_UI_THEME_COLOR))
 	data["ui_theme_color"] = raw_theme_col if Color.html_is_valid(raw_theme_col) else DEFAULT_UI_THEME_COLOR
+	data["show_fps"] = bool(data.get("show_fps", false))
 	data["debug_enabled"] = bool(data.get("debug_enabled", false))
-	if not (data.get("debug") is Dictionary):
-		data["debug"] = {}
+	var raw_dbg = data.get("debug", null)
+	if not (raw_dbg is Dictionary):
+		raw_dbg = {}
+	var clean_dbg := {}
+	for k in ["recoil_v", "recoil_h", "recoil_cap", "spread", "damage", "ads", "move", "vision"]:
+		clean_dbg[k] = clampf(float((raw_dbg as Dictionary).get(k, 1.0)), 0.0, 100.0)
+	for k in ["hp_max_mul", "armor_max_mul"]:
+		clean_dbg[k] = clampf(float((raw_dbg as Dictionary).get(k, 1.0)), 0.1, 100.0)
+	for k in ["hp_regen", "armor_regen"]:
+		clean_dbg[k] = clampf(float((raw_dbg as Dictionary).get(k, 0.0)), 0.0, 1000.0)
+	data["debug"] = clean_dbg
 	data["camera_mode"] = clampi(int(data.get("camera_mode", 1)), 0, 2)
 	data["bright_test"] = bool(data.get("bright_test", true))
 	if int(data.get("settings_rev", 0)) < 2:
@@ -578,3 +610,139 @@ static func slot_info(save_path: String, slot: int, active_index: int) -> Dictio
 		"saved_at": int(payload.get("saved_at", 0)),
 		"summary": (payload.get("summary", {}) as Dictionary).duplicate(),
 	}
+
+
+## ---- 存档重置、清空槽位与 JSON 导出/导入（Phase 5B）----
+
+static func _copy_pref_value(val):
+	if val is Dictionary or val is Array:
+		return val.duplicate(true)
+	return val
+
+
+## 生成重置后的存档字典：默认保留本地画面/音量/主题/显示偏好，进度全部归零并规范化。
+static func reset_progress_data(current: Dictionary, keep_settings: bool,
+		upgrade_max: Dictionary, talent_2d_max: Dictionary) -> Dictionary:
+	var fresh := defaults()
+	if current.has("active_slot"):
+		fresh["active_slot"] = clampi(int(current.get("active_slot", 1)), 1, SLOT_COUNT)
+	if keep_settings:
+		for key in PREFERENCE_KEYS:
+			if current.has(key):
+				fresh[key] = _copy_pref_value(current[key])
+	normalize_data(fresh, upgrade_max, talent_2d_max)
+	return fresh
+
+
+## 清空指定手动槽位：先将现存槽位文件备份至 .bak 再删除，防止误操作不可恢复。
+static func clear_slot(save_path: String, slot: int) -> bool:
+	var index := clampi(slot, 1, SLOT_COUNT)
+	var path := slot_path(save_path, index)
+	var tmp_path := path + ".tmp"
+	if FileAccess.file_exists(tmp_path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp_path))
+	if not FileAccess.file_exists(path):
+		return false
+	var bak_path := path + ".bak"
+	var global_src := ProjectSettings.globalize_path(path)
+	var global_bak := ProjectSettings.globalize_path(bak_path)
+	if FileAccess.file_exists(bak_path):
+		DirAccess.remove_absolute(global_bak)
+	DirAccess.copy_absolute(global_src, global_bak)
+	return DirAccess.remove_absolute(global_src) == OK
+
+
+static func build_export_payload(data: Dictionary) -> Dictionary:
+	var snapshot := data.duplicate(true)
+	snapshot["version"] = VERSION
+	return {
+		"format": EXPORT_FORMAT,
+		"export_version": EXPORT_VERSION,
+		"version": VERSION,
+		"exported_at": int(Time.get_unix_time_from_system()),
+		"summary": slot_summary(snapshot),
+		"data": snapshot,
+	}
+
+
+## 将当前存档导出为带版本标记与摘要的独立 .json 文件。
+static func export_to_file(export_path: String, data: Dictionary) -> Dictionary:
+	if export_path.strip_edges().is_empty():
+		return {"ok": false, "error": "导出路径不能为空", "path": export_path}
+	if not is_valid_save(data):
+		return {"ok": false, "error": "当前存档结构不完整，拒绝导出", "path": export_path}
+	var payload := build_export_payload(data)
+	var text := JSON.stringify(payload, "\t")
+	var verify := JSON.new()
+	if verify.parse(text) != OK or typeof(verify.data) != TYPE_DICTIONARY:
+		return {"ok": false, "error": "存档序列化校验失败", "path": export_path}
+	var file := FileAccess.open(export_path, FileAccess.WRITE)
+	if file == null:
+		return {"ok": false, "error": "无法写入目标文件（请检查目录权限）", "path": export_path}
+	file.store_string(text)
+	file.flush()
+	file.close()
+	return {"ok": true, "error": "", "path": export_path}
+
+
+## 读取并校验待导入的 .json 文件（兼容导出包装格式与原始 save_v1.json）：
+## 强制走 migrate_save_version() -> is_valid_save() -> normalize_data() 管线，绝不产生副作用。
+static func parse_import_file(import_path: String, upgrade_max: Dictionary,
+		talent_2d_max: Dictionary) -> Dictionary:
+	if import_path.strip_edges().is_empty() or not FileAccess.file_exists(import_path):
+		return {"ok": false, "data": {}, "summary": {}, "migrated": false, "error": "找不到所选存档文件"}
+	var file := FileAccess.open(import_path, FileAccess.READ)
+	if file == null:
+		return {"ok": false, "data": {}, "summary": {}, "migrated": false, "error": "无法读取所选存档文件"}
+	var text := file.get_as_text()
+	file.close()
+	var json := JSON.new()
+	if json.parse(text) != OK or typeof(json.data) != TYPE_DICTIONARY:
+		return {"ok": false, "data": {}, "summary": {}, "migrated": false, "error": "JSON 格式损坏，无法解析"}
+	var parsed: Dictionary = json.data
+	var raw_data: Dictionary = parsed
+	if parsed.has("format") or parsed.has("export_version") or parsed.has("data"):
+		if parsed.has("format") and String(parsed.get("format", "")) != EXPORT_FORMAT:
+			return {"ok": false, "data": {}, "summary": {}, "migrated": false, "error": "非本游戏存档格式标识"}
+		if parsed.has("export_version") and int(parsed.get("export_version", 0)) > EXPORT_VERSION:
+			return {"ok": false, "data": {}, "summary": {}, "migrated": false, "error": "导出格式版本过高，当前版本不支持"}
+		var inner = parsed.get("data", null)
+		if typeof(inner) != TYPE_DICTIONARY:
+			return {"ok": false, "data": {}, "summary": {}, "migrated": false, "error": "存档包装内缺少有效 data 字段"}
+		raw_data = inner
+	var mig := migrate_save_version(raw_data)
+	var upgraded: Dictionary = mig.get("data", {})
+	if upgraded.is_empty():
+		return {"ok": false, "data": {}, "summary": {}, "migrated": false, "error": "存档版本不受支持或缺少版本号"}
+	if not is_valid_save(upgraded):
+		return {"ok": false, "data": {}, "summary": {}, "migrated": false, "error": "存档结构校验失败：缺少关键进度字段"}
+	var clean := defaults()
+	for key in clean:
+		if upgraded.has(key):
+			clean[key] = _copy_pref_value(upgraded[key])
+	normalize_data(clean, upgrade_max, talent_2d_max)
+	return {
+		"ok": true,
+		"data": clean,
+		"summary": slot_summary(clean),
+		"migrated": bool(mig.get("migrated", false)),
+		"error": "",
+	}
+
+
+## 将已校验的导入数据与当前存档合并：默认保留本地偏好设置，勾选覆盖时一并导入设置。
+static func merge_imported_data(current: Dictionary, imported: Dictionary,
+		overwrite_settings: bool, upgrade_max: Dictionary,
+		talent_2d_max: Dictionary) -> Dictionary:
+	var merged := defaults()
+	for key in merged:
+		if imported.has(key):
+			merged[key] = _copy_pref_value(imported[key])
+	if current.has("active_slot"):
+		merged["active_slot"] = clampi(int(current.get("active_slot", 1)), 1, SLOT_COUNT)
+	if not overwrite_settings:
+		for key in PREFERENCE_KEYS:
+			if current.has(key):
+				merged[key] = _copy_pref_value(current[key])
+	normalize_data(merged, upgrade_max, talent_2d_max)
+	return merged

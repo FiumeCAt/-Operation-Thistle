@@ -98,10 +98,17 @@ signal shot_fired(muzzle: Vector2, dir: Vector2)
 
 var hp := 100
 var hp_max := 100
+var base_hp_max := 100
 var invuln := 0.0
 ## 护甲：优先吸收按减伤比例计算出的伤害；耐久耗尽后不再减伤。
 @export var armor := 100
 @export var armor_max := 100
+var base_armor_max := 100
+var _base_vitals_set := false
+var _applied_hp_mul := 1.0
+var _applied_armor_mul := 1.0
+var _hp_regen_acc := 0.0
+var _armor_regen_acc := 0.0
 ## 护甲防御等级（RHA 体系：Lv1 = 30 / 3.0mm RHA，每级 +20 / +2.0mm RHA）。
 @export var armor_level := 1
 ## 额外 RHA 护甲防御加值（0.1 mm 单位，供后续配件/天赋叠加）。
@@ -420,6 +427,99 @@ func heal(amount: int) -> void:
 	hp = mini(hp + amount, hp_max)
 
 
+## 记录开局由天赋/装备决定的基础生命与护甲上限，并立即套用当前调试倍率。
+func set_base_vitals(new_base_hp_max: int, new_base_armor_max: int, fill_current := true) -> void:
+	base_hp_max = maxi(1, new_base_hp_max)
+	base_armor_max = maxi(1, new_base_armor_max)
+	_base_vitals_set = true
+	_applied_hp_mul = 1.0
+	_applied_armor_mul = 1.0
+	hp_max = base_hp_max
+	armor_max = base_armor_max
+	var dbg_p := get_node_or_null("/root/Progress")
+	if dbg_p != null and dbg_p.has_method("debug_mul"):
+		sync_debug_vitals(float(dbg_p.debug_mul("hp_max_mul")), float(dbg_p.debug_mul("armor_max_mul")))
+	if fill_current:
+		hp = hp_max
+		armor = armor_max
+	else:
+		hp = clampi(hp, 0, hp_max)
+		armor = clampi(armor, 0, armor_max)
+
+
+## 按调试倍率实时同步生命/护甲上限，并等比缩放/钳制当前值（存活时绝不因降倍率误杀）。
+func sync_debug_vitals(hp_mul: float, armor_mul: float) -> void:
+	var clean_hp := clampf(hp_mul, 0.1, 100.0)
+	var clean_arm := clampf(armor_mul, 0.1, 100.0)
+	if is_equal_approx(clean_hp, _applied_hp_mul) and is_equal_approx(clean_arm, _applied_armor_mul):
+		return
+	if not _base_vitals_set:
+		base_hp_max = maxi(1, hp_max)
+		base_armor_max = maxi(1, armor_max)
+		_base_vitals_set = true
+	if not is_equal_approx(clean_hp, _applied_hp_mul):
+		var old_max := maxi(1, hp_max)
+		var new_max := maxi(1, int(round(float(base_hp_max) * clean_hp)))
+		if hp > 0:
+			hp = clampi(int(round(float(hp) * (float(new_max) / float(old_max)))), 1, new_max)
+		else:
+			hp = 0
+		hp_max = new_max
+		_applied_hp_mul = clean_hp
+	if not is_equal_approx(clean_arm, _applied_armor_mul):
+		var old_amax := maxi(1, armor_max)
+		var new_amax := maxi(1, int(round(float(base_armor_max) * clean_arm)))
+		if armor > 0:
+			armor = clampi(int(round(float(armor) * (float(new_amax) / float(old_amax)))), 0, new_amax)
+		else:
+			armor = 0
+		armor_max = new_amax
+		_applied_armor_mul = clean_arm
+
+
+## 调试一键满血满甲：先同步上限倍率再补满当前值。
+func full_restore() -> void:
+	var dbg_p := get_node_or_null("/root/Progress")
+	if dbg_p != null and dbg_p.has_method("debug_mul"):
+		sync_debug_vitals(float(dbg_p.debug_mul("hp_max_mul")), float(dbg_p.debug_mul("armor_max_mul")))
+	hp = hp_max
+	armor = armor_max
+	_hp_regen_acc = 0.0
+	_armor_regen_acc = 0.0
+
+
+## 调试生存步进：同步上限倍率并按绝对值（点/秒）累计生命与护甲自动恢复。
+func step_debug_vitals(delta: float, dbg_progress: Node) -> void:
+	if dbg_progress == null:
+		return
+	if dbg_progress.has_method("debug_mul"):
+		sync_debug_vitals(
+			float(dbg_progress.debug_mul("hp_max_mul")),
+			float(dbg_progress.debug_mul("armor_max_mul")))
+	if hp <= 0 or not dbg_progress.has_method("debug_flat"):
+		_hp_regen_acc = 0.0
+		_armor_regen_acc = 0.0
+		return
+	var hp_r := float(dbg_progress.debug_flat("hp_regen"))
+	if hp_r > 0.0 and hp < hp_max:
+		_hp_regen_acc += hp_r * delta
+		var add_hp := int(floor(_hp_regen_acc))
+		if add_hp > 0:
+			_hp_regen_acc -= float(add_hp)
+			heal(add_hp)
+	else:
+		_hp_regen_acc = 0.0
+	var armor_r := float(dbg_progress.debug_flat("armor_regen"))
+	if armor_r > 0.0 and armor < armor_max:
+		_armor_regen_acc += armor_r * delta
+		var add_armor := int(floor(_armor_regen_acc))
+		if add_armor > 0:
+			_armor_regen_acc -= float(add_armor)
+			repair_armor(add_armor)
+	else:
+		_armor_regen_acc = 0.0
+
+
 ## 头部世界坐标：视野与感知系统以眼睛为原点，而不是脚下。
 func head_position() -> Vector2:
 	if _head_pivot != null:
@@ -446,6 +546,7 @@ func _physics_process(delta: float) -> void:
 	var dbg_progress := get_node_or_null("/root/Progress")
 	if dbg_progress != null:
 		speed *= float(dbg_progress.debug_mul("move"))
+		step_debug_vitals(delta, dbg_progress)
 
 	velocity = input_vector * speed
 	move_and_slide()

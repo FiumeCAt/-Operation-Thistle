@@ -82,6 +82,8 @@ func _ready() -> void:
 		PixelUI.set_theme_palette(p.ui_theme(), p.ui_theme_color())
 		if p.has_signal("ui_theme_changed") and not p.ui_theme_changed.is_connected(_on_ui_theme_changed):
 			p.ui_theme_changed.connect(_on_ui_theme_changed)
+		if p.has_signal("progress_mutated") and not p.progress_mutated.is_connected(_refresh_dossier):
+			p.progress_mutated.connect(_refresh_dossier)
 	PixelUI.apply_theme(self)
 	var sfx := get_node_or_null("/root/Sfx")
 	if sfx != null:
