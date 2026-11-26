@@ -37,6 +37,10 @@ static func weapon_category(id: StringName) -> StringName:
 	return StringName(_weapon_record(id).get("category", "shotgun"))
 
 
+static func unlock_level(id: StringName) -> int:
+	return maxi(1, int(_weapon_record(id).get("unlock_level", 1)))
+
+
 static func weapon_category_name(category: StringName) -> String:
 	return String(WEAPON_CATEGORY_NAMES.get(category, String(category)))
 
@@ -83,13 +87,15 @@ static func get_weapon(id: StringName) -> WeaponData:
 	w.id = id
 	var rec := _weapon_record(id)
 	w.slot = WEAPON_ORDER.find(id) + 1
+	w.unlock_level = maxi(1, int(rec.get("unlock_level", 1)))
 	w.category = StringName(rec.get("category", "shotgun"))
 	w.display_name = String(rec.get("display_name", String(id)))
 	w.caliber = StringName(rec.get("caliber", "12gauge"))
 	w.caliber_label = String(rec.get("caliber_label",
 		"12 GAUGE" if w.caliber == &"12gauge" else String(w.caliber).to_upper()))
 	w.ammo_id = StringName(rec.get("ammo", "9mm" if w.caliber == &"9mm" else "buckshot"))
-	w.ammo_category = category_of(w.ammo_id)
+	var cat_override := String(rec.get("ammo_category", ""))
+	w.ammo_category = StringName(cat_override) if cat_override != "" else category_of(w.ammo_id)
 	w.sfx_kind = String(rec.get("sfx", "shotgun" if w.caliber == &"12gauge" else "pistol"))
 	w.shake_amount = float(rec.get("shake", 2.4 if w.caliber == &"12gauge" else 0.6))
 	_apply_impact_profile(w)
@@ -278,7 +284,7 @@ static func category_table() -> Dictionary:
 	if raw.is_empty():
 		raw = {
 			"light": {"display_name": "轻型弹", "short": "轻型", "reserve_max": 108, "color": "#dbeaff"},
-			"medium": {"display_name": "中型弹", "short": "中型", "reserve_max": 120, "color": "#c8ffcf"},
+			"medium": {"display_name": "中型弹", "short": "中型", "reserve_max": 160, "color": "#c8ffcf"},
 			"heavy": {"display_name": "重型弹", "short": "重型", "reserve_max": 40, "color": "#ffd18a"},
 			"shotgun": {"display_name": "霰弹", "short": "霰弹", "reserve_max": 60, "color": "#ff9e40"},
 			"special": {"display_name": "特殊弹药", "short": "特殊", "reserve_max": 20, "color": "#c9a0ff"},

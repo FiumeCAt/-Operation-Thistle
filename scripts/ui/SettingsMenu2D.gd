@@ -26,6 +26,7 @@ var _hitstop_buttons: Dictionary = {}
 var _sample_buttons: Dictionary = {}
 var _hit_fx_buttons: Dictionary = {}
 var _muzzle_flash_buttons: Dictionary = {}
+var _hearing_mode_buttons: Dictionary = {}
 var _minimap_shape_buttons: Dictionary = {}
 var _minimap_scale_slider: HSlider
 var _minimap_scale_value: Label
@@ -197,9 +198,10 @@ func _build_left_column() -> Control:
 	_build_minimap_preview_box(mm_split)
 
 	_sep(rows, PixelUI.CYAN)
-	PixelUI.section_bar(rows, "性能监测", "PERFORMANCE", PixelUI.CYAN)
+	PixelUI.section_bar(rows, "感知与性能监测", "PERCEPTION & PERF", PixelUI.CYAN)
+	_add_hearing_mode_row(rows)
 	_add_toggle_row(rows, "显示 FPS 帧率", _fps_buttons, _set_show_fps)
-	var fps_hint := PixelUI.label(rows, "开启后在右上角实时显示帧率与帧耗时（自动避让小地图）", 15, PixelUI.DIM)
+	var fps_hint := PixelUI.label(rows, "声纹模式在「声纹感知」满级 (Lv.5) 解锁涟漪后生效；FPS 避让小地图", 14, PixelUI.DIM)
 	fps_hint.clip_text = true
 
 	var spacer := Control.new()
@@ -491,6 +493,21 @@ func _add_muzzle_flash_row(parent: Node) -> void:
 		button.pressed.connect(func() -> void: _set_muzzle_flash_mode(mode))
 		line.add_child(button)
 		_muzzle_flash_buttons[mode] = button
+
+
+func _add_hearing_mode_row(parent: Node) -> void:
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 8)
+	parent.add_child(line)
+	var label := PixelUI.label(line, "声纹显示", 19, PixelUI.DIM)
+	label.custom_minimum_size.x = 136
+	for entry in [["both", "共存"], ["ripple", "仅涟漪"], ["ring", "仅脚下环"]]:
+		var mode := String(entry[0])
+		var button := _option_button(String(entry[1]))
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(func() -> void: _set_hearing_display_mode(mode))
+		line.add_child(button)
+		_hearing_mode_buttons[mode] = button
 
 
 func _add_shake_scale_row(parent: Node) -> void:
@@ -819,6 +836,13 @@ func _set_muzzle_flash_mode(mode: String) -> void:
 	_refresh_muzzle_flash_buttons(mode)
 
 
+func _set_hearing_display_mode(mode: String) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_hearing_display_mode"):
+		p.set_hearing_display_mode(mode)
+	_refresh_hearing_mode_buttons(mode)
+
+
 func open() -> void:
 	visible = true
 	move_to_front()
@@ -855,6 +879,7 @@ func _load_values() -> void:
 	var sample_impacts := true
 	var hit_fx_level := 1
 	var muzzle_flash_mode := "partial"
+	var hearing_mode := "both"
 	var mm_shape := "square"
 	var mm_scale := 1.0
 	var mm_zoom := 1.0
@@ -880,6 +905,7 @@ func _load_values() -> void:
 		sample_impacts = bool(p.data.get("sample_impacts", true))
 		hit_fx_level = clampi(int(p.data.get("hit_fx_level", 1)), 0, 2)
 		muzzle_flash_mode = String(p.muzzle_flash_mode()) if p.has_method("muzzle_flash_mode") else "partial"
+		hearing_mode = String(p.hearing_display_mode()) if p.has_method("hearing_display_mode") else "both"
 		mm_shape = String(p.minimap_shape()) if p.has_method("minimap_shape") else "square"
 		mm_scale = float(p.minimap_scale()) if p.has_method("minimap_scale") else 1.0
 		mm_zoom = float(p.minimap_zoom()) if p.has_method("minimap_zoom") else 1.0
@@ -919,6 +945,7 @@ func _load_values() -> void:
 	_refresh_sample_buttons(sample_impacts)
 	_refresh_hit_fx_buttons(hit_fx_level)
 	_refresh_muzzle_flash_buttons(muzzle_flash_mode)
+	_refresh_hearing_mode_buttons(hearing_mode)
 	_refresh_minimap_shape_buttons(mm_shape)
 	_refresh_typewriter_buttons(tw_enabled)
 	_refresh_ammo_exact_buttons(ammo_exact)
@@ -1118,6 +1145,16 @@ func _refresh_muzzle_flash_buttons(mode: String) -> void:
 		button.text = ("▶ " if active else "   ") + String(names.get(String(key), "部分"))
 		button.add_theme_color_override(
 			"font_color", PixelUI.AMBER_BRIGHT if active else PixelUI.TEXT)
+
+
+func _refresh_hearing_mode_buttons(mode: String) -> void:
+	var names := {"both": "共存", "ripple": "仅涟漪", "ring": "仅脚下环"}
+	for key in _hearing_mode_buttons:
+		var button: Button = _hearing_mode_buttons[key]
+		var active := String(key) == mode
+		button.text = ("▶ " if active else "   ") + String(names.get(String(key), "共存"))
+		button.add_theme_color_override(
+			"font_color", PixelUI.CYAN if active else PixelUI.TEXT)
 
 
 func _unhandled_input(event: InputEvent) -> void:

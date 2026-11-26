@@ -54,6 +54,7 @@ var _minimap_zoom_max_slider: HSlider
 var _minimap_zoom_max_edit: LineEdit
 var _live_vitals_label: Label
 var _full_restore_button: Button
+var _unlock_weapons_button: Button
 var _status: Label
 var _message: Label
 var _syncing := false
@@ -449,6 +450,11 @@ func _build_resources_tab(parent: Node) -> Control:
 	rich_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rich_btn.pressed.connect(func() -> void: _adjust_credits(50000))
 	bundle_row.add_child(rich_btn)
+	_unlock_weapons_button = PixelUI.button("[□] 全武器临时解锁", 34)
+	_unlock_weapons_button.add_theme_font_size_override("font_size", 16)
+	_unlock_weapons_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_unlock_weapons_button.pressed.connect(_toggle_unlock_all_weapons)
+	bundle_row.add_child(_unlock_weapons_button)
 	return page
 
 
@@ -864,10 +870,11 @@ func _adjust_level(delta: int) -> void:
 	if _p == null:
 		return
 	var cur := int(_p.data.get("skill_level", 1))
-	_p.set_skill_level(maxi(1, cur + delta))
+	var max_lv := int(_p.max_level()) if _p.has_method("max_level") else 50
+	_p.set_skill_level(clampi(cur + delta, 1, max_lv))
 	_load_resource_values()
-	_set_message("已写入当前存档：等级 = Lv.%d (XP %d)" % [
-		int(_p.data.get("skill_level", 1)), int(_p.data.get("xp", 0))], false)
+	_set_message("已写入当前存档：等级 = Lv.%d/%d (XP %d)" % [
+		int(_p.data.get("skill_level", 1)), max_lv, int(_p.data.get("xp", 0))], false)
 
 
 func _commit_level_text() -> void:
@@ -876,14 +883,25 @@ func _commit_level_text() -> void:
 	var edit: LineEdit = _resource_edits.get("level")
 	if edit == null:
 		return
+	var max_lv := int(_p.max_level()) if _p.has_method("max_level") else 50
 	var raw := edit.text.strip_edges()
 	if raw.is_valid_int():
-		_p.set_skill_level(maxi(1, raw.to_int()))
-		_set_message("已写入当前存档：等级 = Lv.%d (XP %d)" % [
-			int(_p.data.get("skill_level", 1)), int(_p.data.get("xp", 0))], false)
+		_p.set_skill_level(clampi(raw.to_int(), 1, max_lv))
+		_set_message("已写入当前存档：等级 = Lv.%d/%d (XP %d)" % [
+			int(_p.data.get("skill_level", 1)), max_lv, int(_p.data.get("xp", 0))], false)
 	else:
-		_set_message("输入无效：等级必须为 >= 1 的整数", true)
+		_set_message("输入无效：等级必须为 1–%d 的整数" % max_lv, true)
 	_load_resource_values()
+
+
+func _toggle_unlock_all_weapons() -> void:
+	if _p == null or not _p.has_method("set_debug_unlock_all_weapons"):
+		return
+	var next_state := not bool(_p.debug_unlock_all_weapons())
+	_p.set_debug_unlock_all_weapons(next_state)
+	_load_resource_values()
+	_set_message("已开启全武器临时解锁（无视等级限制）" if next_state else "已关闭全武器临时解锁（恢复等级解锁规则）",
+		not next_state)
 
 
 func _adjust_material(id: StringName, delta: int) -> void:
@@ -1004,6 +1022,11 @@ func _load_resource_values() -> void:
 		var key := String(id)
 		if _resource_edits.has(key):
 			(_resource_edits[key] as LineEdit).text = str(int(_p.advanced_count(id)))
+	if _unlock_weapons_button != null and _p.has_method("debug_unlock_all_weapons"):
+		var unlocked_all := bool(_p.debug_unlock_all_weapons())
+		_unlock_weapons_button.text = "[■] 全武器临时解锁 (开)" if unlocked_all else "[□] 全武器临时解锁"
+		_unlock_weapons_button.add_theme_color_override(
+			"font_color", PixelUI.OK if unlocked_all else PixelUI.TEXT)
 	_syncing = false
 
 

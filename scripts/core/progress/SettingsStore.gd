@@ -7,6 +7,7 @@ const DEFAULT_LASER_COLOR := SAVE_STORE.DEFAULT_LASER_COLOR
 const DEFAULT_RETICLE_COLOR := SAVE_STORE.DEFAULT_RETICLE_COLOR
 const AMMO_DISPLAY_MODES := SAVE_STORE.AMMO_DISPLAY_MODES
 const MUZZLE_FLASH_MODES := SAVE_STORE.MUZZLE_FLASH_MODES
+const HEARING_DISPLAY_MODES := SAVE_STORE.HEARING_DISPLAY_MODES
 const DEBUG_FLAT_KEYS := ["hp_regen", "armor_regen"]
 const DEBUG_POSITIVE_MUL_KEYS := ["hp_max_mul", "armor_max_mul"]
 
@@ -128,6 +129,18 @@ static func set_muzzle_flash_mode(data: Dictionary, mode: String) -> bool:
 	if not MUZZLE_FLASH_MODES.has(mode):
 		return false
 	data["muzzle_flash_mode"] = mode
+	return true
+
+
+static func hearing_display_mode(data: Dictionary) -> String:
+	var mode := String(data.get("hearing_display_mode", "both"))
+	return mode if HEARING_DISPLAY_MODES.has(mode) else "both"
+
+
+static func set_hearing_display_mode(data: Dictionary, mode: String) -> bool:
+	if not HEARING_DISPLAY_MODES.has(mode):
+		return false
+	data["hearing_display_mode"] = mode
 	return true
 
 
@@ -288,6 +301,14 @@ static func set_debug_enabled(data: Dictionary, enabled: bool) -> void:
 	data["debug_enabled"] = enabled
 
 
+static func debug_unlock_all_weapons(data: Dictionary) -> bool:
+	return bool(data.get("debug_unlock_all_weapons", false))
+
+
+static func set_debug_unlock_all_weapons(data: Dictionary, enabled: bool) -> void:
+	data["debug_unlock_all_weapons"] = enabled
+
+
 static func debug_default(key: String) -> float:
 	return 0.0 if DEBUG_FLAT_KEYS.has(key) else 1.0
 
@@ -326,6 +347,7 @@ static func set_debug_value(data: Dictionary, key: String, value: float) -> void
 
 
 static func reset_debug(data: Dictionary) -> void:
+	data["debug_unlock_all_weapons"] = false
 	data["debug"] = {
 		"recoil_v": 1.0, "recoil_h": 1.0, "recoil_cap": 1.0,
 		"spread": 1.0, "damage": 1.0, "ads": 1.0, "move": 1.0, "vision": 1.0,

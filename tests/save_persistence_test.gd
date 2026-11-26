@@ -47,7 +47,7 @@ func _write(progress) -> void:
 	progress.data["xp"] = 81
 	progress.data["upgrades"] = {"hp": 2, "support": 1}
 	progress.data["support_charges"] = 1
-	progress.data["skill_level"] = 1 + int(progress.data["xp"]) / 20
+	progress.data["skill_level"] = progress.level_for_xp(81)
 	progress.set_loadout(&"saiga12k", &"slug")
 	progress.set_run_mode("waves")
 	progress.set_map_id("goliath_arena")
@@ -58,7 +58,8 @@ func _write(progress) -> void:
 func _verify(progress) -> void:
 	_check(FileAccess.file_exists(progress.save_path), "重开进程后存档文件仍在")
 	_check(int(progress.data["resources"]) == 42, "资源跨进程恢复：%d" % int(progress.data["resources"]))
-	_check(int(progress.data["xp"]) == 81 and int(progress.data["skill_level"]) == 5,
+	_check(int(progress.data["xp"]) == 81
+		and int(progress.data["skill_level"]) == progress.level_for_xp(81),
 		"XP 与等级跨进程恢复：xp=%d lv=%d" % [int(progress.data["xp"]), int(progress.data["skill_level"])])
 	var upgrades: Dictionary = progress.data["upgrades"]
 	_check(int(upgrades.get("hp", -1)) == 2 and int(upgrades.get("support", -1)) == 1,

@@ -33,7 +33,7 @@ static func buy_upgrade(data: Dictionary, upgrade_max_table: Dictionary,
 	data["resources"] = int(data["resources"]) - cost
 	data["upgrades"][String(id)] = upgrade_level(data, id) + 1
 	data["xp"] = int(data["xp"]) + 5
-	data["skill_level"] = 1 + int(data["xp"]) / 20
+	data["skill_level"] = META.level_for_xp(int(data["xp"]))
 	return true
 
 
@@ -90,7 +90,7 @@ static func buy_talent_2d(data: Dictionary, talent_max_table: Dictionary,
 	materials[String(material)] = maxi(0, int(materials.get(String(material), 0)) - material_cost)
 	data["talents_2d"][String(id)] = talent_2d_level(data, id) + 1
 	data["xp"] = int(data["xp"]) + 5
-	data["skill_level"] = 1 + int(data["xp"]) / 20
+	data["skill_level"] = META.level_for_xp(int(data["xp"]))
 	return true
 
 

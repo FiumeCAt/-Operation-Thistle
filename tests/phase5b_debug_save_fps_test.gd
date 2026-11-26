@@ -167,10 +167,11 @@ func _run() -> void:
 	_check(dm.current_tab() == "resources" and dm._tab_pages["resources"].visible,
 		"DebugMenu2D switches to resources tab")
 	dm._adjust_credits(1000)
-	dm._adjust_level(4)  # Lv.1 -> Lv.5 (XP = 80)
+	dm._adjust_level(4)  # Lv.1 -> Lv.5
 	dm._adjust_material(&"electronics", 25)
 	dm._adjust_material(&"military_alloy", 7)
-	_check(p.credits() == 1000 and int(p.data["skill_level"]) == 5 and int(p.data["xp"]) == 80
+	_check(p.credits() == 1000 and int(p.data["skill_level"]) == 5
+		and int(p.data["xp"]) == p.xp_for_level(5)
 		and p.material_count(&"electronics") == 25 and p.advanced_count(&"military_alloy") == 7,
 		"resources tab directly mutates credits (raw), level/XP, basic and advanced materials")
 	dm._grant_all_materials(10)
@@ -290,7 +291,8 @@ func _run() -> void:
 	slots_ui.set_overwrite_settings_on_import(false)
 	_check(slots_ui.request_import_from_path(v0_path) and slots_ui.confirm_pending_action(),
 		"legacy v0 save imports cleanly via version migration pipeline")
-	_check(p.credits() == 512 and int(p.data["skill_level"]) == 4 and int(p.data["version"]) == SAVE_STORE.VERSION,
+	_check(p.credits() == 512 and int(p.data["skill_level"]) == p.level_for_xp(60)
+		and int(p.data["version"]) == SAVE_STORE.VERSION,
 		"migrated v0 import normalizes level and current save version")
 
 	slots_ui.queue_free()

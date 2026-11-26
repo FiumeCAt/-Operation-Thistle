@@ -50,7 +50,7 @@ const STOW_TINT := Color(0.78, 0.82, 0.90, 1.0)
 ## 右键瞄准时移速降到一半，换取更低散布和更远视野。
 const ADS_SPEED_MUL := 0.5
 ## 翻滚战术躲闪默认参数（挂载 DollConfig .tres 时由资源覆写）。
-const DODGE_DISTANCE_M := 2.6
+const DODGE_DISTANCE_M := 3.2
 const DODGE_DURATION := 0.30
 const DODGE_IFRAME_SEC := 0.20
 const DODGE_COOLDOWN := 1.15
@@ -117,6 +117,9 @@ var _dodge_cd := 0.0
 var _dodge_cd_total := DODGE_COOLDOWN
 var _dodge_dir := Vector2.RIGHT
 var _dodge_afterimage_t := 0.0
+## 翻滚天赋倍率（由 Main2D 按 dodge_dist / dodge_cd 天赋写入）。
+var dodge_dist_mul := 1.0
+var dodge_cd_mul := 1.0
 var _saved_collision_layer := 2
 var _saved_collision_mask := 1
 var _dodge_collision_overridden := false
@@ -613,7 +616,9 @@ func try_dodge(dir_override := Vector2.ZERO) -> bool:
 	_dodge_total = maxf(_cfg_float(&"dodge_duration", DODGE_DURATION), 0.08)
 	_dodge_t = _dodge_total
 	_dodge_invuln_t = clampf(_cfg_float(&"dodge_iframe_sec", DODGE_IFRAME_SEC), 0.0, _dodge_total)
-	_dodge_cd_total = maxf(_cfg_float(&"dodge_cooldown", DODGE_COOLDOWN), _dodge_total + 0.05)
+	_dodge_cd_total = maxf(
+		_cfg_float(&"dodge_cooldown", DODGE_COOLDOWN) * clampf(dodge_cd_mul, 0.35, 2.0),
+		_dodge_total + 0.05)
 	_dodge_cd = _dodge_cd_total
 	_dodge_afterimage_t = 0.0
 	ads = false
@@ -709,7 +714,9 @@ func _physics_process(delta: float) -> void:
 
 	if is_dodging():
 		var u := get_dodge_progress()
-		var dist_px := maxf(_cfg_float(&"dodge_distance_m", DODGE_DISTANCE_M), 0.5) * UNITS.PIXELS_PER_METER
+		var dist_px := maxf(
+			_cfg_float(&"dodge_distance_m", DODGE_DISTANCE_M) * clampf(dodge_dist_mul, 0.5, 2.5),
+			0.5) * UNITS.PIXELS_PER_METER
 		var avg_speed := dist_px / maxf(_dodge_total, 0.05)
 		var dodge_speed := avg_speed * dodge_speed_factor(u)
 		if dbg_progress != null:

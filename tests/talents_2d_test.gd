@@ -129,9 +129,13 @@ func _run() -> void:
 		and _near(main.hearing.hearing_range_meters(), 13.5),
 		"hearing Lv.0 stays in classic ring mode at 13.5m")
 	main.hearing.set_hearing_level(3)
-	_check(main.hearing.is_acoustic_mode()
+	_check(not main.hearing.is_acoustic_mode() and main.hearing.is_ring_visible()
 		and _near(main.hearing.hearing_range_meters(), 13.5 * 1.30),
-		"hearing Lv.3 activates acoustic soundwave mode and +30% range")
+		"hearing Lv.3 keeps classic ring and extends range +30%")
+	main.hearing.set_hearing_level(5)
+	_check(main.hearing.is_acoustic_mode() and main.hearing.is_ring_visible()
+		and _near(main.hearing.hearing_range_meters(), 13.5 * 1.50),
+		"hearing Lv.5 unlocks acoustic ripples coexisting with classic ring at +50% range")
 
 	var pickup := LootPickup2D.new()
 	pickup.setup("resource", &"parts", 1, Callable())

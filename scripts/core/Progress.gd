@@ -18,6 +18,7 @@ const VERSION := SAVE_STORE.VERSION
 const DEFAULT_PATH := SAVE_STORE.DEFAULT_PATH
 const SLOT_COUNT := SAVE_STORE.SLOT_COUNT
 const AMMO_DISPLAY_MODES := SAVE_STORE.AMMO_DISPLAY_MODES
+const HEARING_DISPLAY_MODES := SAVE_STORE.HEARING_DISPLAY_MODES
 const WEAPON_IDS := SAVE_STORE.WEAPON_IDS
 const SPAWN_IDS := SAVE_STORE.SPAWN_IDS
 const EXTRACT_IDS := SAVE_STORE.EXTRACT_IDS
@@ -31,14 +32,19 @@ var CREDIT_GAIN_MUL := 0.5
 var TALENT_2D_MAX := {
 	"hp": 5, "gun": 5, "move": 5, "reload": 5, "scavenge": 5, "loading": 1,
 	"armor": 5, "magazine": 5, "reserve": 5, "magnet": 5, "hearing": 5,
+	"vision_range": 5, "vision_angle": 5, "dodge_dist": 5, "dodge_cd": 5,
 }
 var TALENT_2D_PREREQ := {
 	"move": "hp", "hearing": "hp", "reload": "gun", "magazine": "reload",
 	"loading": "magazine", "reserve": "magazine",
 	"armor": "move", "magnet": "scavenge",
+	"dodge_dist": "move", "dodge_cd": "dodge_dist",
+	"vision_range": "hearing", "vision_angle": "vision_range",
 }
 var TALENT_2D_MATERIAL := {
 	"hp": "energy", "move": "energy", "hearing": "energy",
+	"vision_range": "electronics", "vision_angle": "electronics",
+	"dodge_dist": "energy", "dodge_cd": "energy",
 	"gun": "electronics", "reload": "electronics", "magazine": "electronics",
 	"scavenge": "parts", "loading": "parts", "armor": "parts",
 	"reserve": "parts", "magnet": "electronics",
@@ -292,6 +298,46 @@ func add_materials(counts: Dictionary) -> void:
 func add_xp(amount: int) -> bool:
 	META_STORE.add_xp(data, amount)
 	return save_data()
+
+func max_level() -> int:
+	return META_STORE.max_level()
+
+func xp_for_level(level: int) -> int:
+	return META_STORE.xp_for_level(level)
+
+func level_for_xp(xp: int) -> int:
+	return META_STORE.level_for_xp(xp)
+
+func skill_level() -> int:
+	return META_STORE.level_for_xp(int(data.get("xp", 0)))
+
+func xp_progress() -> Dictionary:
+	return META_STORE.xp_progress(int(data.get("xp", 0)))
+
+func passive_enabled(id: String) -> bool:
+	return META_STORE.passive_enabled(data, id)
+
+func set_passive_enabled(id: String, enabled: bool) -> bool:
+	if not META_STORE.set_passive_enabled(data, id, enabled):
+		return false
+	var ok := save_data()
+	if ok:
+		progress_mutated.emit()
+	return ok
+
+func body_adapt_hp_bonus() -> float:
+	return META_STORE.body_adapt_hp_bonus(data)
+
+func ops_stipend_bonus() -> float:
+	return META_STORE.ops_stipend_bonus(data)
+
+func weapon_unlock_level(weapon_id: StringName) -> int:
+	return WeaponDB.unlock_level(weapon_id)
+
+func is_weapon_unlocked(weapon_id: StringName) -> bool:
+	if debug_unlock_all_weapons():
+		return true
+	return skill_level() >= WeaponDB.unlock_level(weapon_id)
 
 func set_credits(value: int) -> bool:
 	META_STORE.set_credits(data, value)
@@ -547,6 +593,12 @@ func muzzle_flash_mode() -> String:
 func set_muzzle_flash_mode(mode: String) -> bool:
 	return save_data() if SETTINGS_STORE.set_muzzle_flash_mode(data, mode) else false
 
+func hearing_display_mode() -> String:
+	return SETTINGS_STORE.hearing_display_mode(data)
+
+func set_hearing_display_mode(mode: String) -> bool:
+	return save_data() if SETTINGS_STORE.set_hearing_display_mode(data, mode) else false
+
 func set_view_zoom(value: float) -> bool:
 	SETTINGS_STORE.set_view_zoom(data, value)
 	return save_data()
@@ -655,6 +707,16 @@ func debug_enabled() -> bool:
 func set_debug_enabled(enabled: bool) -> bool:
 	SETTINGS_STORE.set_debug_enabled(data, enabled)
 	return save_data()
+
+func debug_unlock_all_weapons() -> bool:
+	return SETTINGS_STORE.debug_unlock_all_weapons(data)
+
+func set_debug_unlock_all_weapons(enabled: bool) -> bool:
+	SETTINGS_STORE.set_debug_unlock_all_weapons(data, enabled)
+	var ok := save_data()
+	if ok:
+		progress_mutated.emit()
+	return ok
 
 func debug_value(key: String) -> float:
 	return SETTINGS_STORE.debug_value(data, key)

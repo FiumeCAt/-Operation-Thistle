@@ -445,10 +445,15 @@ func _run() -> void:
 	var at50: Vector2 = eye + Vector2.from_angle(deg_to_rad(50.0)) * reach
 	_check(fog.tier_at(at50) == 1 and fog.tier_at(at70) == 0,
 		"iron sights leave 50deg dim and 70deg fogged")
-	# 灯光锥是 Y 方向拉伸 vision_mul 倍，判定同一几何：1.35× → 清晰半角 48.6°、总半角 66.8°。
+	# Phase 6A 解耦：瞄具 vision_mul 仅延长前向视野距离（不拉伸扭曲半角），视角宽度由广角视野天赋独立控制。
 	fog.vision_mul = 1.35
-	_check(fog.tier_at(at45) == 2 and fog.tier_at(at62) == 1 and fog.tier_at(at70) == 0,
-		"sight vision bonus widens both cones using the light's own stretch geometry")
+	var far_front: Vector2 = eye + Vector2(48.0 * fog.PIXELS_PER_METER, 0.0)
+	_check(fog.tier_at(far_front) == 2 and fog.tier_at(at50) == 1 and fog.tier_at(at70) == 0,
+		"sight vision bonus extends forward range without distorting cone half-angle")
+	fog.set_vision_talents(0, 3)
+	_check(fog.tier_at(at45) == 2 and fog.tier_at(at62) == 1 and fog.tier_at(at70) == 1,
+		"vision_angle talent cleanly widens both clear and peripheral cones")
+	fog.set_vision_talents(0, 0)
 	_check(absf(rad_to_deg(VisionFog2D.widened_half_angle(40.0, 1.35)) - 48.6) < 0.2,
 		"widened_half_angle follows atan(tan(base) x mul)")
 	_check(is_equal_approx(fog.CLEAR_RANGE_METERS, 40.0)

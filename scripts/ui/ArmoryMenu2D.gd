@@ -147,6 +147,11 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	PixelUI.apply_theme(self)
 	_build()
+	var p := _progress_node()
+	if p != null and p.has_signal("progress_mutated"):
+		p.progress_mutated.connect(func() -> void:
+			if visible:
+				_refresh())
 	visible = false
 
 

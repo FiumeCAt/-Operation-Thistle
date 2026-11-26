@@ -4,6 +4,8 @@ class_name ProgressSaveStore
 ## 负责默认结构、版本迁移框架、字段规范化与边界裁剪、主存档原子写盘 + 双备份环（.bak/.bak2）、
 ## 损坏快照保全与自动回退，以及 5 个手动槽位的读写与摘要生成。
 
+const META := preload("res://scripts/core/progress/MetaProgress.gd")
+
 const VERSION := 1
 const DEFAULT_PATH := "user://save_v1.json"
 const SLOT_COUNT := 5
@@ -23,6 +25,7 @@ const PICKUP_MERGE_MAX := 10.0
 
 const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
 const MUZZLE_FLASH_MODES := ["full", "partial", "off"]
+const HEARING_DISPLAY_MODES := ["both", "ripple", "ring"]
 const EXPORT_FORMAT := "operation_thistle_save"
 const EXPORT_VERSION := 1
 ## 本地偏好设置键集合：重置游戏进度（默认保留设置）或导入存档（可选不覆盖本地偏好）时保留这些键。
@@ -31,6 +34,7 @@ const PREFERENCE_KEYS := [
 	"volume", "sfx_volume", "music_volume",
 	"screen_shake", "bullet_trail_enabled", "hitstop_enabled", "shake_scale",
 	"sample_impacts", "hit_fx_level", "muzzle_flash_mode",
+	"hearing_display_mode",
 	"view_zoom", "minimap_shape", "minimap_scale",
 	"minimap_zoom", "minimap_zoom_min", "minimap_zoom_max",
 	"typewriter_enabled", "typewriter_speed",
@@ -39,7 +43,7 @@ const PREFERENCE_KEYS := [
 	"reticle_styles", "laser_color", "reticle_color",
 	"ui_theme", "ui_theme_color",
 	"show_fps",
-	"debug_enabled", "debug",
+	"debug_enabled", "debug", "debug_unlock_all_weapons",
 	"camera_mode", "bright_test", "settings_rev",
 ]
 const WEAPON_IDS := [
@@ -66,10 +70,12 @@ static func defaults() -> Dictionary:
 		"armor_mods_2d": {},
 		"xp": 0,
 		"skill_level": 1,
+		"passives_enabled": {"body_adapt": true, "ops_stipend": true},
 		"upgrades": {"hp": 0, "support": 0, "gun": 0, "fov": 0, "sight": 0},
 		"talents_2d": {
 			"hp": 0, "gun": 0, "move": 0, "reload": 0, "scavenge": 0, "loading": 0,
 			"armor": 0, "magazine": 0, "reserve": 0, "magnet": 0, "hearing": 0,
+			"vision_range": 0, "vision_angle": 0, "dodge_dist": 0, "dodge_cd": 0,
 		},
 		"loadout": {"weapon": "m870", "ammo": "buckshot"},
 		"loadout_2d": ["g17", "m870"],
@@ -92,6 +98,7 @@ static func defaults() -> Dictionary:
 		"sample_impacts": true,
 		"hit_fx_level": 1,
 		"muzzle_flash_mode": "partial",
+		"hearing_display_mode": "both",
 		"view_zoom": 100,
 		"minimap_shape": "square",
 		"minimap_scale": 1.0,
@@ -112,6 +119,7 @@ static func defaults() -> Dictionary:
 		"ui_theme_color": DEFAULT_UI_THEME_COLOR,
 		"show_fps": false,
 		"debug_enabled": false,
+		"debug_unlock_all_weapons": false,
 		"debug": {
 			"recoil_v": 1.0, "recoil_h": 1.0, "recoil_cap": 1.0,
 			"spread": 1.0, "damage": 1.0, "ads": 1.0, "move": 1.0, "vision": 1.0,
@@ -351,6 +359,8 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 	data["hit_fx_level"] = clampi(int(data.get("hit_fx_level", 1)), 0, 2)
 	var flash_mode := String(data.get("muzzle_flash_mode", "partial"))
 	data["muzzle_flash_mode"] = flash_mode if MUZZLE_FLASH_MODES.has(flash_mode) else "partial"
+	var hear_mode := String(data.get("hearing_display_mode", "both"))
+	data["hearing_display_mode"] = hear_mode if HEARING_DISPLAY_MODES.has(hear_mode) else "both"
 	data["view_zoom"] = clampf(
 		roundf(float(data.get("view_zoom", 100)) / 10.0) * 10.0, 20.0, 200.0)
 	var mm_shape := String(data.get("minimap_shape", "square"))
@@ -391,6 +401,13 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 	data["ui_theme_color"] = raw_theme_col if Color.html_is_valid(raw_theme_col) else DEFAULT_UI_THEME_COLOR
 	data["show_fps"] = bool(data.get("show_fps", false))
 	data["debug_enabled"] = bool(data.get("debug_enabled", false))
+	data["debug_unlock_all_weapons"] = bool(data.get("debug_unlock_all_weapons", false))
+	var raw_passives = data.get("passives_enabled", null)
+	var clean_passives := META.default_passives_enabled()
+	if typeof(raw_passives) == TYPE_DICTIONARY:
+		for k in META.PASSIVE_IDS:
+			clean_passives[k] = bool((raw_passives as Dictionary).get(k, true))
+	data["passives_enabled"] = clean_passives
 	var raw_dbg = data.get("debug", null)
 	if not (raw_dbg is Dictionary):
 		raw_dbg = {}
@@ -410,7 +427,7 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 		migrated = true
 	data["resources"] = maxi(0, int(data.get("resources", 0)))
 	data["xp"] = maxi(0, int(data.get("xp", 0)))
-	data["skill_level"] = 1 + int(data["xp"]) / 20
+	data["skill_level"] = META.level_for_xp(int(data["xp"]))
 	data["support_charges"] = maxi(0, int(data.get("support_charges", 2)))
 	data["active_slot"] = clampi(int(data.get("active_slot", 1)), 1, SLOT_COUNT)
 	data["version"] = VERSION

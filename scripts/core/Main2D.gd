@@ -358,17 +358,24 @@ func _ready() -> void:
 	vision.name = "VisionFog2D"
 	$World2D.add_child(vision)
 	vision.setup(doll, level, canvas_modulate, _ambient_color, vision_config)
+	if progress != null and progress.has_method("talent_2d_level"):
+		vision.set_vision_talents(
+			int(progress.talent_2d_level(&"vision_range")),
+			int(progress.talent_2d_level(&"vision_angle")))
 	laser_sight = LASER_SIGHT.new()
 	laser_sight.name = "LaserSight2D"
 	fx_layer.add_child(laser_sight)
 	laser_sight.setup(self, doll)
-	# 声纹：Lv.0 保留视觉强化后的脚下方向弧环；解锁生存「声纹感知」天赋后升级为声波涟漪并按级扩大听距。
+	# 声纹：Lv.0~4 脚下方向弧环 + 每级扩大听距；Lv.5 解锁声波涟漪（默认共存，可在设置切换）。
 	hearing = HEARING_INDICATOR.new()
 	hearing.name = "HearingIndicator2D"
 	add_child(hearing)
 	hearing.setup(self, doll)
-	if progress != null and progress.has_method("talent_2d_level"):
-		hearing.set_hearing_level(int(progress.talent_2d_level(&"hearing")))
+	if progress != null:
+		if progress.has_method("talent_2d_level"):
+			hearing.set_hearing_level(int(progress.talent_2d_level(&"hearing")))
+		if progress.has_method("hearing_display_mode"):
+			hearing.set_display_mode(String(progress.hearing_display_mode()))
 	# 连角色转发信号而不是武器节点：换枪会重建 WeaponRig2D，伤害结算不能跟着断。
 	doll.shot_fired.connect(_on_weapon_fired)
 	doll.died.connect(_on_player_died)
@@ -477,12 +484,16 @@ func _apply_talents() -> void:
 	if progress == null:
 		return
 	var hp_level := int(progress.talent_2d_level(&"hp"))
-	var base_hp := 100 + hp_level * 15
+	var body_adapt_pct := float(progress.body_adapt_hp_bonus()) if progress.has_method("body_adapt_hp_bonus") else 0.0
+	var base_hp := int(round(100.0 * (1.0 + float(hp_level) * 0.15 + body_adapt_pct)))
 	var move_mul := 1.0 + float(progress.talent_2d_level(&"move")) * 0.05
 	doll.walk_speed *= move_mul
 	doll.sprint_speed *= move_mul
+	doll.dodge_dist_mul = 1.0 + float(progress.talent_2d_level(&"dodge_dist")) * 0.08
+	doll.dodge_cd_mul = maxf(0.50, 1.0 - float(progress.talent_2d_level(&"dodge_cd")) * 0.08)
 	talent_accuracy = WeaponStatsModel.gun_accuracy_mul(int(progress.talent_2d_level(&"gun")))
-	talent_scavenge = 1.0 + float(progress.talent_2d_level(&"scavenge")) * 0.10
+	var stipend_pct := float(progress.ops_stipend_bonus()) if progress.has_method("ops_stipend_bonus") else 0.0
+	talent_scavenge = 1.0 + float(progress.talent_2d_level(&"scavenge")) * 0.10 + stipend_pct
 	# 屏幕震动 / 顿帧 / 震动倍率同步至 FeedbackSystem2D。
 	feedback_system.apply_settings(progress)
 	if doll != null and doll.weapon_rig != null:
@@ -562,6 +573,8 @@ func _on_settings_applied() -> void:
 		if hud != null:
 			hud.set_hp(doll.hp, doll.hp_max)
 			hud.set_armor(doll.armor, doll.armor_max)
+	if hearing != null and progress.has_method("hearing_display_mode"):
+		hearing.set_display_mode(String(progress.hearing_display_mode()))
 
 
 ## 立即套用弹道线条开关：只隐藏枪口到弹丸的长线，弹丸实体与命中不受影响。

@@ -11,9 +11,9 @@ class_name TalentTree2D
 signal closed
 
 const ICON_ROOT := "res://assets/art/ui/talents/"
-const CONTENT_SIZE := Vector2(1980, 800)
+const CONTENT_SIZE := Vector2(1880, 968)
 const CARD_SIZE := Vector2(280, 128)
-const ROOT_POS := Vector2(44, 344)
+const ROOT_POS := Vector2(44, 468)
 const ROOT_SIZE := Vector2(168, 152)
 const DRAG_THRESHOLD := 5.0
 
@@ -24,59 +24,75 @@ const BRANCH_COLORS := {
 }
 
 const BRANCH_META := {
-	"survival": {"tag": "▲ 机体防线 // SURVIVAL", "pos": Vector2(330, 14)},
-	"firepower": {"tag": "◆ 火力弹道 // FIREPOWER", "pos": Vector2(354, 326)},
-	"scavenge": {"tag": "▼ 战地搜刮 // SCAVENGE", "pos": Vector2(330, 512)},
+	"survival": {"tag": "▲ 机体防线 // SURVIVAL", "pos": Vector2(324, 8)},
+	"firepower": {"tag": "◆ 火力弹道 // FIREPOWER", "pos": Vector2(348, 480)},
+	"scavenge": {"tag": "▼ 战地搜刮 // SCAVENGE", "pos": Vector2(324, 788)},
 }
 
 const NODES: Array[Dictionary] = [
-	# 上枝 · 机体防线（生存绿，生命强化处分叉出体能防线与声纹感知）
+	# 上枝 · 机体防线（生存绿，生命强化分叉出体能防线与感知侦察线；均严格由左向右展开）
 	{"id": &"hp", "branch": "survival", "title": "生命强化", "icon": "hp_boost",
 		"desc": "生命上限 +15% / 级（+15）",
-		"detail": "强化 DOLL 机体的承伤结构。每级提高生命上限 15%（+15 点，上限 5 级 +75%），适合正面交火与长线作战。",
-		"pos": Vector2(330, 146), "prereq": &""},
+		"detail": "强化 DOLL 机体的承伤结构。每级提高生命上限 15%（+15 点，上限 5 级 +75%，与被动「机体适应」加算），适合正面交火与长线作战。",
+		"pos": Vector2(324, 194), "prereq": &""},
 	{"id": &"move", "branch": "survival", "title": "战术体能", "icon": "recon",
 		"desc": "移动速度 +5% / 级",
 		"detail": "优化腿部驱动与转向响应，每级提高行走与冲刺速度 5%（满级 +25%），便于快速穿越火线或撤离。",
-		"pos": Vector2(746, 44), "prereq": &"hp"},
+		"pos": Vector2(716, 86), "prereq": &"hp"},
 	{"id": &"armor", "branch": "survival", "title": "护甲强化", "icon": "armor_up",
 		"desc": "护甲上限 +20% / 级（+20）",
 		"detail": "为机体加装承力骨架与缓冲层，每级提高护甲耐久上限 20%（+20 点，满级 +100%），承受更多次命中。",
-		"pos": Vector2(1162, 40), "prereq": &"move"},
+		"pos": Vector2(1112, 34), "prereq": &"move"},
+	{"id": &"dodge_dist", "branch": "survival", "title": "战术步幅", "icon": "recon",
+		"desc": "闪避翻滚距离 +8% / 级",
+		"detail": "强化推进蹬踏力度，每级提升闪避翻滚位移距离 8%（满级 +40%），更易一步跨出敌方火力扇区与爆炸范围。",
+		"pos": Vector2(1112, 174), "prereq": &"move"},
+	{"id": &"dodge_cd", "branch": "survival", "title": "疾闪回气", "icon": "pump_speed",
+		"desc": "闪避翻滚冷却 -8% / 级",
+		"detail": "优化翻滚落地后的姿态衔接与气压回收，每级缩短闪避翻滚冷却时间 8%（满级 -40%），连续机动更流畅。",
+		"pos": Vector2(1508, 174), "prereq": &"dodge_dist"},
 	{"id": &"hearing", "branch": "survival", "title": "声纹感知", "icon": "support_protocol",
-		"desc": "声波涟漪 · 听距 +10% / 级",
-		"detail": "Lv.1 将脚下方向环升级为战术声波涟漪（屏内音源扩散波纹 + 屏外边缘来波前锋），且每级提升听声距离 10%（满级 +50%，最远 20.25m）。",
-		"pos": Vector2(746, 196), "prereq": &"hp"},
+		"desc": "听距 +10%/级 · Lv.5 涟漪",
+		"detail": "Lv.1~4 保留脚下经典方位环并每级提升听声距离 10%；Lv.5 满级（+50%，20.25m）解锁屏内扩散声波涟漪与屏外边缘来波前锋，默认与脚下环共存（可在设置中切换）。",
+		"pos": Vector2(716, 306), "prereq": &"hp"},
+	{"id": &"vision_range", "branch": "survival", "title": "远距侦察", "icon": "recon",
+		"desc": "视野与暗视 +10% / 级",
+		"detail": "强化光学传感器倍率与暗光增强模块，每级提高主视野锥距离与近身黑暗视野半径 10%（满级 +50%，100% 缩放立即可感），不畸变视角宽度。",
+		"pos": Vector2(1112, 314), "prereq": &"hearing"},
+	{"id": &"vision_angle", "branch": "survival", "title": "广角视野", "icon": "support_protocol",
+		"desc": "视野半角 +4.4°/级（≤82°）",
+		"detail": "加装广角光学棱镜，每级拓宽清晰视野与余光半角各 4.4°（满级 +22° → 清晰 62° / 总视野 82° 半角），同时保留背后视觉盲区压迫感。",
+		"pos": Vector2(1508, 314), "prereq": &"vision_range"},
 	# 中枝 · 火力弹道（火力橙，主干向右延伸并在弹匣扩容处上下双分叉）
 	{"id": &"gun", "branch": "firepower", "title": "枪械精度", "icon": "recoil_control",
 		"desc": "基础散布 -5% / 级",
 		"detail": "校准枪械瞄具与持握姿势，每级降低基础散布 5%（满级 -25%），让中远距离点射更稳定。",
-		"pos": Vector2(354, 356), "prereq": &""},
+		"pos": Vector2(348, 560), "prereq": &""},
 	{"id": &"reload", "branch": "firepower", "title": "快速换弹", "icon": "pump_speed",
 		"desc": "换弹时间 -5% / 级",
 		"detail": "改进换弹流程与供弹机构，每级缩短换弹时间 5%（满级 -25%），对高射速武器收益更高。",
-		"pos": Vector2(770, 356), "prereq": &"gun"},
+		"pos": Vector2(740, 560), "prereq": &"gun"},
 	{"id": &"magazine", "branch": "firepower", "title": "弹匣扩容", "icon": "magazine_up",
 		"desc": "弹匣容量 +10% / 级",
 		"detail": "改造弹匣与供弹坡道，每级提高所有武器的弹匣容量 10%（满级 +50%，管仓武器同步增加管仓容量）。",
-		"pos": Vector2(1186, 356), "prereq": &"reload"},
+		"pos": Vector2(1132, 560), "prereq": &"reload"},
 	{"id": &"reserve", "branch": "firepower", "title": "弹药储备", "icon": "ammo_reserve",
 		"desc": "备弹上限 +20% / 级",
 		"detail": "扩充弹药携行具与背包挂点，每级提高各口径备弹上限 20%（满级 +100%），显著缓解长局续航压力。",
-		"pos": Vector2(1612, 258), "prereq": &"magazine"},
+		"pos": Vector2(1528, 494), "prereq": &"magazine"},
 	{"id": &"loading", "branch": "firepower", "title": "持续装填", "icon": "ammo_carry",
 		"desc": "长按 R 逐发续装（管仓）",
 		"detail": "解锁管仓武器的连续装填手法：按住 R 会在一发装填完成后自动续压下一发，直到弹仓装满或备弹耗尽。仅对 M870、M1014 等管仓武器生效。",
-		"pos": Vector2(1612, 444), "prereq": &"magazine"},
+		"pos": Vector2(1528, 636), "prereq": &"magazine"},
 	# 下枝 · 战地搜刮（搜刮青，向下右展开蔓延）
 	{"id": &"scavenge", "branch": "scavenge", "title": "搜刮专家", "icon": "scavenger",
 		"desc": "撤离资源 +10% / 级",
-		"detail": "提高战利品回收与折算效率，每级提高撤离信用点与基础材料收益 10%（满级 +50%）。",
-		"pos": Vector2(330, 542), "prereq": &""},
+		"detail": "提高战利品回收与折算效率，每级提高撤离信用点与基础材料收益 10%（满级 +50%，与被动「行动津贴」加算）。",
+		"pos": Vector2(324, 818), "prereq": &""},
 	{"id": &"magnet", "branch": "scavenge", "title": "磁力拾取", "icon": "magnet",
 		"desc": "吸附范围 +20% / 级",
 		"detail": "在拾取装置上加装磁力线圈，每级扩大掉落物自动吸附范围 20%（满级 +100%），混战中不再漏捡。",
-		"pos": Vector2(746, 634), "prereq": &"scavenge"},
+		"pos": Vector2(716, 818), "prereq": &"scavenge"},
 ]
 
 var _panel: PanelContainer
@@ -93,6 +109,8 @@ var _detail_body: Label
 var _detail_meta: Label
 var _reset_one: Button
 var _reset_all: Button
+var _passive_buttons: Dictionary = {}
+var _passive_title: Label
 var _confirm_layer: Control
 var _dragging := false
 var _drag_moved := false
@@ -197,12 +215,14 @@ func _build() -> void:
 	_summary.visible = false
 	_summary_rich = PixelUI.rich_label(layout, "", 20, PixelUI.DIM, 2)
 
+	_build_passives_strip(layout)
+
 	var divider := HSeparator.new()
 	divider.add_theme_color_override("color", Color(PixelUI.AMBER, 0.75))
 	layout.add_child(divider)
 
 	_tree_area = Control.new()
-	_tree_area.custom_minimum_size = Vector2(1280, 520)
+	_tree_area.custom_minimum_size = Vector2(1280, 480)
 	_tree_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tree_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tree_area.clip_contents = true
@@ -224,6 +244,65 @@ func _build() -> void:
 
 	_build_detail(layout)
 	_build_bottom_bar(layout)
+
+
+func _build_passives_strip(parent: Node) -> void:
+	var bar_panel := PanelContainer.new()
+	var st := PixelUI.panel_style(Color(0.024, 0.036, 0.048, 0.94), 1, Color(PixelUI.CYAN, 0.42))
+	st.content_margin_left = 12
+	st.content_margin_right = 12
+	st.content_margin_top = 5
+	st.content_margin_bottom = 5
+	bar_panel.add_theme_stylebox_override("panel", st)
+	parent.add_child(bar_panel)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	bar_panel.add_child(row)
+	_passive_title = PixelUI.emphasize(
+		PixelUI.label(row, "角色等级被动 // PASSIVES", 17, PixelUI.CYAN), 2, 1)
+	_passive_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	for spec in [["body_adapt", "机体适应"], ["ops_stipend", "行动津贴"]]:
+		var pid := String(spec[0])
+		var btn := PixelUI.button(String(spec[1]), 30)
+		btn.add_theme_font_size_override("font_size", 16)
+		btn.custom_minimum_size.x = 290
+		btn.pressed.connect(_toggle_passive.bind(pid))
+		row.add_child(btn)
+		_passive_buttons[pid] = btn
+	var hint := PixelUI.label(row, "Lv.2 起每级 +1% · 可随时关闭做无被动挑战/测试", 15, PixelUI.DIM)
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+
+
+func _toggle_passive(id: String) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p == null or not p.has_method("set_passive_enabled"):
+		return
+	var next_state := not bool(p.passive_enabled(id))
+	p.set_passive_enabled(id, next_state)
+	var label := "机体适应" if id == "body_adapt" else "行动津贴"
+	_feedback.text = "角色被动「%s」已%s · 开始行动后生效" % [label, "启用" if next_state else "关闭"]
+	_feedback.add_theme_color_override("font_color", PixelUI.OK if next_state else PixelUI.AMBER_BRIGHT)
+	_refresh()
+
+
+func _refresh_passives(p: Node) -> void:
+	var slv := int(p.skill_level()) if p.has_method("skill_level") else int(p.data.get("skill_level", 1))
+	var max_lv := int(p.max_level()) if p.has_method("max_level") else 50
+	var pct := maxi(0, slv - 1)
+	if _passive_title != null:
+		_passive_title.text = "角色等级被动 (Lv.%d/%d)" % [slv, max_lv]
+	if _passive_buttons.has("body_adapt"):
+		var on := bool(p.passive_enabled("body_adapt")) if p.has_method("passive_enabled") else true
+		var btn: Button = _passive_buttons["body_adapt"]
+		btn.text = "%s 机体适应  +%d%% 基础生命" % ["[■]" if on else "[□]", pct if on else 0]
+		btn.add_theme_color_override("font_color", BRANCH_COLORS["survival"] if on else PixelUI.DIM)
+	if _passive_buttons.has("ops_stipend"):
+		var on := bool(p.passive_enabled("ops_stipend")) if p.has_method("passive_enabled") else true
+		var btn: Button = _passive_buttons["ops_stipend"]
+		btn.text = "%s 行动津贴  +%d%% 结算收益" % ["[■]" if on else "[□]", pct if on else 0]
+		btn.add_theme_color_override("font_color", PixelUI.GOLD if on else PixelUI.DIM)
 
 
 func _build_bottom_bar(parent: Node) -> void:
@@ -462,7 +541,10 @@ func _refresh() -> void:
 		return
 	var credits := int(p.credits())
 	var xp := int(p.data.get("xp", 0))
-	var slv := int(p.data.get("skill_level", 1))
+	var slv := int(p.skill_level()) if p.has_method("skill_level") else int(p.data.get("skill_level", 1))
+	var prog: Dictionary = p.xp_progress() if p.has_method("xp_progress") else {}
+	var xp_note := "Lv.%d (MAX)" % slv if bool(prog.get("is_max", false)) else "Lv.%d · 距下级 %d/%d" % [
+		slv, int(prog.get("in_level", 0)), maxi(1, int(prog.get("needed", 30)))]
 	var elec := int(p.material_count(&"electronics"))
 	var ener := int(p.material_count(&"energy"))
 	var parts := int(p.material_count(&"parts"))
@@ -474,7 +556,7 @@ func _refresh() -> void:
 	_summary_rich.text = "信用点 %s   ·   XP %s (%s)   ·   %s %s  /  %s %s  /  %s %s" % [
 		PixelUI.bb(str(credits), PixelUI.GOLD),
 		PixelUI.bb(str(xp), PixelUI.TEXT),
-		PixelUI.bb("Lv.%d" % slv, PixelUI.AMBER_BRIGHT),
+		PixelUI.bb(xp_note, PixelUI.AMBER_BRIGHT),
 		PixelUI.bb(ResourceDB.display_name(&"electronics"), BRANCH_COLORS["firepower"]),
 		PixelUI.bb(str(elec), PixelUI.TEXT),
 		PixelUI.bb(ResourceDB.display_name(&"energy"), BRANCH_COLORS["survival"]),
@@ -482,6 +564,7 @@ func _refresh() -> void:
 		PixelUI.bb(ResourceDB.display_name(&"parts"), BRANCH_COLORS["scavenge"]),
 		PixelUI.bb(str(parts), PixelUI.TEXT),
 	]
+	_refresh_passives(p)
 	var total_levels := 0
 	for def in NODES:
 		var id: StringName = def["id"]
@@ -568,11 +651,24 @@ func _effect_text(id: StringName, level: int) -> String:
 			return "移动速度 +%d%%" % (level * 5)
 		&"armor":
 			return "护甲上限 +%d%%（+%d 耐久）" % [level * 20, level * 20]
+		&"dodge_dist":
+			var dist := Doll2D.DODGE_DISTANCE_M * (1.0 + float(level) * 0.08)
+			return "闪避翻滚距离 +%d%%（%.2f m）" % [level * 8, dist]
+		&"dodge_cd":
+			var cd := Doll2D.DODGE_COOLDOWN * maxf(0.50, 1.0 - float(level) * 0.08)
+			return "闪避翻滚冷却 -%d%%（%.2f s）" % [level * 8, cd]
 		&"hearing":
-			if level <= 0:
-				return "默认方向声纹环 · 听声距离 %.1f m（Lv.1 解锁声波涟漪）" % HearingIndicator2D.HEARING_METERS
 			var meters := HearingIndicator2D.HEARING_METERS * (1.0 + float(level) * HearingIndicator2D.HEARING_TALENT_STEP)
-			return "声波涟漪模式已激活 · 听声距离 +%d%%（%.2f m）" % [level * 10, meters]
+			if level < HearingIndicator2D.ACOUSTIC_UNLOCK_LEVEL:
+				return "脚下经典方向环 · 听声距离 +%d%%（%.2f m，Lv.5 解锁声波涟漪）" % [level * 10, meters]
+			return "声波涟漪已解锁（默认与脚下环共存）· 听声距离 +%d%%（%.2f m）" % [level * 10, meters]
+		&"vision_range":
+			var dark_m := VisionFog2D.DARK_RADIUS_METERS * (1.0 + float(level) * VisionFog2D.VISION_RANGE_TALENT_STEP)
+			return "主视野与暗视距离 +%d%%（近身暗视 %.2f m）" % [level * 10, dark_m]
+		&"vision_angle":
+			var clear_deg := minf(VisionFog2D.CLEAR_HALF_DEG + float(level) * VisionFog2D.VISION_ANGLE_TALENT_STEP_DEG, VisionFog2D.MAX_CLEAR_HALF_DEG)
+			var total_deg := minf(VisionFog2D.TOTAL_HALF_DEG + float(level) * VisionFog2D.VISION_ANGLE_TALENT_STEP_DEG, VisionFog2D.MAX_TOTAL_HALF_DEG)
+			return "清晰半角 %.1f° / 总半角 %.1f°（全角 %.0f°）" % [clear_deg, total_deg, total_deg * 2.0]
 		&"gun":
 			return "基础散布 -%d%%" % (level * 5)
 		&"reload":
@@ -674,11 +770,11 @@ func _draw_tree_canvas() -> void:
 	c.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.012, 0.018, 0.026, 0.97), true)
 
 	# 三条分支柔和色域背景带，清晰区分生存绿 / 火力橙 / 搜刮青区域。
-	c.draw_rect(Rect2(0.0, 0.0, sz.x, 322.0), Color(BRANCH_COLORS["survival"], 0.024), true)
-	c.draw_rect(Rect2(0.0, 322.0, sz.x, 186.0), Color(BRANCH_COLORS["firepower"], 0.022), true)
-	c.draw_rect(Rect2(0.0, 508.0, sz.x, sz.y - 508.0), Color(BRANCH_COLORS["scavenge"], 0.024), true)
-	c.draw_line(Vector2(240.0, 322.0), Vector2(sz.x - 40.0, 322.0), Color(0.35, 0.45, 0.55, 0.14), 1.0)
-	c.draw_line(Vector2(240.0, 508.0), Vector2(sz.x - 40.0, 508.0), Color(0.35, 0.45, 0.55, 0.14), 1.0)
+	c.draw_rect(Rect2(0.0, 0.0, sz.x, 472.0), Color(BRANCH_COLORS["survival"], 0.024), true)
+	c.draw_rect(Rect2(0.0, 472.0, sz.x, 308.0), Color(BRANCH_COLORS["firepower"], 0.022), true)
+	c.draw_rect(Rect2(0.0, 780.0, sz.x, sz.y - 780.0), Color(BRANCH_COLORS["scavenge"], 0.024), true)
+	c.draw_line(Vector2(240.0, 472.0), Vector2(sz.x - 40.0, 472.0), Color(0.35, 0.45, 0.55, 0.14), 1.0)
+	c.draw_line(Vector2(240.0, 780.0), Vector2(sz.x - 40.0, 780.0), Color(0.35, 0.45, 0.55, 0.14), 1.0)
 
 	# 细微战术坐标网格，增强大画布空间延展感。
 	var grid := Color(0.28, 0.42, 0.56, 0.075)

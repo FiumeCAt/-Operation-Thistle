@@ -58,10 +58,21 @@ static func read_loadout(progress: Node, fallback_primary := &"m870",
 
 
 ## 把选中武器设为主或副武器（若与另一槽位冲突则自动互换），并写入 Progress。
+## 已装备在旧存档配装里的武器始终允许调换主/副槽位以保证旧档兼容；未解锁的新武器则阻止装备。
 static func equip_weapon(progress: Node, selected: StringName, primary: StringName,
 		secondary: StringName, primary_slot: bool) -> Dictionary:
 	if progress == null:
 		return {"ok": false, "primary": primary, "secondary": secondary, "message": ""}
+	var already_equipped := selected == primary or selected == secondary
+	if not already_equipped and progress.has_method("is_weapon_unlocked") \
+			and not bool(progress.is_weapon_unlocked(selected)):
+		var req_lv := WeaponDB.unlock_level(selected)
+		return {
+			"ok": false,
+			"primary": primary,
+			"secondary": secondary,
+			"message": "该武器需 Lv.%d 解锁（可在调试模式开启「全武器临时解锁」）" % req_lv,
+		}
 	var new_primary := primary
 	var new_secondary := secondary
 	if primary_slot:

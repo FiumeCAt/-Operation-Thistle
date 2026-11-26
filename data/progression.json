@@ -1,19 +1,34 @@
 {
-  "_note": "成长 / 天赋 / 经济表。credit_cost_mul 为所有信用点花费倍率（3.0 = +200%），credit_gain_mul 为信用点获取倍率。",
+  "_note": "成长 / 天赋 / 被动 / 经济表（Phase 6A）。xp_curve 决定非线性的 Lv.1~50 升级经验曲线；passives 决定可开关的角色等级被动倍率。",
   "credit_cost_mul": 3.0,
   "credit_gain_mul": 0.5,
+  "max_level": 50,
+  "xp_curve": {
+    "base": 30,
+    "linear": 15,
+    "quad": 2
+  },
+  "passives": {
+    "body_adapt_per_level": 0.01,
+    "ops_stipend_per_level": 0.01
+  },
   "upgrade_max": {"hp": 5, "support": 2, "gun": 3, "fov": 4, "sight": 4},
   "talent_max": {
     "hp": 5, "gun": 5, "move": 5, "reload": 5, "scavenge": 5, "loading": 1,
-    "armor": 5, "magazine": 5, "reserve": 5, "magnet": 5, "hearing": 5
+    "armor": 5, "magazine": 5, "reserve": 5, "magnet": 5, "hearing": 5,
+    "vision_range": 5, "vision_angle": 5, "dodge_dist": 5, "dodge_cd": 5
   },
   "talent_prereq": {
     "move": "hp", "hearing": "hp", "reload": "gun", "magazine": "reload",
     "loading": "magazine", "reserve": "magazine",
-    "armor": "move", "magnet": "scavenge"
+    "armor": "move", "magnet": "scavenge",
+    "dodge_dist": "move", "dodge_cd": "dodge_dist",
+    "vision_range": "hearing", "vision_angle": "vision_range"
   },
   "talent_material": {
     "hp": "energy", "move": "energy", "hearing": "energy",
+    "vision_range": "electronics", "vision_angle": "electronics",
+    "dodge_dist": "energy", "dodge_cd": "energy",
     "gun": "electronics", "reload": "electronics", "magazine": "electronics",
     "scavenge": "parts", "loading": "parts", "armor": "parts",
     "reserve": "parts", "magnet": "electronics"

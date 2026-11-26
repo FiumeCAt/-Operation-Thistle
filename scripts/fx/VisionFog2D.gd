@@ -20,6 +20,13 @@ const EYE_HEIGHT := 82.0
 ## 与旧 3D 视野系统保持一致：80° 清晰 + 120° 总视野；基础视野距离 40 米。
 const CLEAR_HALF_DEG := 40.0
 const TOTAL_HALF_DEG := 60.0
+## 视野广角天赋上限：总半角严格 ≤ 82°（全角 164°），保留背后视觉盲区压迫感。
+const MAX_CLEAR_HALF_DEG := 62.0
+const MAX_TOTAL_HALF_DEG := 82.0
+## 远距侦察天赋：每级 +10% 主锥距离与近身黑暗视野半径（Lv.5 达 1.50×，100% 缩放立即可感）。
+const VISION_RANGE_TALENT_STEP := 0.10
+## 广角视野天赋：每级 +4.4° 半角（Lv.5 达 +22° → 清晰 62° / 总视野 82° 上限）。
+const VISION_ANGLE_TALENT_STEP_DEG := 4.4
 const CLEAR_RANGE_METERS := 40.0
 const TOTAL_RANGE_METERS := 40.0
 ## 近身黑暗视野：背后也能看到一圈“相对暗”的范围。
@@ -62,8 +69,14 @@ var _enemy_timer := 0.0
 var _debug := false
 ## 每个敌人当前的目标可见层级（2/1/0），用于逐帧平滑淡入淡出，避免边缘突然消失。
 var _tiers: Dictionary = {}
-## 瞄具提供的视野距离倍率：跟随当前武器 vision_mul 平滑变化，1.0 = 默认视野。
+## 视野距离总倍率（瞄具 × 远距侦察天赋 × 调试视野倍率）；与视角宽度彻底解耦。
 var vision_mul := 1.0
+## 生存分支「远距侦察」与「广角视野」天赋等级（0..5）。
+var vision_range_level := 0
+var vision_angle_level := 0
+var _active_clear_half_deg := CLEAR_HALF_DEG
+var _active_total_half_deg := TOTAL_HALF_DEG
+var _ring_dim_cached := RING_DIM
 
 
 func _cfg_float(prop: StringName, fallback: float) -> float:
@@ -94,16 +107,54 @@ func setup(player_node: Node2D, level_node, modulate_node: CanvasModulate,
 	else:
 		ambient_color = AMBIENT
 	var half_px := TEX_SIZE * 0.5
-	var ring_dim := clampf(_cfg_float(&"ring_dim", RING_DIM), 0.0, 1.0)
-	_clear_light = _make_light(_cone_texture(ring_dim), _cfg_float(&"clear_energy", CLEAR_ENERGY),
+	_ring_dim_cached = clampf(_cfg_float(&"ring_dim", RING_DIM), 0.0, 1.0)
+	_active_clear_half_deg = clear_half_deg()
+	_active_total_half_deg = total_half_deg()
+	_clear_light = _make_light(
+		_cone_texture(_ring_dim_cached, _active_clear_half_deg, _active_total_half_deg),
+		_cfg_float(&"clear_energy", CLEAR_ENERGY),
 		TOTAL_RANGE_METERS * PIXELS_PER_METER / half_px, _cfg_color(&"light_color", LIGHT_COLOR))
 	_dark_light = _make_light(_radial_texture(), _cfg_float(&"dark_energy", DARK_ENERGY),
-		DARK_RADIUS_METERS * PIXELS_PER_METER / half_px, _cfg_color(&"dark_color", DARK_COLOR))
+		dark_radius_meters() * PIXELS_PER_METER / half_px, _cfg_color(&"dark_color", DARK_COLOR))
 	_self_light = _make_light(_radial_texture(), _cfg_float(&"self_energy", SELF_ENERGY),
 		SELF_RADIUS_METERS * PIXELS_PER_METER / half_px,
 		_cfg_color(&"self_color", Color(1.0, 0.95, 0.88)))
 	_self_light.shadow_enabled = false
 	set_debug(false)
+
+
+## 配置「远距侦察 / 广角视野」天赋等级：距离倍率与半角完全解耦，光照贴图按实际半角重建无拉伸畸变。
+func set_vision_talents(range_lv: int, angle_lv: int) -> void:
+	vision_range_level = maxi(0, range_lv)
+	vision_angle_level = maxi(0, angle_lv)
+	_active_clear_half_deg = clear_half_deg()
+	_active_total_half_deg = total_half_deg()
+	var half_px := TEX_SIZE * 0.5
+	if _clear_light != null:
+		_clear_light.texture = _cone_texture(_ring_dim_cached, _active_clear_half_deg, _active_total_half_deg)
+		_clear_light.scale = Vector2.ONE
+	if _dark_light != null:
+		_dark_light.texture_scale = dark_radius_meters() * PIXELS_PER_METER / half_px
+	if not _debug and player != null and is_instance_valid(player):
+		refresh_enemies()
+
+
+func vision_range_talent_mul() -> float:
+	return 1.0 + float(vision_range_level) * VISION_RANGE_TALENT_STEP
+
+
+func dark_radius_meters() -> float:
+	return DARK_RADIUS_METERS * vision_range_talent_mul()
+
+
+func clear_half_deg() -> float:
+	return clampf(CLEAR_HALF_DEG + float(vision_angle_level) * VISION_ANGLE_TALENT_STEP_DEG,
+		CLEAR_HALF_DEG, MAX_CLEAR_HALF_DEG)
+
+
+func total_half_deg() -> float:
+	return clampf(TOTAL_HALF_DEG + float(vision_angle_level) * VISION_ANGLE_TALENT_STEP_DEG,
+		TOTAL_HALF_DEG, MAX_TOTAL_HALF_DEG)
 
 
 ## 切换调试照明：F7 后恢复原亮度并显示全部敌人，方便排查碰撞/寻路。
@@ -164,10 +215,10 @@ func _process(delta: float) -> void:
 	_self_light.global_position = origin
 	_aim_angle = lerp_angle(_aim_angle, aim_angle(), clampf(delta * 14.0, 0.0, 1.0))
 	_clear_light.rotation = _aim_angle
-	# 瞄具增加视野距离：主锥（含余光）同步放大，近身黑暗视野保持不变。
-	var target_vision := 1.0
+	# 视野距离倍率（瞄具 × 远距侦察天赋 × 调试视野倍率）仅缩放距离；半角由广角视野天赋独立控制，彻底取消 Y 轴拉伸畸变。
+	var target_vision := vision_range_talent_mul()
 	if player.weapon_rig != null:
-		target_vision = clampf(float(player.weapon_rig.vision_mul), 1.0, 2.2)
+		target_vision *= clampf(float(player.weapon_rig.vision_mul), 1.0, 2.2)
 	var dbg_progress := get_node_or_null("/root/Progress")
 	if dbg_progress != null:
 		target_vision *= float(dbg_progress.debug_mul("vision"))
@@ -175,8 +226,8 @@ func _process(delta: float) -> void:
 	vision_mul = lerpf(vision_mul, target_vision, clampf(delta * 6.0, 0.0, 1.0))
 	var half_px := TEX_SIZE * 0.5
 	_clear_light.texture_scale = TOTAL_RANGE_METERS * PIXELS_PER_METER * vision_mul / half_px
-	# 视野倍率同时拓宽视野锥：只拉长距离的话，32 米早已超出屏幕，玩家看不出变化。
-	_clear_light.scale = Vector2(1.0, maxf(vision_mul, 1.0))
+	_clear_light.scale = Vector2.ONE
+	_dark_light.texture_scale = dark_radius_meters() * PIXELS_PER_METER / half_px
 	_enemy_timer -= delta
 	if _enemy_timer <= 0.0:
 		_enemy_timer = ENEMY_REFRESH
@@ -235,8 +286,8 @@ func tier_for_enemy(enemy_feet: Vector2) -> int:
 			if best_cone == 2:
 				break
 	if best_cone == 0:
-		# 近身黑暗视野也核对双脚距离，避免站在角色正下方时被眼高 82px 拉出 4.5m 半径。
-		if enemy_feet.distance_to(_los_position()) <= DARK_RADIUS_METERS * PIXELS_PER_METER:
+		# 近身黑暗视野也核对双脚距离，并随「远距侦察」天赋同步缩放。
+		if enemy_feet.distance_to(_los_position()) <= dark_radius_meters() * PIXELS_PER_METER:
 			best_cone = 1
 	if best_cone == 0:
 		return 0
@@ -261,20 +312,21 @@ func _cone_tier(world_pos: Vector2) -> int:
 	var origin := _eye_position()
 	var offset: Vector2 = world_pos - origin
 	var dist: float = offset.length()
+	var dark_px := dark_radius_meters() * PIXELS_PER_METER
 	var max_range: float = maxf(
 		maxf(CLEAR_RANGE_METERS, TOTAL_RANGE_METERS) * PIXELS_PER_METER * vision_mul,
-		DARK_RADIUS_METERS * PIXELS_PER_METER)
+		dark_px)
 	if dist > max_range:
 		return 0
 	var angle := 0.0 if dist <= 1.0 else absf(angle_difference(_aim_angle, offset.angle()))
-	# 灯光锥是 Y 方向拉伸 vision_mul 倍，判定与之同一条几何：半角 = atan(tan(基础半角) × 倍率)。
-	var clear_half := widened_half_angle(CLEAR_HALF_DEG, vision_mul)
-	var total_half := widened_half_angle(TOTAL_HALF_DEG, vision_mul)
+	# 视野距离（vision_mul）与半角（广角视野天赋）彻底解耦，直接匹配按角烘焙的 _cone_texture。
+	var clear_half := deg_to_rad(clear_half_deg())
+	var total_half := deg_to_rad(total_half_deg())
 	var in_clear: bool = dist <= CLEAR_RANGE_METERS * PIXELS_PER_METER * vision_mul \
 		and angle <= clear_half
 	var in_ring: bool = dist <= TOTAL_RANGE_METERS * PIXELS_PER_METER * vision_mul \
 		and angle <= total_half
-	var in_dark: bool = dist <= DARK_RADIUS_METERS * PIXELS_PER_METER
+	var in_dark: bool = dist <= dark_px
 	if not (in_clear or in_ring or in_dark):
 		return 0
 	return 2 if in_clear else 1
@@ -356,13 +408,16 @@ static func widened_half_angle(base_deg: float, mul: float) -> float:
 	return atan(half)
 
 
-## 清晰视野锥：40° 内满亮，过渡到 ring_dim 亮度的外圈余光，60° 收边；各段 smoothstep 连续衔接。
-static func _cone_texture(ring_dim := RING_DIM) -> ImageTexture:
-	var key := "cone_%.3f" % ring_dim
+## 清晰视野锥：按指定 clear_half_deg / total_half_deg 烘焙（默认 40°/60°，广角满级 62°/82°），各段 smoothstep 连续衔接。
+static func _cone_texture(ring_dim := RING_DIM, clear_deg := CLEAR_HALF_DEG,
+		total_deg := TOTAL_HALF_DEG) -> ImageTexture:
+	var clean_clear := clampf(clear_deg, 10.0, MAX_CLEAR_HALF_DEG)
+	var clean_total := clampf(maxf(total_deg, clean_clear + 8.0), 18.0, MAX_TOTAL_HALF_DEG)
+	var key := "cone_%.3f_%.1f_%.1f" % [ring_dim, clean_clear, clean_total]
 	if _textures.has(key):
 		return _textures[key] as ImageTexture
-	var clear_half := deg_to_rad(CLEAR_HALF_DEG)
-	var total_half := deg_to_rad(TOTAL_HALF_DEG)
+	var clear_half := deg_to_rad(clean_clear)
+	var total_half := deg_to_rad(clean_total)
 	var tex := _build_texture(func(angle: float, radius: float) -> float:
 		if radius > 1.0 or angle > total_half:
 			return 0.0
@@ -370,10 +425,10 @@ static func _cone_texture(ring_dim := RING_DIM) -> ImageTexture:
 		var radial := clampf(1.0 - pow(radius, 3.2), 0.0, 1.0)
 		var edge := smoothstep(0.62, 1.0, radius)
 		radial *= lerpf(1.0, 0.50, edge)
-		# 角向：中心满亮 → 清晰边缘外 8° 降到余光 → 总视野边缘 22° 内渐隐为 0。
-		var core := 1.0 - smoothstep(clear_half - deg_to_rad(16.0), clear_half + deg_to_rad(8.0), angle)
+		# 角向：中心满亮 → 清晰边缘外 8° 降到余光 → 总视野边缘 20° 内渐隐为 0。
+		var core := 1.0 - smoothstep(clear_half - deg_to_rad(14.0), clear_half + deg_to_rad(8.0), angle)
 		var angular := lerpf(ring_dim, 1.0, core)
-		angular *= smoothstep(0.0, deg_to_rad(22.0), total_half - angle)
+		angular *= smoothstep(0.0, deg_to_rad(20.0), total_half - angle)
 		return radial * angular)
 	_textures[key] = tex
 	return tex

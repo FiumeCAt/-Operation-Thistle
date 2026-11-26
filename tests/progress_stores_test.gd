@@ -76,12 +76,12 @@ func _run() -> void:
 	var m := SAVE_STORE.defaults()
 	META_STORE.add_resources(m, 100, 0.5)
 	META_STORE.add_materials(m, {"electronics": 4, "weapon_parts": 2, "unknown": 99})
-	META_STORE.add_xp(m, 45)
+	META_STORE.add_xp(m, META_STORE.xp_for_level(3))
 	_check(META_STORE.credits(m) == 50
 		and META_STORE.material_count(m, &"electronics") == 4
 		and META_STORE.advanced_count(m, &"weapon_parts") == 2
 		and int(m["skill_level"]) == 3,
-		"MetaProgress applies credit gain multiplier, material buckets, and XP level")
+		"MetaProgress applies credit gain multiplier, material buckets, and non-linear XP level")
 	_check(not META_STORE.set_deployment(m, &"bogus", &"east")
 		and META_STORE.set_deployment(m, &"abandoned", &"south")
 		and String(META_STORE.deployment(m)["spawn"]) == "abandoned",

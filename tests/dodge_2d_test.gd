@@ -77,7 +77,7 @@ func _run() -> void:
 	await physics_frame
 
 	_check(doll.config != null and "dodge_distance_m" in doll.config
-		and is_equal_approx(float(doll.config.get("dodge_distance_m")), 2.6),
+		and is_equal_approx(float(doll.config.get("dodge_distance_m")), 3.2),
 		"DollConfig exposes tunable dodge parameters")
 
 	var started_dirs: Array[Vector2] = []
@@ -122,13 +122,13 @@ func _run() -> void:
 	doll.take_damage(10.0, 200.0)
 	_check(doll.hp < hp0 or doll.armor < arm0, "player can take damage again once i-frames expire")
 
-	# 2c) 翻滚结束：总位移接近 2.6m (166.4px)，碰撞层/旋转复位，冷却未满前仍不可再滚。
+	# 2c) 翻滚结束：总位移接近 3.2m (204.8px)，碰撞层/旋转复位，冷却未满前仍不可再滚。
 	await _step_physics(8)
 	var moved_x := doll.global_position.x - start_pos.x
 	_check(not doll.is_dodging() and ended_count[0] == 1,
 		"dodge ends cleanly and emits dodge_ended")
-	_check(moved_x >= 140.0 and moved_x <= 195.0,
-		"open-space dodge travels expected distance (~166px, actual %.1fpx)" % moved_x)
+	_check(moved_x >= 175.0 and moved_x <= 235.0,
+		"open-space dodge travels expected distance (~205px, actual %.1fpx)" % moved_x)
 	_check((doll.collision_layer & 2) == 2 and is_equal_approx(doll.body.rotation, 0.0),
 		"collision layer 2 and body rotation restore on dodge end")
 	_check(not doll.can_dodge() and doll.get_dodge_cooldown_left() > 0.4,

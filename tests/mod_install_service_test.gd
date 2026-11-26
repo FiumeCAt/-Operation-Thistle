@@ -44,15 +44,19 @@ func _run() -> void:
 	var sniper_order := SERVICE.pinned_weapon_order(&"m870", &"g17", &"sniper")
 	_check(sniper_order == ["awm"], "sniper category isolates AWM in its own dedicated tab")
 
-	# 2. 装备写档与主副互换
+	# 2. 装备写档与主副互换（含等级解锁门禁校验）
 	var eq1 := SERVICE.equip_weapon(p, &"g17", &"m870", &"g17", true)
 	_check(bool(eq1["ok"]) and eq1["primary"] == &"g17" and eq1["secondary"] == &"m870"
 		and p.loadout_2d() == ["g17", "m870"],
 		"equipping secondary into primary swaps slots cleanly")
+	var eq_locked := SERVICE.equip_weapon(p, &"akm", &"g17", &"m870", false)
+	_check(not bool(eq_locked["ok"]) and p.loadout_2d() == ["g17", "m870"],
+		"equipping locked AKM at Lv.1 is blocked with unlock feedback")
+	p.set_skill_level(WeaponDB.unlock_level(&"akm"))
 	var eq2 := SERVICE.equip_weapon(p, &"akm", &"g17", &"m870", false)
 	_check(bool(eq2["ok"]) and eq2["secondary"] == &"akm"
 		and p.loadout_2d() == ["g17", "akm"],
-		"equipping new weapon into secondary updates loadout")
+		"equipping unlocked weapon into secondary updates loadout")
 
 	# 3. 费用/材料文案与瞄具摘要
 	var comp := ModDB.option("muzzle", "compensator", false, "m870")

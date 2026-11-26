@@ -244,11 +244,32 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 	var active_ammo_id: StringName = StringName(stats.get("ammo_id", base.ammo_id))
 	_refresh_ammo_bar(selected, active_ammo_id)
 
-	detail_title.text = base.display_name
+	var selected_unlocked := true
+	if progress != null and progress.has_method("is_weapon_unlocked"):
+		selected_unlocked = bool(progress.is_weapon_unlocked(selected))
+	var selected_equipped := selected == primary or selected == secondary
+	var can_equip_selected := selected_unlocked or selected_equipped
+	var req_lv := maxi(1, int(base.unlock_level))
+	var cur_lv := int(progress.skill_level()) if (progress != null and progress.has_method("skill_level")) else 1
+
+	detail_title.text = base.display_name + ("" if can_equip_selected else "  [需 Lv.%d]" % req_lv)
 	if detail_subtitle != null:
 		var cat_label := WeaponDB.weapon_category_name(base.category)
 		var mode_label := "全自动 / 半自动" if bool(stats["auto"]) else "仅半自动"
-		detail_subtitle.text = "%s · %s · 悬浮数据行查看加成来源" % [cat_label, mode_label]
+		if can_equip_selected:
+			detail_subtitle.text = "%s · %s · 解锁 Lv.%d · 悬浮数据行查看加成来源" % [
+				cat_label, mode_label, req_lv]
+			detail_subtitle.add_theme_color_override("font_color", PixelUI.DIM)
+		else:
+			detail_subtitle.text = "%s · %s · 需 Lv.%d 解锁（当前 Lv.%d，可预览属性）" % [
+				cat_label, mode_label, req_lv, cur_lv]
+			detail_subtitle.add_theme_color_override("font_color", PixelUI.DANGER)
+	if primary_button != null:
+		primary_button.disabled = not can_equip_selected
+		primary_button.text = "设为主武器" if can_equip_selected else "需 Lv.%d 解锁" % req_lv
+	if secondary_button != null:
+		secondary_button.disabled = not can_equip_selected
+		secondary_button.text = "设为副武器" if can_equip_selected else "需 Lv.%d 解锁" % req_lv
 	var icon_path := "res://assets/art/weapons/%s/icon.png" % selected
 	detail_icon.texture = load(icon_path) if ResourceLoader.exists(icon_path) else null
 
@@ -352,9 +373,18 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 			slot = " [主]"
 		elif id == secondary:
 			slot = " [副]"
-		button.text = "%s%s%s\n弹匣容量 %d · 射程 %.0fm · 弹速 %d m/s · %s" % [
-			marker, weapon.display_name, slot, w_mag, w_range, w_speed, w_fire,
+		var w_unlocked := true
+		if progress != null and progress.has_method("is_weapon_unlocked"):
+			w_unlocked = bool(progress.is_weapon_unlocked(id))
+		var lock_tag := ""
+		if not w_unlocked and id != primary and id != secondary:
+			lock_tag = " [需 Lv.%d]" % maxi(1, int(weapon.unlock_level))
+		button.text = "%s%s%s%s\n弹匣容量 %d · 射程 %.0fm · 弹速 %d m/s · %s" % [
+			marker, weapon.display_name, slot, lock_tag, w_mag, w_range, w_speed, w_fire,
 		]
+		var btn_col := PixelUI.AMBER_BRIGHT if id == selected \
+			else (PixelUI.TEXT if (w_unlocked or id == primary or id == secondary) else PixelUI.DIM)
+		button.add_theme_color_override("font_color", btn_col)
 
 	if tooltip_view != null:
 		tooltip_view.refresh_tooltips(selected, installed, reload_talent, ammo,

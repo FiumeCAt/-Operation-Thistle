@@ -85,10 +85,11 @@ func _run() -> void:
 	_check(categories.size() == 5, "通用弹药 5 类")
 	_check(WeaponDB.get_weapon(&"g17").ammo_category == &"light"
 		and WeaponDB.get_weapon(&"akm").ammo_category == &"medium"
+		and WeaponDB.get_weapon(&"fal").ammo_category == &"medium"
 		and WeaponDB.get_weapon(&"awm").ammo_category == &"heavy"
 		and WeaponDB.get_weapon(&"m870").ammo_category == &"shotgun",
-		"武器映射到通用弹药种类")
-	_check(int(categories["medium"]["reserve_max"]) == 120, "中型弹通用备弹 120")
+		"武器映射到通用弹药种类（FAL 走中型弹池，与 AWM 重型弹分离）")
+	_check(int(categories["medium"]["reserve_max"]) == 160, "中型弹通用备弹 160")
 	_check(WeaponDB.category_of(&"9mm") == &"light"
 		and WeaponDB.category_of(&"45acp") == &"light"
 		and WeaponDB.category_of(&"556nato") == &"medium"

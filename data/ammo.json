@@ -12,9 +12,9 @@
     "medium": {
       "display_name": "中型弹",
       "short": "中型",
-      "reserve_max": 120,
+      "reserve_max": 160,
       "color": "#c8ffcf",
-      "note": "小口径与中间威力步枪弹通用"
+      "note": "小口径、中间威力及全自动战斗步枪（含 FAL）通用"
     },
     "heavy": {
       "display_name": "重型弹",

@@ -291,9 +291,14 @@ func _run() -> void:
 	await process_frame
 	menu.armory._equip(true)
 	_check(p.loadout_2d() == ["g17", "m870"], "equipping G17 swaps it into the primary slot")
+	# 未达解锁等级时，M1014 (Lv.4) 不可直接装备；升至 Lv.4 后可正常装备。
 	menu.armory._select(&"m1014")
 	menu.armory._equip(false)
-	_check(p.loadout_2d() == ["g17", "m1014"], "equipping M1014 fills the secondary slot")
+	_check(p.loadout_2d() == ["g17", "m870"], "locked M1014 is rejected at Lv.1")
+	p.set_skill_level(WeaponDB.unlock_level(&"m1014"))
+	menu.armory._refresh()
+	menu.armory._equip(false)
+	_check(p.loadout_2d() == ["g17", "m1014"], "equipping M1014 fills the secondary slot once unlocked")
 	_check(menu.armory._weapon_list.get_child(0) == menu.armory._weapon_buttons[&"g17"]
 		and menu.armory._weapon_list.get_child(1) == menu.armory._weapon_buttons[&"m1014"],
 		"pinned order follows the new loadout after equipping")

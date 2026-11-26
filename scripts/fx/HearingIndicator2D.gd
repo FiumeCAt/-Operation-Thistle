@@ -1,17 +1,17 @@
 extends CanvasLayer
 class_name HearingIndicator2D
-## 双模式战术声纹系统：
-## - 默认模式（生存天赋「声纹感知」Lv.0）：保留角色脚下战术方位弧环，
-##   叠加 12 向精细刻度、三层柔和霓虹辉光、威胁色渐变（冷静青 → 紧迫橙红）与外指三角标；
-## - 声波模式（「声纹感知」Lv.1~5）：每级额外提升 +10% 听声距离（最高 +50%），
-##   屏幕内移动敌人（含迷雾/墙后，迷雾内附带轻微定位模糊防透视）释放双层扩散声波涟漪，
-##   屏幕外音源沿视口边缘推进三层弧形来波前锋。
+## 双模式战术声纹系统（Phase 6A 重构）：
+## - Lv.0~4：保留角色脚下战术方位弧环，并每级扩大听声距离 +10%（13.5m → 20.25m）；
+## - Lv.5（满级解锁）：解锁世界坐标声波扩散涟漪与视口边缘来波前锋，默认与脚下经典环共存
+##   （共存时自动调低脚下环透明度防遮挡），玩家可在设置中自由切换「共存 / 仅涟漪 / 仅脚下环」。
 
 const UNITS := preload("res://scripts/core/GameUnits.gd")
 const TILE := UNITS.TILE
 ## 基础听声距离（米）：13.5m（864 px）；「声纹感知」天赋每级 +10%。
 const HEARING_METERS := 13.5
 const HEARING_TALENT_STEP := 0.10
+const ACOUSTIC_UNLOCK_LEVEL := 5
+const COEXIST_RING_ALPHA_MUL := 0.48
 const CLASSIC_RADIUS := 92.0
 const BUCKETS := 12
 const ARC_DEG := 28.0
@@ -29,8 +29,10 @@ const COLOR_URGENT := Color(1.0, 0.52, 0.26)
 var main: Node = null
 var player: Node2D = null
 var _view: Control
-## 生存分支「声纹感知」天赋等级：0 = 经典优化环；>=1 = 声波扩散模式 + 每级听声距离 +10%。
+## 生存分支「声纹感知」天赋等级：0~4 经典环 + 每级听距 +10%；Lv.5 解锁声波涟漪（默认共存）。
 var hearing_level := 0
+## Lv.5 解锁后的显示偏好："both"（共存） / "ripple"（仅涟漪） / "ring"（仅脚下环）。
+var display_mode := "both"
 ## 12 方向声纹强度（两种模式统一维护，保留供测试与外部查询）。
 var _alphas: Array[float] = []
 var _urgent: Array[float] = []
@@ -58,13 +60,16 @@ func setup(main_node, player_node) -> void:
 		_alphas[i] = 0.0
 		_urgent[i] = 0.0
 	var progress := get_node_or_null("/root/Progress")
-	if progress != null and progress.has_method("talent_2d_level"):
-		set_hearing_level(int(progress.talent_2d_level(&"hearing")))
+	if progress != null:
+		if progress.has_method("talent_2d_level"):
+			set_hearing_level(int(progress.talent_2d_level(&"hearing")))
+		if progress.has_method("hearing_display_mode"):
+			set_display_mode(String(progress.hearing_display_mode()))
 
 
 func set_hearing_level(level: int) -> void:
 	hearing_level = maxi(level, 0)
-	if hearing_level <= 0:
+	if not is_acoustic_mode():
 		_ripples.clear()
 		_offscreen_dirs.clear()
 		_emit_cd.clear()
@@ -72,8 +77,26 @@ func set_hearing_level(level: int) -> void:
 		_view.queue_redraw()
 
 
+func set_display_mode(mode: String) -> void:
+	display_mode = mode if ["both", "ripple", "ring"].has(mode) else "both"
+	if not is_acoustic_mode():
+		_ripples.clear()
+		_offscreen_dirs.clear()
+		_emit_cd.clear()
+	if _view != null:
+		_view.queue_redraw()
+
+
+func is_acoustic_unlocked() -> bool:
+	return hearing_level >= ACOUSTIC_UNLOCK_LEVEL
+
+
 func is_acoustic_mode() -> bool:
-	return hearing_level >= 1
+	return is_acoustic_unlocked() and display_mode != "ring"
+
+
+func is_ring_visible() -> bool:
+	return (not is_acoustic_unlocked()) or display_mode != "ripple"
 
 
 func hearing_range_meters() -> float:
@@ -194,17 +217,19 @@ func _draw_view() -> void:
 	var ct: Transform2D = _view.get_viewport().get_canvas_transform()
 	var vp_size := _view.get_viewport().get_visible_rect().size
 	var zoom_scale := maxf(ct.get_scale().x, 0.4)
-	if is_acoustic_mode():
+	var acoustic := is_acoustic_mode()
+	if is_ring_visible():
+		var ring_mul := COEXIST_RING_ALPHA_MUL if acoustic else 1.0
+		_draw_classic_ring(ct, zoom_scale, ring_mul)
+	if acoustic:
 		_draw_acoustic_mode(ct, vp_size, zoom_scale)
-	else:
-		_draw_classic_ring(ct, zoom_scale)
 
 
-## 默认模式（Lv.0）：视觉升级后的角色脚下方向声纹环。
-func _draw_classic_ring(ct: Transform2D, zoom_scale: float) -> void:
+## 角色脚下方向声纹环；与声波涟漪共存时自动降低透明度（alpha_mul）避免遮挡画面。
+func _draw_classic_ring(ct: Transform2D, zoom_scale: float, alpha_mul := 1.0) -> void:
 	var center: Vector2 = ct * (player.global_position + Vector2(0.0, -14.0))
 	var ring_r := CLASSIC_RADIUS * clampf(zoom_scale, 0.65, 1.35)
-	var base_alpha := lerpf(RING_ALPHA_IDLE, RING_ALPHA_ACTIVE, clampf(_max_signal, 0.0, 1.0))
+	var base_alpha := lerpf(RING_ALPHA_IDLE, RING_ALPHA_ACTIVE, clampf(_max_signal, 0.0, 1.0)) * alpha_mul
 
 	# 底层战术细环 + 12 向微小罗盘刻度线。
 	_view.draw_arc(center, ring_r, 0.0, TAU, 72,
@@ -222,13 +247,14 @@ func _draw_classic_ring(ct: Transform2D, zoom_scale: float) -> void:
 	# 活跃方向声纹弧：柔和外晕 + 清晰主体弧 + 亮芯 + 外指小三角标。
 	var half := deg_to_rad(ARC_DEG) * 0.5
 	for i in BUCKETS:
-		var alpha: float = _alphas[i]
-		if alpha <= 0.02:
+		var raw_alpha: float = _alphas[i]
+		if raw_alpha <= 0.02:
 			continue
+		var alpha := raw_alpha * alpha_mul
 		var mid := float(i) * TAU / float(BUCKETS)
 		var col := COLOR_CALM.lerp(COLOR_URGENT, clampf(_urgent[i], 0.0, 1.0))
 		var pulse := 1.0 + 0.06 * sin(_time * 10.0 + float(i))
-		var arc_r := ring_r + lerpf(5.0, 12.0, clampf(alpha, 0.0, 1.0))
+		var arc_r := ring_r + lerpf(5.0, 12.0, clampf(raw_alpha, 0.0, 1.0))
 		# 1. 柔光外晕
 		_view.draw_arc(center, arc_r, mid - half * 1.08, mid + half * 1.08, 16,
 			Color(col.r, col.g, col.b, alpha * 0.22 * pulse), 9.0, true)

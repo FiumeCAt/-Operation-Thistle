@@ -34,7 +34,7 @@ class_name DollConfig
 
 @export_group("Dodge / Tactical Evasion")
 ## 翻滚位移总距离（米，1m = 64px）。
-@export_range(1.0, 6.0, 0.1) var dodge_distance_m := 2.6
+@export_range(1.0, 6.0, 0.1) var dodge_distance_m := 3.2
 ## 翻滚持续时间（秒）。
 @export_range(0.15, 0.80, 0.02) var dodge_duration := 0.30
 ## 翻滚起始无敌帧时长（秒，自动钳制不超过 dodge_duration）。
