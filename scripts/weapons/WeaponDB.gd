@@ -292,10 +292,15 @@ static func category_of(ammo_id: StringName) -> StringName:
 	return StringName(rec.get("category", "shotgun"))
 
 
+static func differential_reserve_cost_enabled() -> bool:
+	return bool(GameData.table("ammo").get("differential_reserve_cost", false))
+
+
 static func ammo_table() -> Dictionary:
 	var out := {}
 	var table: Dictionary = GameData.table("ammo").get("data", {})
 	var spread_mul := base_spread_mul()
+	var diff_cost_on := differential_reserve_cost_enabled()
 	for id in AMMO_ORDER:
 		var rec: Dictionary = table.get(String(id), {})
 		if rec.is_empty():
@@ -308,7 +313,9 @@ static func ammo_table() -> Dictionary:
 		a.category = StringName(rec.get("category", "shotgun"))
 		a.role = StringName(rec.get("role", "std"))
 		a.tier = clampi(int(rec.get("tier", tier_from_rha(float(rec.get("ap", 0.0))))), 0, 6)
-		a.reserve_cost = clampf(float(rec.get("reserve_cost", 1.0)), 0.5, 5.0)
+		var raw_cost := float(rec.get("reserve_cost_diff", rec.get("reserve_cost", 1.0))) \
+			if diff_cost_on else float(rec.get("reserve_cost", 1.0))
+		a.reserve_cost = clampf(raw_cost, 0.5, 5.0)
 		a.pellets = int(rec.get("pellets", 1))
 		a.damage = float(rec.get("damage", 0.0))
 		a.spread = float(rec.get("spread", 0.0)) * spread_mul
@@ -354,17 +361,17 @@ static func ammo_for_weapon(weapon_id: StringName) -> Array[StringName]:
 
 
 static func tier_from_rha(rha: float) -> int:
-	if rha < 15.0:
+	if rha < 18.0:
 		return 0
-	if rha < 30.0:
+	if rha < 35.0:
 		return 1
-	if rha < 55.0:
+	if rha < 65.0:
 		return 2
-	if rha < 85.0:
+	if rha < 100.0:
 		return 3
-	if rha < 120.0:
+	if rha < 140.0:
 		return 4
-	if rha < 155.0:
+	if rha < 185.0:
 		return 5
 	return 6
 

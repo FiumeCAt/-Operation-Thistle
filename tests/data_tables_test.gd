@@ -58,9 +58,21 @@ func _run() -> void:
 		if WeaponDB.ammo_for_weapon(wid).size() != 3:
 			all_calibers_have_three = false
 	_check(all_calibers_have_three, "全部 18 把武器所属口径均有 3 种可携带切换弹药")
-	_check(ammo[&"9mm_ap"].reserve_cost > 1.0 and ammo[&"762nato_ap"].reserve_cost >= 2.0
-		and is_equal_approx(ammo[&"9mm"].reserve_cost, 1.0),
-		"高穿弹消耗更多备弹点数（T4/T5 1.5 点，T6 2.0 点）")
+	var all_reserve_cost_unity := true
+	var all_tiers_match_rha := true
+	for aid in ammo:
+		var ad: AmmoData = ammo[aid]
+		if not is_equal_approx(ad.reserve_cost, 1.0):
+			all_reserve_cost_unity = false
+		if ad.tier != WeaponDB.tier_from_rha(ad.ap):
+			all_tiers_match_rha = false
+	var raw_ammo_data: Dictionary = GameData.table("ammo").get("data", {})
+	_check(not WeaponDB.differential_reserve_cost_enabled() and all_reserve_cost_unity,
+		"差分备弹消耗当前已停用，全部 30 种弹药统一 1.0 点/发")
+	_check(float(raw_ammo_data.get("9mm_ap", {}).get("reserve_cost_diff", 1.0)) >= 1.5
+		and float(raw_ammo_data.get("762nato_ap", {}).get("reserve_cost_diff", 1.0)) >= 2.0,
+		"高穿弹差分倍率（reserve_cost_diff）已保留在数据表中供后续按需开启")
+	_check(all_tiers_match_rha, "全部 30 种弹药的 AP 值与新 T0-T6 穿甲档位区间严格一致")
 	_check(WeaponDB.get_weapon(&"m870").damage_mul > WeaponDB.get_weapon(&"saiga12k").damage_mul
 		and WeaponDB.get_weapon(&"sr25").damage_mul > WeaponDB.get_weapon(&"fal").damage_mul
 		and WeaponDB.get_weapon(&"g17").damage_mul > WeaponDB.get_weapon(&"g18").damage_mul,

@@ -37,7 +37,7 @@ func _run() -> void:
 	_check(is_equal_approx(float(akm_bare["speed"]), 715.0), "AKM bare bullet_speed == 715 m/s")
 	_check(bool(akm_bare["auto"]), "AKM bare default_auto_fire == true")
 	_check(is_equal_approx(float(akm_bare["damage"]), 38.0 * 1.04), "AKM bare damage includes 1.04x inherent bonus (39.52)")
-	_check(is_equal_approx(float(akm_bare["ap"]), 72.0 + 2.0), "AKM bare AP includes +2 inherent bonus (74)")
+	_check(is_equal_approx(float(akm_bare["ap"]), 84.0 + 2.0), "AKM bare AP includes +2 inherent bonus (86)")
 	_check(is_equal_approx(float(akm_bare["spread"]), 0.058), "AKM bare hip spread == 0.058 rad")
 
 	var g17_bare: Dictionary = STATS_MODEL.compute(&"g17", {})
@@ -63,7 +63,7 @@ func _run() -> void:
 	var awm_bare: Dictionary = STATS_MODEL.compute(&"awm", {})
 	_check(int(awm_bare["mag"]) == 5, "AWM bare mag == 5")
 	_check(is_equal_approx(float(awm_bare["damage"]), 122.0 * 1.15), "AWM bare damage == 140.3 (122*1.15)")
-	_check(is_equal_approx(float(awm_bare["ap"]), 158.0 + 10.0), "AWM bare AP == 168 (158+10)")
+	_check(is_equal_approx(float(awm_bare["ap"]), 186.0 + 10.0), "AWM bare AP == 196 (186+10)")
 	_check(is_equal_approx(float(awm_bare["range"]), 70.5), "AWM bare range == 70.5m")
 	_check(is_equal_approx(float(awm_bare["speed"]), 918.0), "AWM bare speed == 918 m/s")
 	_check(absf(float(awm_bare["burst_dps"]) - 140.3 / 0.70) < 0.05

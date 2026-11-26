@@ -14,7 +14,7 @@ class_name AmmoData
 @export var role: StringName = &"std"
 ## 穿甲档位：0（纯肉伤 T0）~ 6（特穿 T6）。
 @export var tier: int = 1
-## 每发弹药消耗该通用备弹池的点数（T0-T3 常规/肉伤 1.0，T4-T5 高穿 1.5，T6 顶穿 2.0）。
+## 每发弹药消耗该通用备弹池的点数（当前停用差分消耗，全弹种统一 1.0；保留机制供后续按需开启）。
 @export var reserve_cost: float = 1.0
 @export var pellets: int = 8
 @export var damage: float = 8.0

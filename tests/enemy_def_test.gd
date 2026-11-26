@@ -24,7 +24,7 @@ func _check(cond: bool, label: String) -> void:
 func _run() -> void:
 	var rifle: EnemyDef = ENEMY_DEF.from_dict(&"rifleman", EnemyDB.stats(&"rifleman"))
 	_check(rifle.kind == &"rifleman" and is_equal_approx(rifle.hp, 75.0)
-		and is_equal_approx(rifle.armor, 18.0) and rifle.hit_material == "flesh"
+		and is_equal_approx(rifle.armor, 22.0) and rifle.hit_material == "flesh"
 		and rifle.archetype == &"human",
 		"rifleman parses base hp/armor/material/archetype")
 	_check(is_equal_approx(rifle.default_view_angle(), 110.0)
