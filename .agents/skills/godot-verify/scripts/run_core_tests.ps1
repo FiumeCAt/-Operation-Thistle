@@ -23,6 +23,7 @@ $DefaultCoreTests = @(
     "data_tables_test",
     "deco_containers_test",
     "deployment_2d_test",
+    "dodge_2d_test",
     "enemy_attack_test",
     "enemy_combat_test",
     "enemy_def_test",

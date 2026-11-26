@@ -142,6 +142,102 @@ static func ground_dust(parent: Node, pos: Vector2, dir := Vector2.RIGHT) -> Nod
 	return root
 
 
+## Phase 5 翻滚扬尘：起步蹬地与落地时在脚下扬起贴地像素尘雾与微椭圆尘环。
+static func dodge_dust(parent: Node, pos: Vector2, dir := Vector2.RIGHT,
+		landing := false) -> Node2D:
+	if parent == null or not parent.is_inside_tree():
+		return null
+	var root := Node2D.new()
+	root.z_index = 54
+	root.set_meta("dodge_dust_fx", true)
+	parent.add_child(root)
+	root.global_position = pos
+
+	var mat := CanvasItemMaterial.new()
+	mat.light_mode = CanvasItemMaterial.LIGHT_MODE_UNSHADED
+	root.material = mat
+	var ring := Line2D.new()
+	ring.width = 2.0 if landing else 2.6
+	ring.default_color = Color(0.84, 0.92, 0.98, 0.52 if landing else 0.78)
+	ring.use_parent_material = true
+	var pts := PackedVector2Array()
+	for i in 17:
+		var a := TAU * float(i) / 16.0
+		pts.append(Vector2(cos(a) * 12.0, sin(a) * 6.5))
+	ring.points = pts
+	ring.scale = Vector2(0.45, 0.45)
+	root.add_child(ring)
+
+	var back := -(dir.normalized() if dir.length_squared() > 0.001 else Vector2.RIGHT)
+	var tw := root.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(ring, "scale", Vector2(1.6 if landing else 2.2, 1.6 if landing else 2.2), 0.26) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(ring, "modulate:a", 0.0, 0.28)
+
+	var count := 4 if landing else 7
+	for i in count:
+		var puff := Polygon2D.new()
+		var sz := randf_range(1.8, 3.4) if not landing else randf_range(1.4, 2.4)
+		puff.polygon = PackedVector2Array([
+			Vector2(-sz, -sz), Vector2(sz, -sz), Vector2(sz, sz), Vector2(-sz, sz),
+		])
+		puff.color = Color(0.90, 0.94, 0.98, 0.86) if i % 2 == 0 else Color(0.68, 0.76, 0.84, 0.78)
+		puff.use_parent_material = true
+		root.add_child(puff)
+		var spread := randf_range(-1.1, 1.1)
+		var dist := randf_range(8.0, 20.0) if landing else randf_range(14.0, 34.0)
+		var kick := back.rotated(spread) * dist + Vector2(0.0, -randf_range(2.0, 10.0))
+		tw.tween_property(puff, "position", kick, 0.28) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(puff, "modulate:a", 0.0, 0.28)
+	tw.chain().tween_callback(root.queue_free)
+	return root
+
+
+## Phase 5 翻滚占位残影：复制角色当前帧贴图生成青白战术残影，0.24s 内渐隐释放。
+static func dodge_afterimage(parent: Node, world_pos: Vector2, body_tex: Texture2D,
+		head_tex: Texture2D, body_offset: Vector2, body_scale: Vector2,
+		body_rot: float, invuln_phase := true) -> Node2D:
+	if parent == null or not parent.is_inside_tree() or body_tex == null:
+		return null
+	var ghost := Node2D.new()
+	ghost.z_index = -1
+	ghost.set_meta("dodge_afterimage_fx", true)
+	parent.add_child(ghost)
+	ghost.global_position = world_pos
+
+	var mat := CanvasItemMaterial.new()
+	mat.light_mode = CanvasItemMaterial.LIGHT_MODE_UNSHADED
+	var tint := Color(0.42, 0.94, 1.0, 0.62) if invuln_phase else Color(0.80, 0.90, 1.0, 0.42)
+	var b_sp := Sprite2D.new()
+	b_sp.texture = body_tex
+	b_sp.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	b_sp.material = mat
+	b_sp.offset = body_offset
+	b_sp.scale = body_scale
+	b_sp.rotation = body_rot
+	b_sp.modulate = tint
+	ghost.add_child(b_sp)
+
+	if head_tex != null:
+		var h_sp := Sprite2D.new()
+		h_sp.texture = head_tex
+		h_sp.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		h_sp.material = mat
+		h_sp.offset = body_offset
+		h_sp.scale = body_scale
+		h_sp.rotation = body_rot
+		h_sp.modulate = tint
+		ghost.add_child(h_sp)
+
+	var tw := ghost.create_tween()
+	tw.tween_property(ghost, "modulate:a", 0.0, 0.34) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(ghost.queue_free)
+	return ghost
+
+
 ## 通用命中爆点：敌人打中玩家等场合，同样走特效库。
 static func hit_burst(parent: Node, pos: Vector2, dir: Vector2,
 		material := "flesh", scale_mul := 0.7) -> void:

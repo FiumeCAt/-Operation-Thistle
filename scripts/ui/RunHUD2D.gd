@@ -8,6 +8,7 @@ class_name RunHUD2D
 const PLATE_TEX: Texture2D = preload("res://assets/art/ui/hud/status_plate.png")
 const WEAPON_PLATE_TEX: Texture2D = preload("res://assets/art/ui/hud/weapon_plate.png")
 const AMMO_CONTAINER := preload("res://scripts/ui/AmmoContainer2D.gd")
+const DODGE_INDICATOR := preload("res://scripts/ui/DodgeIndicator2D.gd")
 ## 状态板贴左下角：生命条在屏幕左下，避开主要视野。
 const PLATE_POS := Vector2(20, -148)
 const PLATE_SIZE := Vector2(560, 132)
@@ -66,6 +67,7 @@ var ammo_container: Control
 var ammo_display_mode := "both"
 var ammo_exact_rounds := false
 var fire_selector: FireSelectorWidget2D
+var dodge_indicator: DodgeIndicator2D
 var _result_panel: PanelContainer
 var _debrief_empty: Label
 var _feed: VBoxContainer
@@ -238,6 +240,16 @@ func _build_status_plate() -> void:
 	objective_label = PixelUI.emphasize(PixelUI.label(rows, "", 22, PixelUI.GOLD), 2, 1)
 	objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	objective_label.clip_text = true
+
+	# 左下状态板右侧翻滚/躲闪冷却指示器（与右下快慢机拨片镜像对称）。
+	dodge_indicator = DODGE_INDICATOR.new()
+	dodge_indicator.name = "DodgeIndicator"
+	_root.add_child(dodge_indicator)
+	dodge_indicator.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	dodge_indicator.offset_left = PLATE_POS.x + PLATE_SIZE.x + 10
+	dodge_indicator.offset_right = PLATE_POS.x + PLATE_SIZE.x + 10 + 82
+	dodge_indicator.offset_top = -16 - 82
+	dodge_indicator.offset_bottom = -16
 
 
 ## 操作提示：左上角半透明战术胶囊条 + 彩色高亮按键名，亮暗画面均可一眼辨读。
@@ -708,6 +720,11 @@ func set_armor(current: int, maximum: int) -> void:
 			"font_color", PixelUI.DANGER if broken else PixelUI.CYAN)
 
 
+func set_dodge(ready_ratio: float, dodging: bool, invuln: bool, cooldown_left: float) -> void:
+	if dodge_indicator != null:
+		dodge_indicator.set_dodge_state(ready_ratio, dodging, invuln, cooldown_left)
+
+
 func set_objective(text: String) -> void:
 	objective_label.text = text
 	var col := PixelUI.OK if (text.contains("已通电") or text.contains("可撤离")) else PixelUI.GOLD
@@ -723,7 +740,7 @@ func set_hint(text: String) -> void:
 ## 自动将操作提示中的按键（WASD / 左键 / 右键 / B / R / X / TAB / Alt+滚轮 / E / M）着色加重。
 static func _format_hint_bbcode(text: String) -> String:
 	var out := text
-	for key in ["WASD", "Alt+滚轮", "左键", "右键", "TAB", "ESC", " Q ", " B ", " R ", " X ", " E ", " M "]:
+	for key in ["WASD", "SPACE", "Alt+滚轮", "左键", "右键", "TAB", "ESC", " Q ", " B ", " R ", " X ", " E ", " M "]:
 		var ks := String(key)
 		var trimmed := ks.strip_edges()
 		if out.contains(ks):

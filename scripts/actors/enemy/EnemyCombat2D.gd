@@ -131,9 +131,11 @@ func _do_charger(host, to_target: Vector2, dist: float, can_see: bool, delta: fl
 			host._sfx("ram", -4.0, randf_range(0.95, 1.05))
 			host._shake(5.0)
 			if host.player != null and is_instance_valid(host.player):
+				var evaded: bool = host.player.has_method("is_dodge_invuln") and bool(host.player.is_dodge_invuln())
 				host.player.take_damage(def.damage * host.damage_mul, def.attack_ap())
-				Shot2D.hit_burst(host.get_parent(), host.player.global_position + Vector2(0, -60),
-					(host.player.global_position - host.global_position).normalized(), "flesh", 0.7)
+				if not evaded:
+					Shot2D.hit_burst(host.get_parent(), host.player.global_position + Vector2(0, -60),
+						(host.player.global_position - host.global_position).normalized(), "flesh", 0.7)
 		return
 	if can_see and dist > range_px * 1.8 and charge_cd <= 0.0 and host._line_of_sight():
 		charge_dir = dir
@@ -214,9 +216,11 @@ func try_attack(host, dist: float) -> void:
 			if def.behavior == "melee":
 				host._sfx("stab", -7.0, randf_range(0.95, 1.05))
 			host._melee_slash(host.player.global_position)
+			var melee_evaded: bool = host.player.has_method("is_dodge_invuln") and bool(host.player.is_dodge_invuln())
 			host.player.take_damage(def.damage * host.damage_mul, def.attack_ap())
-			Shot2D.hit_burst(host.get_parent(), host.player.global_position + Vector2(0, -60),
-				(host.player.global_position - host.global_position).normalized(), "flesh", 0.7)
+			if not melee_evaded:
+				Shot2D.hit_burst(host.get_parent(), host.player.global_position + Vector2(0, -60),
+					(host.player.global_position - host.global_position).normalized(), "flesh", 0.7)
 	else:
 		if dist <= range_px * 1.25:
 			attack_cd = def.cooldown

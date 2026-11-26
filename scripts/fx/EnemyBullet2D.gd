@@ -59,19 +59,21 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 		return
 
-	# 玩家：用线段到躯干中心的最短距离判定，避免高速子弹穿过。
+	# 玩家：用线段到躯干中心的最短距离判定，避免高速子弹穿过；翻滚无敌帧期间子弹直接擦身掠过。
 	if player != null and is_instance_valid(player):
-		var center: Vector2 = player.global_position + PLAYER_CENTER
-		var closest: Vector2 = Geometry2D.get_closest_point_to_segment(center, prev, next)
-		if center.distance_to(closest) <= radius + PLAYER_HIT_RADIUS:
-			Shot2D.hit_burst(get_parent(), center, velocity.normalized(), "flesh", 0.6)
-			var sfx := get_node_or_null("/root/Sfx")
-			if sfx != null:
-				# 玩家受击先沿用原有合成音，不混采样。
-				sfx.play_player_hurt(-9.0)
-			player.take_damage(damage, ap)
-			queue_free()
-			return
+		var dodge_invuln: bool = player.has_method("is_dodge_invuln") and bool(player.is_dodge_invuln())
+		if not dodge_invuln:
+			var center: Vector2 = player.global_position + PLAYER_CENTER
+			var closest: Vector2 = Geometry2D.get_closest_point_to_segment(center, prev, next)
+			if center.distance_to(closest) <= radius + PLAYER_HIT_RADIUS:
+				Shot2D.hit_burst(get_parent(), center, velocity.normalized(), "flesh", 0.6)
+				var sfx := get_node_or_null("/root/Sfx")
+				if sfx != null:
+					# 玩家受击先沿用原有合成音，不混采样。
+					sfx.play_player_hurt(-9.0)
+				player.take_damage(damage, ap)
+				queue_free()
+				return
 
 	global_position = next
 

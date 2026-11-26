@@ -126,6 +126,11 @@ func play_ground_impact(volume_db := -18.0) -> void:
 	play_2d("hit_air", volume_db + 2.0, randf_range(0.72, 0.88))
 
 
+## 翻滚战术躲闪占位音效（衣物破风 + 蹬地轻擦）。
+func play_dodge(volume_db := -8.5) -> void:
+	play_2d("dodge", volume_db, randf_range(0.95, 1.07))
+
+
 ## 墙面弹着：混凝土采样 + 低频层；无采样时用合成中/高频兜底。
 func play_wall_impact(volume_db := -14.0) -> void:
 	var now := Time.get_ticks_msec()

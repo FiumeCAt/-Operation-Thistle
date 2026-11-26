@@ -552,7 +552,7 @@ func _build_right_cards() -> void:
 	ctrl_panel.add_child(c_rows)
 	var c_hdr := PixelUI.label(c_rows, "快捷操作 // CONTROLS", 16, PixelUI.theme_accent())
 	_themed_accent_labels.append(c_hdr)
-	PixelUI.label(c_rows, "WASD 移动 · 左键开火 · 右键瞄准 · R 换弹", 14, PixelUI.theme_text())
+	PixelUI.label(c_rows, "WASD 移动 · SPACE 翻滚 · 左键开火 · 右键瞄准 · R 换弹", 14, PixelUI.theme_text())
 	PixelUI.label(c_rows, "1-2 切枪 · E 交互 · TAB 背包 · M 地图 · Alt+滚轮", 14, PixelUI.theme_dim())
 
 

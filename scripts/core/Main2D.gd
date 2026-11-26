@@ -93,7 +93,7 @@ const WORLD_PER_METER := UNITS.PIXELS_PER_METER
 const INTERACT_RADIUS := INTERACTION_SYSTEM.INTERACT_RADIUS
 const EXIT_RADIUS := INTERACTION_SYSTEM.EXIT_RADIUS
 const SHOT_ORIGIN_OFFSET := Vector2(0, -8)
-const HINT_DEFAULT := "WASD 移动 · 左键开火 · 右键瞄准 · Q 切弹 · B 切模式 · R 换弹 · X 收/拔枪 · TAB 背包 · E 交互"
+const HINT_DEFAULT := "WASD 移动 · SPACE 翻滚 · 左键开火 · 右键瞄准 · Q 切弹 · B 切模式 · R 换弹 · X 收枪 · TAB 背包 · E 交互"
 
 ## 结算标签由 RunHUD2D 构建，测试按名字读取。
 var result_label: Label
@@ -343,6 +343,8 @@ func _ready() -> void:
 	camera.global_position = doll.global_position
 	doll.bounds = Rect2(40, 40, size.x - 80, size.y - 80)
 	doll.aim_enabled = true
+	doll.fx_layer = fx_layer
+	doll.dodge_input_blocked_fn = _is_dodge_blocked
 	_ensure_view_zoom_action()
 	# 行动模式在进入本局前由基地菜单写入 Progress；浪潮模式不刷常规关卡敌人。
 	var progress := get_node_or_null("/root/Progress")
@@ -409,6 +411,23 @@ func _ensure_view_zoom_action() -> void:
 		var q_key := InputEventKey.new()
 		q_key.physical_keycode = KEY_Q
 		InputMap.action_add_event("ammo_switch", q_key)
+	if not InputMap.has_action("dodge"):
+		InputMap.add_action("dodge")
+		var space_key := InputEventKey.new()
+		space_key.physical_keycode = KEY_SPACE
+		InputMap.action_add_event("dodge", space_key)
+
+
+func _is_dodge_blocked() -> bool:
+	if run_state != RunState.ACTIVE:
+		return true
+	if pause_menu != null and pause_menu.visible:
+		return true
+	if map_overlay != null and map_overlay.visible:
+		return true
+	if backpack != null and backpack.visible:
+		return true
+	return false
 
 
 ## 通过命令行切换角色表现：
@@ -901,6 +920,8 @@ static func scope_camera_zoom_mul(sight_mag: float, min_mag := 0.85, max_mag := 
 func _update_hud(delta: float) -> void:
 	hud.set_hp(doll.hp, doll.hp_max)
 	hud.set_armor(doll.armor, doll.armor_max)
+	hud.set_dodge(doll.get_dodge_cooldown_ratio(), doll.is_dodging(),
+		doll.is_dodge_invuln(), doll.get_dodge_cooldown_left())
 	hud.set_objective(_objective_text())
 	hud.update_weapon(doll.weapon_rig)
 	interaction_system.update(delta)

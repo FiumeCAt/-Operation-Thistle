@@ -49,6 +49,12 @@ const STOW_OFFSET := Vector2(0.0, 2.0)
 const STOW_TINT := Color(0.78, 0.82, 0.90, 1.0)
 ## 右键瞄准时移速降到一半，换取更低散布和更远视野。
 const ADS_SPEED_MUL := 0.5
+## 翻滚战术躲闪默认参数（挂载 DollConfig .tres 时由资源覆写）。
+const DODGE_DISTANCE_M := 2.6
+const DODGE_DURATION := 0.30
+const DODGE_IFRAME_SEC := 0.20
+const DODGE_COOLDOWN := 1.15
+const DODGE_AFTERIMAGE_INTERVAL := 0.065
 ## 256px 默认 LOD 下脚底对齐的基准偏移；编辑器在 Doll2D.tscn 中微调 Body.offset 时自动保留差值。
 const DEFAULT_BODY_OFFSET := Vector2(0.0, -144.0)
 
@@ -95,6 +101,26 @@ signal died
 signal damaged(amount: int, armor_damage: int, hp_damage: int, world_pos: Vector2)
 ## 开火转发：换枪会重建 WeaponRig2D，Main2D 只连这一条，换枪后伤害结算不会断。
 signal shot_fired(muzzle: Vector2, dir: Vector2)
+## 翻滚状态信号：供 Main2D / HUD / Phase 7 正式动画接入。
+signal dodge_started(dir: Vector2)
+signal dodge_ended
+
+## 翻滚输入拦截回调（如背包/地图/结算界面打开时禁止 Space 触发翻滚）。
+var dodge_input_blocked_fn: Callable = Callable()
+## 可选特效父层（由 Main2D 注入 FXLayer；未注入时回退到父节点）。
+var fx_layer: Node2D = null
+
+var _dodge_t := 0.0
+var _dodge_total := DODGE_DURATION
+var _dodge_invuln_t := 0.0
+var _dodge_cd := 0.0
+var _dodge_cd_total := DODGE_COOLDOWN
+var _dodge_dir := Vector2.RIGHT
+var _dodge_afterimage_t := 0.0
+var _saved_collision_layer := 2
+var _saved_collision_mask := 1
+var _dodge_collision_overridden := false
+var _base_body_scale := Vector2.ONE
 
 var hp := 100
 var hp_max := 100
@@ -185,7 +211,15 @@ func _ready() -> void:
 	_build_rig()
 	frame_size = Vector2i(int(round(DEFAULT_BODY_PX * 1.25)), int(round(DEFAULT_BODY_PX * 1.25)))
 	_apply_sheet(BODY_SHEET)
-	body.scale = Vector2.ONE * (WORLD_BODY / float(DEFAULT_BODY_PX))
+	_base_body_scale = Vector2.ONE * (WORLD_BODY / float(DEFAULT_BODY_PX))
+	body.scale = _base_body_scale
+
+
+func _exit_tree() -> void:
+	if _dodge_collision_overridden:
+		collision_layer = _saved_collision_layer
+		collision_mask = _saved_collision_mask
+		_dodge_collision_overridden = false
 
 ## 切换到某一档素材：body_px 为该图集里角色的像素身高。
 func configure(body_px: int) -> void:
@@ -202,7 +236,8 @@ func configure(body_px: int) -> void:
 	_head_enabled = has_split
 	frame_size = Vector2i(int(round(body_px * 1.25)), int(round(body_px * 1.25)))
 	_apply_sheet(sheet)
-	body.scale = Vector2.ONE * (WORLD_BODY / float(body_px))
+	_base_body_scale = Vector2.ONE * (WORLD_BODY / float(body_px))
+	body.scale = _base_body_scale
 
 func _apply_sheet(tex: Texture2D) -> void:
 	body.sprite_frames = _build_frames(tex)
@@ -400,7 +435,7 @@ func _build_frames(tex: Texture2D) -> SpriteFrames:
 
 ## 受伤：统一委托 DamageModel 按 RHA 护甲与耐久规则结算（未击穿主扣甲+钝伤，击穿直入血+少量甲损）。
 func take_damage(amount: float, ap: float = 0.0) -> void:
-	if invuln > 0.0 or hp <= 0 or amount <= 0.0:
+	if invuln > 0.0 or _dodge_invuln_t > 0.0 or hp <= 0 or amount <= 0.0:
 		return
 	var res: Dictionary = DAMAGE_MODEL.resolve_player_damage(
 		amount, ap, armor, armor_max, armor_level, armor_absorb_bonus, hp,
@@ -526,16 +561,197 @@ func head_position() -> Vector2:
 		return _head_pivot.global_position + Vector2(0, -6)
 	return global_position + Vector2(0, -WORLD_BODY * 0.82)
 
+## ---- Phase 5：翻滚与战术躲闪（逻辑 + 占位表现 + Phase 7 正式动画挂口）----
+
+## 翻滚位移速度曲线因子（u ∈ [0, 1]）：初段强劲爆发（1.75×），末段顺滑减速至 0.25×；
+## 解析积分 ∫_0^1 f(u) du = 1.0，保证总位移精确等于 dodge_distance_m * TILE。
+static func dodge_speed_factor(u: float) -> float:
+	return lerpf(1.75, 0.25, clampf(u, 0.0, 1.0))
+
+
+func is_dodging() -> bool:
+	return _dodge_t > 0.0
+
+
+func is_dodge_invuln() -> bool:
+	return _dodge_invuln_t > 0.0
+
+
+func can_dodge() -> bool:
+	return hp > 0 and _dodge_t <= 0.0 and _dodge_cd <= 0.0
+
+
+func get_dodge_cooldown_left() -> float:
+	return _dodge_cd
+
+
+func get_dodge_cooldown_ratio() -> float:
+	if _dodge_cd <= 0.0:
+		return 1.0
+	return clampf(1.0 - _dodge_cd / maxf(_dodge_cd_total, 0.01), 0.0, 1.0)
+
+
+func get_dodge_progress() -> float:
+	if _dodge_t <= 0.0:
+		return 0.0
+	return clampf(1.0 - _dodge_t / maxf(_dodge_total, 0.01), 0.0, 1.0)
+
+
+func try_dodge(dir_override := Vector2.ZERO) -> bool:
+	if not can_dodge():
+		return false
+	var dir := dir_override
+	if dir.length_squared() <= 0.001:
+		dir = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	if dir.length_squared() <= 0.001 and aim_enabled:
+		var to_aim := aim_target - global_position
+		if to_aim.length_squared() > 16.0:
+			dir = to_aim
+	if dir.length_squared() <= 0.001:
+		dir = _facing_vector(direction)
+	_dodge_dir = dir.normalized()
+	_dodge_total = maxf(_cfg_float(&"dodge_duration", DODGE_DURATION), 0.08)
+	_dodge_t = _dodge_total
+	_dodge_invuln_t = clampf(_cfg_float(&"dodge_iframe_sec", DODGE_IFRAME_SEC), 0.0, _dodge_total)
+	_dodge_cd_total = maxf(_cfg_float(&"dodge_cooldown", DODGE_COOLDOWN), _dodge_total + 0.05)
+	_dodge_cd = _dodge_cd_total
+	_dodge_afterimage_t = 0.0
+	ads = false
+	direction = _direction_index(_dodge_dir)
+
+	# 临时忽略敌人碰撞（移除 layer 2 / mask 2 防围死卡角），但严格保留墙体碰撞（mask 1 防穿墙）。
+	if not _dodge_collision_overridden:
+		_saved_collision_layer = collision_layer
+		_saved_collision_mask = collision_mask
+		_dodge_collision_overridden = true
+	collision_layer = _saved_collision_layer & ~2
+	collision_mask = (_saved_collision_mask & ~2) | 1
+
+	# Phase 7 正式动画挂口：若未来图集存在 dodge_0..3 动画，自动切换播放；否则走占位倾斜+残影。
+	var formal_anim := "dodge_%d" % direction
+	if body != null and body.sprite_frames != null and body.sprite_frames.has_animation(formal_anim):
+		body.play(formal_anim)
+		var count := maxi(1, body.sprite_frames.get_frame_count(formal_anim))
+		var base_fps := maxf(body.sprite_frames.get_animation_speed(formal_anim), 1.0)
+		body.speed_scale = (float(count) / _dodge_total) / base_fps
+
+	var dust_parent: Node = fx_layer if (fx_layer != null and is_instance_valid(fx_layer)) else get_parent()
+	Shot2D.dodge_dust(dust_parent, global_position, _dodge_dir, false)
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx != null and sfx.has_method("play_dodge"):
+		sfx.play_dodge()
+	_spawn_dodge_afterimage()
+	dodge_started.emit(_dodge_dir)
+	return true
+
+
+func _end_dodge() -> void:
+	_dodge_t = 0.0
+	_dodge_invuln_t = 0.0
+	if _dodge_collision_overridden:
+		collision_layer = _saved_collision_layer
+		collision_mask = _saved_collision_mask
+		_dodge_collision_overridden = false
+	if body != null:
+		body.rotation = 0.0
+		body.scale = _base_body_scale
+	var dust_parent: Node = fx_layer if (fx_layer != null and is_instance_valid(fx_layer)) else get_parent()
+	Shot2D.dodge_dust(dust_parent, global_position, _dodge_dir, true)
+	dodge_ended.emit()
+
+
+func _spawn_dodge_afterimage() -> void:
+	if body == null or body.sprite_frames == null:
+		return
+	var parent := get_parent()
+	if parent == null:
+		return
+	var anim_name := body.animation
+	if not body.sprite_frames.has_animation(anim_name):
+		return
+	var body_tex := body.sprite_frames.get_frame_texture(anim_name, body.frame)
+	var head_tex: Texture2D = _head.texture if (_head != null and _head_enabled) else null
+	Shot2D.dodge_afterimage(parent, global_position, body_tex, head_tex,
+		body.offset, body.scale, body.rotation, _dodge_invuln_t > 0.0)
+
+
+func _facing_vector(dir_idx: int) -> Vector2:
+	match dir_idx:
+		0: return Vector2.DOWN
+		1: return Vector2.UP
+		2: return Vector2.LEFT
+		_: return Vector2.RIGHT
+
+
 func _physics_process(delta: float) -> void:
 	if invuln > 0.0:
 		invuln = maxf(invuln - delta, 0.0)
+	if _dodge_cd > 0.0:
+		_dodge_cd = maxf(_dodge_cd - delta, 0.0)
+	if _dodge_invuln_t > 0.0:
+		_dodge_invuln_t = maxf(_dodge_invuln_t - delta, 0.0)
 	if _hurt_flash > 0.0:
 		_hurt_flash = maxf(_hurt_flash - delta, 0.0)
 		var flash_dur := maxf(_cfg_float(&"hurt_flash_sec", 0.16), 0.01)
 		var t := _hurt_flash / flash_dur
 		modulate = Color.WHITE.lerp(_cfg_color(&"hurt_flash_tint", Color(2.1, 0.62, 0.58)), t)
+	elif _dodge_invuln_t > 0.0:
+		modulate = Color(0.84, 1.18, 1.34, 0.88)
 	elif modulate != Color.WHITE:
 		modulate = Color.WHITE
+	var dbg_progress := get_node_or_null("/root/Progress")
+	if dbg_progress != null:
+		step_debug_vitals(delta, dbg_progress)
+
+	var dodge_blocked := dodge_input_blocked_fn.is_valid() and bool(dodge_input_blocked_fn.call())
+	if not dodge_blocked and InputMap.has_action("dodge") and Input.is_action_just_pressed("dodge"):
+		try_dodge()
+
+	if is_dodging():
+		var u := get_dodge_progress()
+		var dist_px := maxf(_cfg_float(&"dodge_distance_m", DODGE_DISTANCE_M), 0.5) * UNITS.PIXELS_PER_METER
+		var avg_speed := dist_px / maxf(_dodge_total, 0.05)
+		var dodge_speed := avg_speed * dodge_speed_factor(u)
+		if dbg_progress != null:
+			dodge_speed *= float(dbg_progress.debug_mul("move"))
+		velocity = _dodge_dir * dodge_speed
+		move_and_slide()
+		global_position.x = clampf(global_position.x, bounds.position.x, bounds.end.x)
+		global_position.y = clampf(global_position.y, bounds.position.y, bounds.end.y)
+		ads = false
+		var has_formal := body != null and body.sprite_frames != null \
+			and body.sprite_frames.has_animation("dodge_%d" % direction)
+		if not has_formal and body != null:
+			var arch := sin(PI * u)
+			var lean_sign := 1.0 if _dodge_dir.x >= 0.0 else -1.0
+			if absf(_dodge_dir.x) < 0.15:
+				lean_sign = 1.0 if _dodge_dir.y > 0.0 else -1.0
+			body.rotation = lean_sign * 0.28 * arch
+			body.scale = Vector2(
+				_base_body_scale.x * (1.0 + 0.12 * arch),
+				_base_body_scale.y * (1.0 - 0.14 * arch))
+		_dodge_afterimage_t += delta
+		var ai_interval := maxf(_cfg_float(&"dodge_afterimage_interval", DODGE_AFTERIMAGE_INTERVAL), 0.025)
+		if _dodge_afterimage_t >= ai_interval:
+			_dodge_afterimage_t = 0.0
+			_spawn_dodge_afterimage()
+		if rig != null:
+			rig.set_state("run", direction, aim_target, false, delta)
+		_sync_head()
+		_update_head_tilt(delta)
+		_dodge_t = maxf(_dodge_t - delta, 0.0)
+		if _dodge_t <= 0.0:
+			_end_dodge()
+		if weapon_rig != null:
+			weapon_rig.aim_world = aim_target
+			weapon_rig.aim_enabled = aim_enabled
+			weapon_rig.aiming = false
+			weapon_rig.body_direction = direction
+			weapon_rig.ads = false
+			weapon_rig.sprinting = false
+			weapon_rig.dodging = is_dodging()
+		return
+
 	var input_vector := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var sprinting := Input.is_action_pressed("sprint")
 	# 冲刺时不允许瞄准，避免“边冲边精准射击”
@@ -543,10 +759,8 @@ func _physics_process(delta: float) -> void:
 	var speed := sprint_speed if sprinting else walk_speed
 	if ads:
 		speed *= _cfg_float(&"ads_speed_mul", ADS_SPEED_MUL)
-	var dbg_progress := get_node_or_null("/root/Progress")
 	if dbg_progress != null:
 		speed *= float(dbg_progress.debug_mul("move"))
-		step_debug_vitals(delta, dbg_progress)
 
 	velocity = input_vector * speed
 	move_and_slide()
@@ -584,6 +798,7 @@ func _physics_process(delta: float) -> void:
 		weapon_rig.ads = ads
 		# 冲刺时枪保持在手，只是压低，不会自动收枪
 		weapon_rig.sprinting = sprinting and moving
+		weapon_rig.dodging = false
 
 ## 切换动画：方向或动作变化时保留迈步相位，避免每次都从第 0 帧重新起步。
 func _play(anim_name: String, target_direction: int, speed: float) -> void:

@@ -111,6 +111,7 @@ var switch_t: float:
 	get: return feed.switch_t
 	set(v): feed.switch_t = v
 var sprinting := false
+var dodging := false
 var ads := false
 var _ads_t := 0.0
 var holstered: bool:
@@ -447,7 +448,9 @@ func _apply_pose() -> void:
 	POSE_IK.apply_switch_pose(_pivot, _gun, limbs, _support_root, switch_t)
 	POSE_IK.apply_stow_pose(_pivot, _gun, limbs, _support_root, _flash,
 		holstered, feed.stow_t, feed.stow_total, feed.stow_kind)
-	if sprinting and not aiming and not holstered and feed.stow_t <= 0.0:
+	if dodging and not holstered and feed.stow_t <= 0.0:
+		_pivot.position.y += SPRINT_DIP * 1.35
+	elif sprinting and not aiming and not holstered and feed.stow_t <= 0.0:
 		_pivot.position.y += SPRINT_DIP
 	var show_support := data != null and data.visual_length >= 0.5 \
 		and (not holstered or feed.stow_t > 0.0)
@@ -458,6 +461,8 @@ func _apply_pose() -> void:
 ## --- 供弹/动作接口（委托至 WeaponFeedState2D）--------------------------------
 
 func try_fire() -> bool:
+	if dodging:
+		return false
 	match feed.try_fire(data):
 		&"need_draw":
 			draw()

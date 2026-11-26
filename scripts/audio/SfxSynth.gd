@@ -61,6 +61,8 @@ func _build_bank() -> Dictionary:
 	# Phase 4：弱点命中叮响与弱点击穿破甲音效，固定追加在末尾保持既有 38 条波形一致。
 	bank["weakspot_hit"] = _build_weakspot_hit()
 	bank["armor_pierce"] = _build_armor_pierce()
+	# Phase 5：翻滚战术躲闪占位音效（衣物破风 + 蹬地摩擦），固定追加在末尾保持前 40 条一致。
+	bank["dodge"] = _build_dodge()
 	return bank
 
 
@@ -748,4 +750,25 @@ func _build_armor_pierce() -> AudioStreamWAV:
 		var sweep := sin(TAU * lerpf(2950.0, 1180.0, clampf(t / 0.14, 0.0, 1.0)) * t) * exp(-t * 24.0) * 0.34
 		var body := sin(TAU * 360.0 * t) * exp(-t * 32.0) * 0.28
 		a[i] = (shatter + sweep + body) * 0.9
+	return _stream(a)
+
+
+func _build_dodge() -> AudioStreamWAV:
+	var n := int(0.24 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	var lp_hi := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var u := clampf(t / 0.24, 0.0, 1.0)
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * lerpf(0.28, 0.09, u)
+		lp_hi += (wn - lp_hi) * 0.55
+		# 起步蹬地低频冲量 + 衣物破风带通呼啸
+		var push := sin(TAU * lerpf(140.0, 62.0, clampf(t / 0.09, 0.0, 1.0)) * t) * exp(-t * 28.0) * 0.34
+		var env := sin(PI * clampf(u, 0.0, 1.0)) * exp(-t * 4.5)
+		var whoosh := (lp_hi - lp * 0.65) * env * 0.62
+		var scuff := lp * exp(-maxf(t - 0.14, 0.0) * 35.0) * (0.20 if t >= 0.14 else 0.0)
+		a[i] = (push + whoosh + scuff) * 0.88
 	return _stream(a)
