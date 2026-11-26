@@ -20,7 +20,9 @@ var _samples: SfxSamples = SAMPLES.new()
 var _ambient_player: AudioStreamPlayer
 ## 命中三层音效 / 墙面弹着 / 玩家受击的独立节流时间戳（毫秒），避免霰弹叠音爆音。
 var _last_hit_ms := 0
+var _last_weakspot_ms := 0
 var _last_wall_ms := 0
+var _last_ground_ms := 0
 var _last_hurt_ms := 0
 var _last_wave_cue_ms := -100000
 
@@ -99,6 +101,29 @@ func play_player_hurt(volume_db := -9.0) -> void:
 		return
 	_last_hurt_ms = now
 	_play_hit_procedural("flesh", 0.7, volume_db)
+
+
+## 弱点 / 破甲专属命中提示音：高频清脆叮响 + 破甲时叠加穿甲脆裂层。
+func play_weakspot_hit(broke_armor := false, material := "metal", volume_db := -7.5) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_weakspot_ms < 32:
+		return
+	_last_weakspot_ms = now
+	play_2d("weakspot_hit", volume_db, randf_range(0.96, 1.06))
+	if broke_armor:
+		play_2d("armor_pierce", volume_db - 1.5, randf_range(0.95, 1.05))
+	# 叠加一层低权重材质基础打击感，避免“只有叮响没有着弹重量”。
+	play_hit(material, 1.15, volume_db - 4.0)
+
+
+## 伪 3D 子弹落地扬尘轻闷音：避免与硬墙撞击混淆。
+func play_ground_impact(volume_db := -18.0) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_ground_ms < 50:
+		return
+	_last_ground_ms = now
+	play_2d("hit_low", volume_db - 2.0, randf_range(0.75, 0.92))
+	play_2d("hit_air", volume_db + 2.0, randf_range(0.72, 0.88))
 
 
 ## 墙面弹着：混凝土采样 + 低频层；无采样时用合成中/高频兜底。

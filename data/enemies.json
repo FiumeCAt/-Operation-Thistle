@@ -39,7 +39,18 @@
 	  "advanced_drop": 0.063,
 	  "body_scale": 0.3,
 	  "collision_radius": 17.0,
-	  "archetype": "human"
+	  "archetype": "human",
+	  "weakspot": {
+		"part": "head",
+		"label": "头部",
+		"offset_x": 0.0,
+		"offset_y_ratio": 0.8,
+		"flip_x": false,
+		"radius": 11.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.4,
+		"damage_mul": 1.8
+	  }
 	},
 	"rusher": {
 	  "name": "突击者",
@@ -60,7 +71,18 @@
 	  "strafe": false,
 	  "body_scale": 0.28,
 	  "collision_radius": 17.0,
-	  "archetype": "human"
+	  "archetype": "human",
+	  "weakspot": {
+		"part": "head",
+		"label": "头部",
+		"offset_x": 0.0,
+		"offset_y_ratio": 0.8,
+		"flip_x": false,
+		"radius": 11.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.4,
+		"damage_mul": 1.8
+	  }
 	},
 	"heavy": {
 	  "name": "重装",
@@ -83,7 +105,18 @@
 	  "body_scale": 0.34,
 	  "collision_radius": 22.0,
 	  "archetype": "human",
-	  "blunt_floor": 0.1
+	  "blunt_floor": 0.1,
+	  "weakspot": {
+		"part": "visor",
+		"label": "面罩缝隙",
+		"offset_x": 0.0,
+		"offset_y_ratio": 0.82,
+		"flip_x": false,
+		"radius": 12.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.45,
+		"damage_mul": 1.7
+	  }
 	},
 	"hunter": {
 	  "name": "声呐猎手",
@@ -106,7 +139,18 @@
 	  "advanced_drop": 0.158,
 	  "body_scale": 0.3,
 	  "collision_radius": 17.0,
-	  "archetype": "mech"
+	  "archetype": "mech",
+	  "weakspot": {
+		"part": "optic_eye",
+		"label": "光学主眼",
+		"offset_x": 8.0,
+		"offset_y_ratio": 0.32,
+		"flip_x": true,
+		"radius": 11.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.5,
+		"damage_mul": 1.65
+	  }
 	},
 	"mobile_turret": {
 	  "name": "移动哨戒炮一型",
@@ -134,7 +178,18 @@
 	  "advanced_drop": 0.18,
 	  "body_scale": 0.34,
 	  "collision_radius": 20.0,
-	  "archetype": "mech"
+	  "archetype": "mech",
+	  "weakspot": {
+		"part": "barrel_core",
+		"label": "炮座核心",
+		"offset_x": 0.0,
+		"offset_y_ratio": 0.56,
+		"flip_x": false,
+		"radius": 13.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.5,
+		"damage_mul": 1.65
+	  }
 	},
 	"sentry_type1": {
 	  "name": "哨兵一型",
@@ -161,7 +216,18 @@
 	  "advanced_drop": 0.12,
 	  "body_scale": 0.32,
 	  "collision_radius": 19.0,
-	  "archetype": "mech"
+	  "archetype": "mech",
+	  "weakspot": {
+		"part": "sensor_visor",
+		"label": "核心传感器",
+		"offset_x": 0.0,
+		"offset_y_ratio": 0.58,
+		"flip_x": false,
+		"radius": 12.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.5,
+		"damage_mul": 1.6
+	  }
 	},
 	"hunter_type1": {
 	  "name": "巡猎者一型",
@@ -185,7 +251,18 @@
 	  "advanced_drop": 0.3,
 	  "body_scale": 0.5,
 	  "collision_radius": 22.0,
-	  "archetype": "mech"
+	  "archetype": "mech",
+	  "weakspot": {
+		"part": "chest_reactor",
+		"label": "穹顶反应核",
+		"offset_x": 0.0,
+		"offset_y_ratio": 0.33,
+		"flip_x": false,
+		"radius": 15.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.5,
+		"damage_mul": 1.65
+	  }
 	},
 	"goliath": {
 	  "name": "歌利亚通用一型",
@@ -213,24 +290,68 @@
 	  "advanced_drop": 0.16,
 	  "body_scale": 0.3,
 	  "collision_radius": 18.0,
-	  "archetype": "mech"
+	  "archetype": "mech",
+	  "weakspot": {
+		"part": "detonator_core",
+		"label": "引信核心",
+		"offset_x": 0.0,
+		"offset_y_ratio": 0.34,
+		"flip_x": false,
+		"radius": 12.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.45,
+		"damage_mul": 1.75
+	  }
 	}
   },
   "archetypes": {
 	"mech": {
 	  "name": "机械",
 	  "blunt_floor": 0.08,
-	  "flesh_mul": 1.0
+	  "flesh_mul": 1.0,
+	  "weakspot": {
+		"part": "optical_core",
+		"label": "光学核心",
+		"offset_x": 0.0,
+		"offset_y_ratio": 0.62,
+		"flip_x": false,
+		"radius": 12.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.5,
+		"damage_mul": 1.6
+	  }
 	},
 	"human": {
 	  "name": "人类",
 	  "blunt_floor": 0.14,
-	  "flesh_mul": 1.05
+	  "flesh_mul": 1.05,
+	  "weakspot": {
+		"part": "head",
+		"label": "头部",
+		"offset_x": 0.0,
+		"offset_y_ratio": 0.8,
+		"flip_x": false,
+		"radius": 11.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.4,
+		"damage_mul": 1.8
+	  }
 	},
 	"mutant": {
 	  "name": "变异",
 	  "blunt_floor": 0.22,
-	  "flesh_mul": 1.2
+	  "flesh_mul": 1.2,
+	  "weakspot": {
+		"part": "exposed_core",
+		"label": "暴露瘤核",
+		"offset_x": 0.0,
+		"offset_y_ratio": 0.56,
+		"flip_x": false,
+		"radius": 13.0,
+		"tolerance": 1.18,
+		"armor_mul": 0.0,
+		"damage_mul": 1.75
+	  }
 	}
   }
 }

@@ -6,9 +6,12 @@ class_name PlayerBullet2D
 
 signal enemy_hit(bullet: PlayerBullet2D, target: Node, point: Vector2, direction: Vector2)
 signal wall_hit(bullet: PlayerBullet2D, point: Vector2, direction: Vector2)
+signal ground_hit(bullet: PlayerBullet2D, point: Vector2, direction: Vector2)
 signal finished(bullet: PlayerBullet2D)
 
 const WALL_OVERLAP_LOOKAHEAD := 120.0
+const WEAKSPOT_LAYER := 4
+const WEAKSPOT_PENETRATE_DEPTH := 56.0
 
 var velocity := Vector2.ZERO
 var damage := 0.0
@@ -20,6 +23,11 @@ var color := Color(1.0, 0.82, 0.45)
 var shot_ctx: Dictionary = {}
 var player_rid := RID()
 var travelled := 0.0
+## Phase 4：是否命中敌人配置弱点区；由弹道优先判定后置位，保持 enemy_hit 4 参信号契约不变。
+var hit_weakspot := false
+## Phase 4：轻量伪 3D 子弹高度 z（1.0=枪口平射高度，0.0=地面）；vz_per_px < 0 时沿弹道自然斜降触地。
+var z_height := 1.0
+var vz_per_px := 0.0
 ## 可选墙体遮挡查询回调 (from: Vector2, to: Vector2) -> Dictionary；
 ## 未注入时使用弹丸自身所在 World2D 的 layer 1 射线检测。
 var wall_check: Callable = Callable()
@@ -50,6 +58,8 @@ static func create(parent: Node, config: Dictionary) -> PlayerBullet2D:
 	bullet.color = config.get("color", Color(1.0, 0.82, 0.45))
 	bullet.shot_ctx = config.get("shot_ctx", {})
 	bullet.origin = from
+	bullet.z_height = clampf(float(config.get("z_start", 1.0)), 0.0, 2.0)
+	bullet.vz_per_px = minf(float(config.get("vz_per_px", 0.0)), 0.0)
 	var exclude_rid = config.get("exclude_rid", RID())
 	if exclude_rid is RID:
 		bullet.player_rid = exclude_rid
@@ -63,6 +73,9 @@ static func create(parent: Node, config: Dictionary) -> PlayerBullet2D:
 	var on_wall = config.get("on_wall_hit", Callable())
 	if on_wall is Callable and (on_wall as Callable).is_valid():
 		bullet.wall_hit.connect(on_wall)
+	var on_ground = config.get("on_ground_hit", Callable())
+	if on_ground is Callable and (on_ground as Callable).is_valid():
+		bullet.ground_hit.connect(on_ground)
 	var on_done = config.get("on_finished", Callable())
 	if on_done is Callable and (on_done as Callable).is_valid():
 		bullet.finished.connect(on_done)
@@ -113,6 +126,12 @@ func _physics_process(delta: float) -> void:
 		return
 	var dir := velocity / speed
 	var step_len := minf(speed * delta, remaining)
+	var will_hit_ground := false
+	if vz_per_px < -0.000001:
+		var dist_to_ground := maxf(z_height / absf(vz_per_px), 0.0)
+		if dist_to_ground <= step_len:
+			step_len = dist_to_ground
+			will_hit_ground = true
 	var from := global_position
 	var next := from + dir * step_len
 
@@ -120,19 +139,69 @@ func _physics_process(delta: float) -> void:
 	var exclude: Array[RID] = []
 	if player_rid.is_valid():
 		exclude.append(player_rid)
+	var space := get_world_2d().direct_space_state
 	var query := PhysicsRayQueryParameters2D.create(from, next, 1 | 2, exclude)
 	query.hit_from_inside = true
 	query.collide_with_areas = true
-	var hit := get_world_2d().direct_space_state.intersect_ray(query)
+	var hit := space.intersect_ray(query)
+
+	var ws_query := PhysicsRayQueryParameters2D.create(from, next, WEAKSPOT_LAYER, exclude)
+	ws_query.hit_from_inside = true
+	ws_query.collide_with_areas = true
+	var ws_hit := space.intersect_ray(ws_query)
+
+	if not ws_hit.is_empty():
+		var ws_target = _extract_target(ws_hit)
+		var ws_dist_sq := from.distance_squared_to(ws_hit["position"])
+		var blocked_by_closer := false
+		if not hit.is_empty():
+			var body_target = _extract_target(hit)
+			var body_dist_sq := from.distance_squared_to(hit["position"])
+			if body_target == null or not body_target.has_method("take_damage"):
+				# 墙体在弱点之前：交给 _resolve_hit 统一走墙体/2.5D 墙前重叠加弱点判定。
+				if body_dist_sq < ws_dist_sq - 1.0:
+					blocked_by_closer = true
+			elif body_target != ws_target and body_dist_sq < ws_dist_sq - 1.0:
+				# 前方另有更近的敌人挡住射线：不能穿透前排去打后排弱点。
+				blocked_by_closer = true
+		if not blocked_by_closer and ws_target != null and ws_target.has_method("take_damage"):
+			_resolve_enemy_hit(ws_target, ws_hit["position"], dir, true)
+			return
+
 	if not hit.is_empty():
-		_resolve_hit(hit, dir)
+		_resolve_hit(hit, from, dir, exclude)
 		return
 
 	global_position = next
 	travelled += step_len
+	if vz_per_px < -0.000001:
+		z_height = maxf(0.0, z_height + vz_per_px * step_len)
 	velocity *= exp(-drag_per_px * step_len)
 	_update_trail_points(global_position)
+	if will_hit_ground or (vz_per_px < -0.000001 and z_height <= 0.001):
+		ground_hit.emit(self, next, dir)
+		_finish(next)
+		return
 	queue_redraw()
+
+
+static func _extract_target(hit: Dictionary):
+	var collider = hit.get("collider")
+	if collider is Area2D:
+		return collider.get_parent()
+	return collider
+
+
+func _find_target_weakspot_along(from_pos: Vector2, to_pos: Vector2, target, exclude: Array[RID]) -> Dictionary:
+	var ws_q := PhysicsRayQueryParameters2D.create(from_pos, to_pos, WEAKSPOT_LAYER, exclude)
+	ws_q.hit_from_inside = true
+	ws_q.collide_with_areas = true
+	var ws_hit := get_world_2d().direct_space_state.intersect_ray(ws_q)
+	if ws_hit.is_empty():
+		return {}
+	if _extract_target(ws_hit) != target:
+		return {}
+	return ws_hit
 
 
 func _query_wall_between(from_pos: Vector2, to_pos: Vector2) -> Dictionary:
@@ -145,35 +214,43 @@ func _query_wall_between(from_pos: Vector2, to_pos: Vector2) -> Dictionary:
 	return get_world_2d().direct_space_state.intersect_ray(query)
 
 
-func _resolve_hit(hit: Dictionary, dir: Vector2) -> void:
+func _resolve_enemy_hit(target, point: Vector2, dir: Vector2, is_weakspot: bool) -> void:
+	# 敌人贴墙只露出受击盒时，从开火点回看身体核心；被墙挡住就不结算伤害。
+	# 但 2.5D 立绘向上延伸，敌人贴在北墙下方或门框拐角旁时，body_center() 可能投影进墙内，
+	# 而脚底物理核心 ground_center() 仍在同侧开阔地面；仅当身体核心与脚底核心（及命中点到脚底）
+	# 均被墙体隔开时，才判定为隔墙穿射并拒绝结算伤害。
+	if target.has_method("body_center"):
+		var shot_origin: Vector2 = shot_ctx.get("origin", origin)
+		var blocked: Dictionary = _query_wall_between(shot_origin, target.body_center())
+		if not blocked.is_empty():
+			var clear_via_ground := false
+			if target.has_method("ground_center"):
+				var ground: Vector2 = target.ground_center()
+				if _query_wall_between(shot_origin, ground).is_empty():
+					clear_via_ground = true
+				elif _query_wall_between(point, ground).is_empty():
+					clear_via_ground = true
+			if not clear_via_ground:
+				wall_hit.emit(self, blocked["position"], dir)
+				_finish(blocked["position"])
+				return
+	hit_weakspot = is_weakspot
+	enemy_hit.emit(self, target, point, dir)
+	_finish(point)
+
+
+func _resolve_hit(hit: Dictionary, from_pos: Vector2, dir: Vector2, exclude: Array[RID]) -> void:
 	var point: Vector2 = hit["position"]
-	var collider = hit.get("collider")
-	var target = collider
-	if collider is Area2D:
-		target = collider.get_parent()
+	var target = _extract_target(hit)
 
 	if target != null and target.has_method("take_damage"):
-		# 敌人贴墙只露出受击盒时，从开火点回看身体核心；被墙挡住就不结算伤害。
-		# 但 2.5D 立绘向上延伸，敌人贴在北墙下方或门框拐角旁时，body_center() 可能投影进墙内，
-		# 而脚底物理核心 ground_center() 仍在同侧开阔地面；仅当身体核心与脚底核心（及命中点到脚底）
-		# 均被墙体隔开时，才判定为隔墙穿射并拒绝结算伤害。
-		if target.has_method("body_center"):
-			var shot_origin: Vector2 = shot_ctx.get("origin", origin)
-			var blocked: Dictionary = _query_wall_between(shot_origin, target.body_center())
-			if not blocked.is_empty():
-				var clear_via_ground := false
-				if target.has_method("ground_center"):
-					var ground: Vector2 = target.ground_center()
-					if _query_wall_between(shot_origin, ground).is_empty():
-						clear_via_ground = true
-					elif _query_wall_between(point, ground).is_empty():
-						clear_via_ground = true
-				if not clear_via_ground:
-					wall_hit.emit(self, blocked["position"], dir)
-					_finish(blocked["position"])
-					return
-		enemy_hit.emit(self, target, point, dir)
-		_finish(point)
+		# 射线优先弱点结算：即便先碰到外层躯干 Hitbox 边缘，只要弹道继续穿过同一目标的弱点区，即优先按弱点结算。
+		var probe_end := point + dir * WEAKSPOT_PENETRATE_DEPTH
+		var ws_hit := _find_target_weakspot_along(from_pos, probe_end, target, exclude)
+		if not ws_hit.is_empty():
+			_resolve_enemy_hit(target, ws_hit["position"], dir, true)
+			return
+		_resolve_enemy_hit(target, point, dir, false)
 		return
 
 	# 2.5D 遮挡修正：敌人站在北墙/掩体南侧时，其立绘与上半身 Hitbox 会向上投影盖在墙前；
@@ -181,8 +258,12 @@ func _resolve_hit(hit: Dictionary, dir: Vector2) -> void:
 	# 才将该次擦墙还原为命中敌人，同时保持 0 隔墙穿射漏洞。
 	var overlap_hit := _find_wall_front_enemy_hit(point, dir)
 	if not overlap_hit.is_empty():
-		enemy_hit.emit(self, overlap_hit["target"], overlap_hit["point"], dir)
-		_finish(overlap_hit["point"])
+		var ov_target = overlap_hit["target"]
+		var ov_point: Vector2 = overlap_hit["point"]
+		var ov_ws := bool(overlap_hit.get("weakspot", false))
+		hit_weakspot = ov_ws
+		enemy_hit.emit(self, ov_target, ov_point, dir)
+		_finish(ov_point)
 		return
 
 	wall_hit.emit(self, point, dir)
@@ -197,17 +278,15 @@ func _find_wall_front_enemy_hit(wall_pt: Vector2, dir: Vector2) -> Dictionary:
 	var exclude: Array[RID] = []
 	if player_rid.is_valid():
 		exclude.append(player_rid)
+	var space := get_world_2d().direct_space_state
 	var query := PhysicsRayQueryParameters2D.create(
-		wall_pt, wall_pt + dir * lookahead, 2, exclude)
+		wall_pt, wall_pt + dir * lookahead, 2 | WEAKSPOT_LAYER, exclude)
 	query.hit_from_inside = true
 	query.collide_with_areas = true
-	var hit := get_world_2d().direct_space_state.intersect_ray(query)
+	var hit := space.intersect_ray(query)
 	if hit.is_empty():
 		return {}
-	var collider = hit.get("collider")
-	var target = collider
-	if collider is Area2D:
-		target = collider.get_parent()
+	var target = _extract_target(hit)
 	if target == null or not target.has_method("take_damage") or not target.has_method("ground_center"):
 		return {}
 	var ground: Vector2 = target.ground_center()
@@ -216,7 +295,15 @@ func _find_wall_front_enemy_hit(wall_pt: Vector2, dir: Vector2) -> Dictionary:
 	var shot_origin: Vector2 = shot_ctx.get("origin", origin)
 	if not _query_wall_between(shot_origin, ground).is_empty():
 		return {}
-	return {"target": target, "point": hit["position"]}
+	var hit_pt: Vector2 = hit["position"]
+	var collider = hit.get("collider")
+	var is_ws: bool = collider is Area2D and bool(collider.get_meta("is_weakspot", false))
+	if not is_ws:
+		var ws_probe := _find_target_weakspot_along(wall_pt, hit_pt + dir * WEAKSPOT_PENETRATE_DEPTH, target, exclude)
+		if not ws_probe.is_empty():
+			is_ws = true
+			hit_pt = ws_probe["position"]
+	return {"target": target, "point": hit_pt, "weakspot": is_ws}
 
 
 func _finish(endpoint: Vector2) -> void:
@@ -274,6 +361,11 @@ func set_trail_visible(enabled: bool) -> void:
 
 func _draw() -> void:
 	var speed := velocity.length()
+	# 伪 3D 斜向落点：在子弹下方绘制随高度收敛的地面投影点，增强落地空间感。
+	if vz_per_px < -0.000001 and z_height > 0.02:
+		var shadow_local := Vector2(0.0, z_height * 16.0).rotated(-rotation)
+		var shadow_alpha := lerpf(0.36, 0.14, clampf(z_height, 0.0, 1.0))
+		draw_circle(shadow_local, 2.2, Color(0.04, 0.04, 0.05, shadow_alpha))
 	# 弹丸实体保持短小：长距离弹道由独立线条负责，关闭线条后仍能看到这颗子弹。
 	var trail := clampf(speed * 0.006, 12.0, 42.0)
 	var glow := Color(color.r, color.g, color.b, 0.20)

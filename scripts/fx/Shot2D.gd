@@ -83,6 +83,61 @@ static func wall_hit(parent: Node, pos: Vector2, dir := Vector2.RIGHT) -> void:
 		PixelFx2D.Mode.BAKED, "", {"height": 0})
 
 
+## Phase 4 伪 3D 子弹落地扬尘：近中距瞄准空地斜射触地时，弹出地面尘环、微碎屑与短暂弹痕。
+static func ground_dust(parent: Node, pos: Vector2, dir := Vector2.RIGHT) -> Node2D:
+	if parent == null or not parent.is_inside_tree():
+		return null
+	var root := Node2D.new()
+	root.z_index = 54
+	root.set_meta("ground_dust_fx", true)
+	parent.add_child(root)
+	root.global_position = pos
+
+	# 地面短暂弹坑微痕
+	var scuff := Polygon2D.new()
+	scuff.polygon = PackedVector2Array([
+		Vector2(-3.0, -1.5), Vector2(3.0, -1.5), Vector2(3.0, 1.5), Vector2(-3.0, 1.5),
+	])
+	scuff.color = Color(0.14, 0.12, 0.10, 0.72)
+	root.add_child(scuff)
+
+	# 椭圆扬尘扩散环（匹配 2.5D 俯视地面透视）
+	var ring := Line2D.new()
+	ring.width = 2.0
+	ring.default_color = Color(0.82, 0.78, 0.68, 0.68)
+	var pts := PackedVector2Array()
+	for i in 17:
+		var a := TAU * float(i) / 16.0
+		pts.append(Vector2(cos(a) * 9.0, sin(a) * 5.2))
+	ring.points = pts
+	ring.scale = Vector2(0.45, 0.45)
+	root.add_child(ring)
+
+	# 沿弹道前方溅起的 5 粒像素尘屑
+	var fwd := dir.normalized() if dir.length_squared() > 0.001 else Vector2.RIGHT
+	var tw := root.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(ring, "scale", Vector2(1.9, 1.9), 0.28) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(ring, "modulate:a", 0.0, 0.30)
+	tw.tween_property(scuff, "modulate:a", 0.0, 0.48).set_delay(0.12)
+	for i in 5:
+		var mote := Polygon2D.new()
+		var sz := randf_range(1.4, 2.6)
+		mote.polygon = PackedVector2Array([
+			Vector2(-sz, -sz), Vector2(sz, -sz), Vector2(sz, sz), Vector2(-sz, sz),
+		])
+		mote.color = Color(0.84, 0.80, 0.72, 0.82) if i % 2 == 0 else Color(0.56, 0.52, 0.46, 0.78)
+		root.add_child(mote)
+		var spread_a := randf_range(-0.95, 0.95)
+		var kick := fwd.rotated(spread_a) * randf_range(8.0, 20.0) + Vector2(0.0, -randf_range(4.0, 12.0))
+		tw.tween_property(mote, "position", kick, 0.30) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(mote, "modulate:a", 0.0, 0.30)
+	tw.chain().tween_callback(root.queue_free)
+	return root
+
+
 ## 通用命中爆点：敌人打中玩家等场合，同样走特效库。
 static func hit_burst(parent: Node, pos: Vector2, dir: Vector2,
 		material := "flesh", scale_mul := 0.7) -> void:

@@ -45,6 +45,8 @@ var last_shot_origin := Vector2.ZERO
 var last_shot_dir := Vector2.RIGHT
 var last_pellet_dirs: Array[Vector2] = []
 var last_pellet_spread := 0.0
+var last_shot_flat := true
+var last_hit_weakspot := false
 
 var _owner: Node2D
 var _doll: Doll2D
@@ -322,6 +324,7 @@ func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 	shots_fired += 1
 	var origin := get_safe_shot_origin(muzzle)
 	# 第一发始终走准心；本发的后坐力在出膛后再累积，避免首发就偏。
+	var aim_world := _doll.aim_target + recoil_offset
 	var base_dir := aim_direction_from(origin)
 	last_shot_origin = origin
 	last_shot_dir = base_dir
@@ -369,12 +372,30 @@ func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 		damage_mul *= float(dbg.debug_mul("damage"))
 	var effective_ap := maxf(0.0, float(ammo.ap) + float(data.ap_bonus))
 	var is_flesh_ammo := ammo.role == &"flesh"
+	var speed := bullet_speed_px_s(ammo, data)
+	var drag_px := BALLISTICS_MODEL.drag_per_px(ammo, WORLD_PER_METER)
+
+	var enemies_info: Array = []
+	for enemy in _enemies:
+		if is_instance_valid(enemy) and not enemy._dead and float(enemy.hp) > 0.0:
+			enemies_info.append({
+				"pos": enemy.global_position,
+				"body": enemy.body_center(),
+				"vel": enemy.velocity,
+				"radius": float(enemy.def.collision_radius),
+			})
+	var p3d := BALLISTICS_MODEL.compute_pseudo3d_profile(
+		origin, aim_world, base_dir, length, speed, enemies_info)
+	last_shot_flat = bool(p3d["flat_shot"])
 
 	var pellet_count := maxi(1, ammo.pellets)
 	var ctx := {
 		"data": data,
 		"ap": effective_ap,
 		"is_flesh": is_flesh_ammo,
+		"weapon_weakspot_mul": clampf(float(data.weakspot_mul), 0.5, 3.0),
+		"z_start": float(p3d["z_start"]),
+		"vz_per_px": float(p3d["vz_per_px"]),
 		"knockback": float(data.knockback),
 		"multi": pellet_count > 1,
 		"pending": pellet_count,
@@ -384,10 +405,9 @@ func on_weapon_fired(muzzle: Vector2, _dir: Vector2) -> void:
 		"first_hit": false,
 		"first_kill": false,
 		"wall_fx": 0,
+		"ground_fx": 0,
 		"flush_scheduled": false,
 	}
-	var speed := bullet_speed_px_s(ammo, data)
-	var drag_px := BALLISTICS_MODEL.drag_per_px(ammo, WORLD_PER_METER)
 	for i in pellet_count:
 		var direction := base_dir.rotated(spread_offset(pellet_spread)).normalized()
 		last_pellet_dirs.append(direction)
@@ -429,10 +449,13 @@ func spawn_player_bullet(origin: Vector2, direction: Vector2, speed_px_s: float,
 		"exclude_rid": exclude_rid,
 		"trail_enabled": _trail_enabled(),
 		"wall_check": wall_between,
+		"z_start": float(ctx.get("z_start", 1.0)),
+		"vz_per_px": float(ctx.get("vz_per_px", 0.0)),
 	})
 	if bullet != null:
 		bullet.enemy_hit.connect(on_bullet_hit_enemy)
 		bullet.wall_hit.connect(on_bullet_hit_wall)
+		bullet.ground_hit.connect(on_bullet_hit_ground)
 		bullet.finished.connect(on_bullet_finished)
 	return bullet
 
@@ -449,17 +472,38 @@ func on_bullet_hit_wall(bullet, point: Vector2, dir: Vector2) -> void:
 			audio.play_wall_impact(-15.0)
 
 
+func on_bullet_hit_ground(bullet, point: Vector2, dir: Vector2) -> void:
+	var ctx: Dictionary = bullet.shot_ctx
+	if int(ctx.get("ground_fx", 0)) >= 3:
+		return
+	ctx["ground_fx"] = int(ctx.get("ground_fx", 0)) + 1
+	Shot2D.ground_dust(_fx_layer, point, dir)
+	if _owner != null:
+		var audio := _owner.get_node_or_null("/root/Sfx")
+		if audio != null and audio.has_method("play_ground_impact"):
+			audio.play_ground_impact(-18.0)
+
+
 func on_bullet_hit_enemy(bullet, target, point: Vector2, dir: Vector2) -> void:
 	var ctx: Dictionary = bullet.shot_ctx
+	var is_ws := bool(bullet.hit_weakspot) if bullet is PlayerBullet2D else bool(bullet.get("hit_weakspot", false))
 	if bool(ctx.get("multi", false)):
 		var bucket: Dictionary = ctx["buckets"].get(target, {})
 		if bucket.is_empty():
-			bucket = {"damage": 0.0, "point": point, "dir": dir}
+			bucket = {
+				"damage": 0.0, "ws_damage": 0.0,
+				"point": point, "ws_point": point, "dir": dir, "weakspot": false,
+			}
 			ctx["buckets"][target] = bucket
-		bucket["damage"] = float(bucket["damage"]) + float(bullet.damage)
+		if is_ws:
+			bucket["ws_damage"] = float(bucket["ws_damage"]) + float(bullet.damage)
+			bucket["ws_point"] = point
+			bucket["weakspot"] = true
+		else:
+			bucket["damage"] = float(bucket["damage"]) + float(bullet.damage)
 		_schedule_shot_flush(ctx)
 		return
-	apply_hit_batch(ctx, target, float(bullet.damage), point, dir)
+	apply_hit_batch(ctx, target, float(bullet.damage), point, dir, is_ws)
 
 
 func _schedule_shot_flush(ctx: Dictionary) -> void:
@@ -480,8 +524,14 @@ func flush_shot_buckets(ctx: Dictionary) -> void:
 		var bucket: Dictionary = buckets[target]
 		buckets.erase(target)
 		if is_instance_valid(target):
-			apply_hit_batch(ctx, target, float(bucket["damage"]),
-				bucket["point"], bucket["dir"])
+			var body_dmg := float(bucket.get("damage", 0.0))
+			var ws_dmg := float(bucket.get("ws_damage", 0.0))
+			if ws_dmg > 0.0 and body_dmg > 0.0:
+				apply_hit_batch(ctx, target, body_dmg, bucket["ws_point"], bucket["dir"], true, ws_dmg)
+			elif ws_dmg > 0.0:
+				apply_hit_batch(ctx, target, ws_dmg, bucket["ws_point"], bucket["dir"], true)
+			else:
+				apply_hit_batch(ctx, target, body_dmg, bucket["point"], bucket["dir"], false)
 
 
 func on_bullet_finished(bullet) -> void:
@@ -492,13 +542,28 @@ func on_bullet_finished(bullet) -> void:
 
 
 func apply_hit_batch(ctx: Dictionary, target, amount: float,
-		point: Vector2, dir: Vector2) -> void:
+		point: Vector2, dir: Vector2, is_weakspot: bool = false,
+		weakspot_amount: float = -1.0) -> void:
 	if not _is_active():
 		return
 	var before := float(target.hp)
-	var dealt: float = target.take_damage(amount, float(ctx.get("ap", 0.0)),
-		dir * float(ctx.get("knockback", 0.0)), bool(ctx.get("is_flesh", false))) if target is Enemy2D \
-		else target.take_damage(amount, float(ctx.get("ap", 0.0)), dir * float(ctx.get("knockback", 0.0)))
+	var ap := float(ctx.get("ap", 0.0))
+	var impulse := dir * float(ctx.get("knockback", 0.0))
+	var is_flesh := bool(ctx.get("is_flesh", false))
+	var ws_mul := float(ctx.get("weapon_weakspot_mul", 1.0))
+	var any_ws := is_weakspot or weakspot_amount > 0.0
+	var dealt := 0.0
+	if target is Enemy2D:
+		if weakspot_amount > 0.0:
+			if amount > 0.0:
+				dealt += target.take_damage(amount, ap, impulse * 0.5, is_flesh, false, ws_mul)
+			dealt += target.take_damage(weakspot_amount, ap, impulse * 0.5, is_flesh, true, ws_mul)
+		else:
+			dealt = target.take_damage(amount, ap, impulse, is_flesh, any_ws, ws_mul)
+	else:
+		var total_in := amount + (weakspot_amount if weakspot_amount > 0.0 else 0.0)
+		dealt = target.take_damage(total_in, ap, impulse)
+	last_hit_weakspot = any_ws
 	damage_dealt += dealt
 	var killed := before > 0.0 and float(target.hp) <= 0.0
 	var material := "metal"
@@ -509,16 +574,17 @@ func apply_hit_batch(ctx: Dictionary, target, amount: float,
 	if not ctx["fx_targets"].has(target):
 		ctx["fx_targets"][target] = true
 		if _fx_layer != null:
-			HIT_FX.enemy_hit(_fx_layer, point, dir, material, weight, killed, _hit_fx_level())
+			HIT_FX.enemy_hit(_fx_layer, point, dir, material, weight, killed, _hit_fx_level(), any_ws)
 	if _fx_layer != null:
-		var tint := Color(1.0, 0.84, 0.52) if material == "flesh" else Color(1.0, 0.95, 0.72)
+		var tint := DamageNumber2D.WEAKSPOT_COLOR if any_ws else (
+			Color(1.0, 0.84, 0.52) if material == "flesh" else Color(1.0, 0.95, 0.72))
 		DamageNumber2D.spawn(_fx_layer, point, int(round(dealt)), tint,
-			material, killed or dealt >= 40.0)
-	_shot_hit_feedback(ctx, killed)
+			"weakspot" if any_ws else material, killed or any_ws or dealt >= 40.0)
+	_shot_hit_feedback(ctx, killed, any_ws)
 	hit_resolved.emit(target, dealt, killed, material)
 
 
-func _shot_hit_feedback(ctx: Dictionary, killed: bool) -> void:
+func _shot_hit_feedback(ctx: Dictionary, killed: bool, is_weakspot: bool = false) -> void:
 	var data: WeaponData = ctx.get("data")
 	if data == null:
 		return
@@ -526,12 +592,15 @@ func _shot_hit_feedback(ctx: Dictionary, killed: bool) -> void:
 		ctx["first_hit"] = true
 		shots_hit += 1
 		if _reticle != null:
-			_reticle.show_hit()
+			_reticle.show_hit(is_weakspot)
 		if _shake_fn.is_valid():
-			_shake_fn.call(1.1 + data.shake_amount * 0.35,
+			var ws_shake := 1.25 if is_weakspot else 1.0
+			_shake_fn.call((1.1 + data.shake_amount * 0.35) * ws_shake,
 				data.shake_roll * 0.5, data.shake_decay)
 		if _hitstop_fn.is_valid():
-			_hitstop_fn.call(0.022 + data.shake_amount * 0.012 + (0.03 if killed else 0.0))
+			_hitstop_fn.call(0.022 + data.shake_amount * 0.012 + (0.03 if killed else 0.0) + (0.015 if is_weakspot else 0.0))
+	elif is_weakspot and _reticle != null:
+		_reticle.show_hit(true)
 	elif killed and not bool(ctx.get("first_kill", false)):
 		if _hitstop_fn.is_valid():
 			_hitstop_fn.call(0.03)

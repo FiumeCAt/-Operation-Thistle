@@ -21,6 +21,7 @@ var main: Node2D
 var _view: RetView
 var _vignette: TextureRect
 var _hit_t := 0.0
+var _hit_weakspot := false
 var _cursor_hidden := false
 var _focused := true
 var _gap := BASE_GAP
@@ -98,13 +99,16 @@ func setup(run: Node2D) -> void:
 	main = run
 
 
-## 命中敌人时闪一下准心，给开火一个明确的“打中了”的反馈。
-func show_hit() -> void:
-	_hit_t = HIT_TIME
+## 命中敌人时闪一下准心，给开火一个明确的“打中了”的反馈；命中弱点时闪金红 X 标记。
+func show_hit(weakspot := false) -> void:
+	_hit_t = HIT_TIME + (0.06 if weakspot else 0.0)
+	_hit_weakspot = weakspot
 
 
 func _process(delta: float) -> void:
 	_hit_t = maxf(_hit_t - delta, 0.0)
+	if _hit_t <= 0.0:
+		_hit_weakspot = false
 	if main == null or get_tree().paused:
 		_view.visible = false
 		_vignette.visible = false
@@ -145,6 +149,7 @@ func _process(delta: float) -> void:
 	_view.blocked = blocked
 	_view.impact = impact_screen
 	_view.hit = _hit_t > 0.0
+	_view.hit_weakspot = _hit_t > 0.0 and _hit_weakspot
 	_view.ads = main.doll.ads
 	_view.zoom_pct = main.view_zoom_pct
 	# 调整视角时显示倍率；非 100% 档位也常驻提示当前缩放。
@@ -159,6 +164,7 @@ class RetView extends Control:
 	var blocked := false
 	var impact := Vector2.ZERO
 	var hit := false
+	var hit_weakspot := false
 	var ads := false
 	var show_zoom := false
 	var gap := 4.0
@@ -185,4 +191,13 @@ class RetView extends Control:
 			draw_string(PixelUI.FONT, point + Vector2(-18, 30), text,
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.88, 0.92, 0.88, 0.62))
 		if hit:
-			draw_circle(center, 5.0, Color(1.0, 1.0, 1.0, 0.9), false, 1.0, true)
+			if hit_weakspot:
+				var ws_out := Color(0.82, 0.10, 0.08, 0.92)
+				var ws_in := Color(1.0, 0.84, 0.24, 0.98)
+				for diag in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+					var d: Vector2 = (diag as Vector2).normalized()
+					draw_line(center + d * 3.5, center + d * 10.5, ws_out, 3.0, false)
+					draw_line(center + d * 4.0, center + d * 10.0, ws_in, 1.5, false)
+				draw_circle(center, 6.5, Color(1.0, 0.42, 0.16, 0.85), false, 1.2, true)
+			else:
+				draw_circle(center, 5.0, Color(1.0, 1.0, 1.0, 0.9), false, 1.0, true)

@@ -65,7 +65,8 @@ $DefaultCoreTests = @(
     "weapon_m3_test",
     "weapon_pose_ik_test",
     "weapon_rig_test",
-    "weapon_stats_model_test"
+    "weapon_stats_model_test",
+    "weakspot_pseudo3d_test"
 )
 
 if (-not (Test-Path $Godot)) {

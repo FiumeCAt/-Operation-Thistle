@@ -299,13 +299,19 @@ func hear_noise(pos: Vector2, radius_m: float) -> void:
 
 
 func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO,
-		is_flesh_ammo: bool = false) -> float:
+		is_flesh_ammo: bool = false, is_weakspot: bool = false,
+		weapon_weakspot_mul: float = 1.0) -> float:
 	if _dead:
 		return 0.0
 	var f_mul := def.flesh_mul if is_flesh_ammo else 1.0
-	var dmg: float = DAMAGE_MODEL.resolve_enemy_damage(amount, ap, def.armor, def.blunt_floor, f_mul)
+	var hit_ws := is_weakspot and def.weakspot_enabled
+	var dmg: float = DAMAGE_MODEL.resolve_enemy_weakspot_damage(
+		amount, ap, def.armor, def.blunt_floor, f_mul,
+		def.weakspot_armor_mul, def.weakspot_damage_mul, weapon_weakspot_mul
+	) if hit_ws else DAMAGE_MODEL.resolve_enemy_damage(amount, ap, def.armor, def.blunt_floor, f_mul)
 	hp -= dmg
-	_hit_flash = 0.14
+	_hit_flash = 0.16 if hit_ws else 0.14
+	visual.hit_flash_weakspot = hit_ws
 	if impulse.length_squared() > 1.0:
 		_knock += (impulse / maxf(hit_weight(), 0.9)).limit_length(340.0)
 		_squash = 1.0
@@ -313,7 +319,12 @@ func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO
 		_hit_sfx_cd = 0.06
 		var sfx := get_node_or_null("/root/Sfx")
 		if sfx != null:
-			sfx.play_hit(hit_material(), hit_weight(), -11.0)
+			if hit_ws and sfx.has_method("play_weakspot_hit"):
+				var ws_armor := def.armor * def.weakspot_armor_mul
+				var broke_armor := def.armor > 0.0 and DAMAGE_MODEL.is_penetrated(ap, ws_armor)
+				sfx.play_weakspot_hit(broke_armor, hit_material(), -7.5)
+			else:
+				sfx.play_hit(hit_material(), hit_weight(), -11.0)
 	_enter("combat")
 	if def.is_self_destruct_unit():
 		combat.on_self_destruct_damaged(self, dmg)
@@ -334,11 +345,29 @@ func _die() -> void:
 	var hitbox := get_node_or_null("Hitbox") as Area2D
 	if hitbox != null:
 		hitbox.collision_layer = 0
+	var weakspot := get_node_or_null("Weakspot") as Area2D
+	if weakspot != null:
+		weakspot.collision_layer = 0
 	velocity = Vector2.ZERO
 	combat.clear_laser(self)
 	if combat.start_death_fuse_if_needed(self):
 		return
 	_finish_death_visual()
+
+
+## 弱点世界坐标与有效半径查询（供弱点测试、瞄准预判与视觉对齐共用）。
+func has_weakspot() -> bool:
+	return def.weakspot_enabled and visual.weakspot_area != null and is_instance_valid(visual.weakspot_area)
+
+
+func weakspot_world_pos() -> Vector2:
+	if visual.weakspot_area != null and is_instance_valid(visual.weakspot_area):
+		return visual.weakspot_area.global_position
+	return global_position + def.weakspot_local_offset(_sprite_h, false)
+
+
+func weakspot_radius() -> float:
+	return def.effective_weakspot_radius() if def.weakspot_enabled else 0.0
 
 
 ## 身体核心点：反穿墙判定用，只打到探出墙外的受击盒不会结算伤害。

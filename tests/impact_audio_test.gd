@@ -88,19 +88,24 @@ func _run() -> void:
 	await process_frame
 	_check(true, "unknown material falls back without errors")
 
-	# 6) 独立子模块契约：SfxSynth 确定性 38 条音色库（含 5 条消音枪声 + 快慢机拨片）、SfxSamples 独立抽样、AudioBusService 总线静音/音量。
+	# 6) 独立子模块契约：SfxSynth 确定性 40 条音色库（含 5 条消音枪声 + 快慢机 + 弱点/破甲音效）、SfxSamples 独立抽样、AudioBusService 总线静音/音量。
 	var bank := SfxSynth.build_all()
-	_check(bank.size() == 38 and bank.has("shotgun") and bank.has("ambient") and bank.has("enemy_alert")
+	_check(bank.size() == 40 and bank.has("shotgun") and bank.has("ambient") and bank.has("enemy_alert")
 		and bank.has("shotgun_sup") and bank.has("pistol_sup") and bank.has("smg_sup")
-		and bank.has("rifle_sup") and bank.has("sniper_sup") and bank.has("fire_select"),
-		"SfxSynth builds the full deterministic 38-stream bank including suppressed shots and fire_select")
+		and bank.has("rifle_sup") and bank.has("sniper_sup") and bank.has("fire_select")
+		and bank.has("weakspot_hit") and bank.has("armor_pierce"),
+		"SfxSynth builds the full deterministic 40-stream bank including weakspot and armor_pierce")
 	_check((bank["ambient"] as AudioStreamWAV).loop_mode == AudioStreamWAV.LOOP_FORWARD,
 		"SfxSynth sets forward loop mode on ambient stream")
 	before = sfx.get_child_count()
 	sfx.play_2d("rifle_sup", -12.0)
 	sfx.play_2d("fire_select", -12.0)
-	_check(sfx.get_child_count() >= before + 2,
-		"suppressed rifle shot and fire_select click spawn audio players")
+	sfx._last_weakspot_ms = 0
+	sfx.play_weakspot_hit(true, "metal", -14.0)
+	sfx._last_ground_ms = 0
+	sfx.play_ground_impact(-18.0)
+	_check(sfx.get_child_count() >= before + 5,
+		"suppressed shot, fire_select, weakspot armor-pierce, and ground dust SFX spawn audio players")
 	var samples := SfxSamples.new()
 	_check(samples.pick_for_material("unknown_mat") != null and samples.pick_ricochet() != null,
 		"SfxSamples resolves generic fallback and ricochet stream")

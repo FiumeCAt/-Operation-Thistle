@@ -79,6 +79,22 @@ static func resolve_enemy_damage(amount: float, ap: float, armor: float,
 	return maxf(1.0, amount * blunt_mul)
 
 
+## 敌人弱点受击结算（Phase 4）：
+##   1) 部位有效护甲 = max(0, armor * weakspot_armor_mul)（弱点护甲减薄，易触发击穿）
+##   2) 先按常规 RHA 公式结算穿甲/余穿/肉伤倍率
+##   3) 再乘以 单位弱点倍率 × 武器固有弱点倍率
+static func resolve_enemy_weakspot_damage(amount: float, ap: float, armor: float,
+		blunt_floor: float = NON_PEN_BLUNT_FLOOR, flesh_mul: float = 1.0,
+		weakspot_armor_mul: float = 0.5, unit_weakspot_mul: float = 1.6,
+		weapon_weakspot_mul: float = 1.0) -> float:
+	if amount <= 0.0:
+		return 0.0
+	var ws_armor := maxf(armor, 0.0) * clampf(weakspot_armor_mul, 0.0, 1.0)
+	var base := resolve_enemy_damage(amount, ap, ws_armor, blunt_floor, flesh_mul)
+	var total_mul := clampf(unit_weakspot_mul, 1.0, 4.0) * clampf(weapon_weakspot_mul, 0.5, 3.0)
+	return base * total_mul
+
+
 ## 玩家满耐久时的标称 RHA 防御值（0.1 mm 单位）。
 static func player_base_rha(armor_level: int, armor_rha_bonus: float = 0.0) -> float:
 	var lv := maxi(armor_level, 1)

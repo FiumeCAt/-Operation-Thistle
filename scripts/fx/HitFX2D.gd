@@ -13,7 +13,8 @@ const BLOOD_PRESET := "blood"
 ## 统一入口：材质决定特效库里的哪一支，方向决定喷溅朝向。
 ## level 控制"击中特写"：2 完整 / 1 减弱（默认，缩小且不叠击杀特写）/ 0 关闭。
 static func enemy_hit(parent: Node, pos: Vector2, dir: Vector2,
-		material := "metal", weight := 1.0, killed := false, level := 1) -> void:
+		material := "metal", weight := 1.0, killed := false, level := 1,
+		is_weakspot := false) -> void:
 	if parent == null or not parent.is_inside_tree() or level <= 0:
 		return
 	var s := (1.05 + clampf(weight, 0.7, 1.8) * 0.28) * (1.0 if level >= 2 else 0.6)
@@ -35,6 +36,11 @@ static func enemy_hit(parent: Node, pos: Vector2, dir: Vector2,
 		if with_crit:
 			Shot2D.pixel_fx(parent, "impacts/crit-hit", pos, dir.angle(), 71, s * 1.05,
 				PixelFx2D.Mode.BAKED, METAL_KILL_PRESET, {"height": 0, "aim": 0.0}, 0.8)
+	if is_weakspot:
+		# 弱点命中叠一层金红爆发火花（复用已预热的 gold hit-spark，零额外烘焙卡顿）。
+		Shot2D.pixel_fx(parent, "impacts/hit-spark", pos, dir.angle(), 72, s * 1.18,
+			PixelFx2D.Mode.BAKED, "gold", {"height": 0, "aim": 0.0}, 0.75)
+		Shot2D.impact(parent, pos, Color(1.0, 0.34, 0.16))
 
 
 ## 所有会被首次命中/击杀触发的 pixelfx 变体（含不同调色板）。

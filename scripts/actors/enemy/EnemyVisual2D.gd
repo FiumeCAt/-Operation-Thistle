@@ -14,10 +14,13 @@ const ALERT_FPS := 12.0
 const ALERT_LIFE := 1.25
 const ALERT_ICON_SCALE := 0.68
 const ALERT_ICON_LIFT := 38.0
+## 专用弱点物理层（bit 2 = 4），与墙体(1)与躯干受击盒(2)隔离，便于射线优先弱点结算。
+const WEAKSPOT_LAYER := 4
 
 var sprite: Sprite2D
 var sprite_h := 0.0
 var anim: AnimatedSprite2D
+var weakspot_area: Area2D
 var bar_bg: Polygon2D
 var bar_fill: Polygon2D
 var alert_icon: Sprite2D
@@ -27,6 +30,7 @@ var anim_override := ""
 var anim_override_t := 0.0
 var bob := 0.0
 var hit_flash := 0.0
+var hit_flash_weakspot := false
 var squash := 0.0
 
 
@@ -102,6 +106,26 @@ func _build_body_nodes(host: Node2D, def: EnemyDef) -> void:
 	hitbox.add_child(hit_shape)
 	host.add_child(hitbox)
 
+	# Phase 4 可配置部位弱点区（+15%~20% 宽容判定半径，挂载于独立 WEAKSPOT_LAYER = 4）。
+	weakspot_area = null
+	if def.weakspot_enabled:
+		var ws := Area2D.new()
+		ws.name = "Weakspot"
+		ws.collision_layer = WEAKSPOT_LAYER
+		ws.collision_mask = 0
+		ws.monitoring = false
+		ws.input_pickable = false
+		ws.position = def.weakspot_local_offset(sprite_h, false)
+		ws.set_meta("is_weakspot", true)
+		ws.set_meta("weakspot_part", def.weakspot_part)
+		var ws_shape := CollisionShape2D.new()
+		var ws_circle := CircleShape2D.new()
+		ws_circle.radius = def.effective_weakspot_radius()
+		ws_shape.shape = ws_circle
+		ws.add_child(ws_shape)
+		host.add_child(ws)
+		weakspot_area = ws
+
 	bar_bg = Polygon2D.new()
 	bar_bg.polygon = PackedVector2Array([
 		Vector2(-22, -sprite_h - 12), Vector2(22, -sprite_h - 12),
@@ -171,6 +195,8 @@ func play_anim_override(anim_name: String, time: float) -> void:
 
 func tick_flash(delta: float) -> void:
 	hit_flash = maxf(hit_flash - delta, 0.0)
+	if hit_flash <= 0.0:
+		hit_flash_weakspot = false
 
 
 func tick_squash(host: Node2D, delta: float) -> void:
@@ -188,6 +214,8 @@ func update_visual(host: CharacterBody2D, def: EnemyDef, player: Node2D,
 		delta: float) -> void:
 	anim_override_t = maxf(anim_override_t - delta, 0.0)
 	var facing_left: bool = player != null and player.global_position.x < host.global_position.x
+	if weakspot_area != null and is_instance_valid(weakspot_area):
+		weakspot_area.position = def.weakspot_local_offset(sprite_h, facing_left)
 	if anim != null:
 		anim.flip_h = facing_left
 		if explode_t >= 0.0:
@@ -243,8 +271,10 @@ func _set_anim(anim_name: String) -> void:
 	anim.play(anim_name)
 
 
-## 受击闪白：金属偏冷白，血肉偏暖白，避免所有敌人都是一个颜色。
+## 受击闪白：弱点命中偏金红强闪，普通命中区分金属冷白与血肉暖白。
 func _flash_color(def: EnemyDef) -> Color:
+	if hit_flash_weakspot:
+		return Color(2.6, 1.55, 0.85)
 	if def.hit_material == "flesh":
 		return Color(2.2, 1.75, 1.75)
 	return Color(1.85, 2.05, 2.2)

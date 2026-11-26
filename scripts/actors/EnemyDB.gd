@@ -48,7 +48,7 @@ static func stats(id: StringName) -> Dictionary:
 	return DATA.get(id, DATA[&"rifleman"])
 
 
-## 敌人三系生态默认参数（mech / human / mutant）；缺省回退内置表。
+## 敌人三系生态默认参数（mech / human / mutant，含 Phase 4 默认弱点部位配置）；缺省回退内置表。
 static func archetype_profile(archetype: StringName) -> Dictionary:
 	var table: Dictionary = GameData.table("enemies").get("archetypes", {})
 	var key := String(archetype)
@@ -56,8 +56,32 @@ static func archetype_profile(archetype: StringName) -> Dictionary:
 		return table[key]
 	match archetype:
 		&"mech":
-			return {"name": "机械", "blunt_floor": 0.08, "flesh_mul": 1.00}
+			return {
+				"name": "机械", "blunt_floor": 0.08, "flesh_mul": 1.00,
+				"weakspot": {
+					"part": "optical_core", "label": "光学核心",
+					"offset_x": 0.0, "offset_y_ratio": 0.62, "flip_x": false,
+					"radius": 12.0, "tolerance": 1.18,
+					"armor_mul": 0.50, "damage_mul": 1.60,
+				},
+			}
 		&"mutant":
-			return {"name": "变异", "blunt_floor": 0.22, "flesh_mul": 1.20}
+			return {
+				"name": "变异", "blunt_floor": 0.22, "flesh_mul": 1.20,
+				"weakspot": {
+					"part": "exposed_core", "label": "暴露瘤核",
+					"offset_x": 0.0, "offset_y_ratio": 0.56, "flip_x": false,
+					"radius": 13.0, "tolerance": 1.18,
+					"armor_mul": 0.00, "damage_mul": 1.75,
+				},
+			}
 		_:
-			return {"name": "人类", "blunt_floor": 0.14, "flesh_mul": 1.05}
+			return {
+				"name": "人类", "blunt_floor": 0.14, "flesh_mul": 1.05,
+				"weakspot": {
+					"part": "head", "label": "头部",
+					"offset_x": 0.0, "offset_y_ratio": 0.80, "flip_x": false,
+					"radius": 11.0, "tolerance": 1.18,
+					"armor_mul": 0.40, "damage_mul": 1.80,
+				},
+			}

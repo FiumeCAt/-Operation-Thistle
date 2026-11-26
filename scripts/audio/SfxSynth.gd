@@ -58,6 +58,9 @@ func _build_bank() -> Dictionary:
 	bank["rifle_sup"] = _build_rifle_sup()
 	bank["sniper_sup"] = _build_sniper_sup()
 	bank["fire_select"] = _build_fire_select()
+	# Phase 4：弱点命中叮响与弱点击穿破甲音效，固定追加在末尾保持既有 38 条波形一致。
+	bank["weakspot_hit"] = _build_weakspot_hit()
+	bank["armor_pierce"] = _build_armor_pierce()
 	return bank
 
 
@@ -714,4 +717,35 @@ func _build_fire_select() -> AudioStreamWAV:
 		if u >= 0.0 and u < 0.045:
 			s += (sin(TAU * 2450.0 * u) * 0.34 + sin(TAU * 980.0 * u) * 0.20 + wn * 0.14) * exp(-u * 135.0)
 		a[i] = s * 0.9
+	return _stream(a)
+
+
+func _build_weakspot_hit() -> AudioStreamWAV:
+	var n := int(0.16 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		var crack := wn * exp(-t * 140.0) * 0.45
+		var chime1 := sin(TAU * 1680.0 * t) * exp(-t * 28.0) * 0.36
+		var chime2 := sin(TAU * 2520.0 * t) * exp(-t * 36.0) * 0.24
+		var punch := sin(TAU * 240.0 * t) * exp(-t * 42.0) * 0.34
+		a[i] = (crack + chime1 + chime2 + punch) * 0.92
+	return _stream(a)
+
+
+func _build_armor_pierce() -> AudioStreamWAV:
+	var n := int(0.20 * SR)
+	var a := PackedFloat32Array()
+	a.resize(n)
+	var lp := 0.0
+	for i in n:
+		var t := float(i) / SR
+		var wn := _rng.randf_range(-1.0, 1.0)
+		lp += (wn - lp) * 0.42
+		var shatter := (wn - lp) * exp(-t * 68.0) * 0.52
+		var sweep := sin(TAU * lerpf(2950.0, 1180.0, clampf(t / 0.14, 0.0, 1.0)) * t) * exp(-t * 24.0) * 0.34
+		var body := sin(TAU * 360.0 * t) * exp(-t * 32.0) * 0.28
+		a[i] = (shatter + sweep + body) * 0.9
 	return _stream(a)
