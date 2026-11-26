@@ -42,10 +42,10 @@ func _run() -> void:
 			if not ResourceLoader.exists(path):
 				missing.append(path)
 	_check(missing.is_empty(), "every mapped impact sample is imported (%d missing)" % missing.size())
-	_check(sfx.impact_sample_count("concrete") >= 3, "concrete material has samples")
-	_check(sfx.impact_sample_count("metal") >= 3, "metal material has samples")
-	_check(sfx.impact_sample_count("flesh") >= 3, "flesh material has samples")
-	_check(sfx.impact_sample_count("ricochet") >= 3, "ricochet layer has samples")
+	_check(sfx.impact_sample_count("concrete") >= 12, "concrete wall impact pool has >= 12 varied samples")
+	_check(sfx.impact_sample_count("metal") >= 14, "metal/armored enemy impact pool has >= 14 varied samples")
+	_check(sfx.impact_sample_count("flesh") >= 12, "flesh/organic enemy impact pool has >= 12 varied samples")
+	_check(sfx.impact_sample_count("ricochet") >= 8, "ricochet layer has >= 8 varied samples")
 	_check(sfx.impact_sample_count("generic") >= 3, "generic fallback has samples")
 
 	# 2) 默认开启采样，命中会创建播放器。
@@ -148,10 +148,14 @@ func _run() -> void:
 	for wid in WeaponDB.WEAPON_ORDER:
 		var normal_key: String = sfx.resolve_weapon_fire_key(wid, false)
 		var sup_key: String = sfx.resolve_weapon_fire_key(wid, true)
-		if sfx.sfx_sample_count(normal_key) < 1 or sfx.sfx_sample_count(sup_key) < 1:
+		if sfx.sfx_sample_count(normal_key) < 2 or sfx.sfx_sample_count(sup_key) < 2:
 			missing_weapons.append(String(wid))
 	_check(missing_weapons.is_empty(),
-		"all 18 weapons have differentiated normal and suppressed samples (%d missing)" % missing_weapons.size())
+		"all 18 weapons have multi-variant normal and suppressed samples (%d missing)" % missing_weapons.size())
+	_check(sfx.sfx_sample_count("weakspot_hit") >= 6
+		and sfx.sfx_sample_count("armor_pierce") >= 6
+		and sfx.sfx_sample_count("ground_dust") >= 6,
+		"weakspot, armor_pierce, and ground_dust pools each have >= 6 variants")
 	_check(sfx.resolve_weapon_fire_key(&"vss", false) == "weapon_vss_sup"
 		and sfx.resolve_weapon_fire_key(&"akm", false) == "weapon_akm"
 		and sfx.resolve_weapon_fire_key(&"akm", true) == "weapon_akm_sup",

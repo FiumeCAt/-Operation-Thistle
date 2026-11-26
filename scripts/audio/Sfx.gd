@@ -212,11 +212,14 @@ func play_stream(stream: AudioStream, volume_db := 0.0, pitch := 1.0, bus: Strin
 	add_child(p)
 	_active_voices.append(p)
 	p.play()
+	var pid := p.get_instance_id()
 	var t := get_tree().create_timer(maxf(stream.get_length(), 0.05) + 0.20)
 	t.timeout.connect(func() -> void:
-		_active_voices.erase(p)
-		if is_instance_valid(p):
-			p.queue_free())
+		var inst := instance_from_id(pid)
+		if inst is AudioStreamPlayer:
+			_active_voices.erase(inst)
+			if is_instance_valid(inst) and not inst.is_queued_for_deletion():
+				inst.queue_free())
 
 
 ## 命中音效总入口：优先外部采样，不可用或玩家关闭时自动退回程序化三层；
@@ -329,15 +332,25 @@ func _play_sample_hit(material: String, weight: float, volume_db: float, armor_s
 	if sample == null:
 		return false
 	var w := clampf(weight, 0.6, 1.8)
-	play_stream(sample, volume_db + (w - 1.0) * 2.0, randf_range(0.94, 1.06), IMPACTS_BUS)
-	play_stream(streams.get("hit_low"), volume_db + 1.0 + (w - 1.0) * 3.0, randf_range(0.92, 1.03), IMPACTS_BUS)
+	var db_jit := randf_range(-1.0, 0.8)
+	if material == "concrete":
+		# 墙面命中保持干脆利落的碎石/混凝土清脆着弹感，不叠闷重低频 hit_low，偶发极轻钢筋跳弹点缀。
+		play_stream(sample, volume_db + 1.5 + db_jit, randf_range(0.90, 1.10), IMPACTS_BUS)
+		if randf() < 0.14:
+			var wall_ric := _samples.pick_ricochet()
+			if wall_ric != null:
+				play_stream(wall_ric, volume_db - 6.5, randf_range(0.96, 1.14), IMPACTS_BUS)
+		return true
+	play_stream(sample, volume_db + 0.5 + (w - 1.0) * 2.0 + db_jit, randf_range(0.91, 1.09), IMPACTS_BUS)
+	# 仅作极轻的低频重量托底（-7.5 dB），避免像之前 +1.0 dB 盖过真实命中纹理导致发闷。
+	play_stream(streams.get("hit_low"), volume_db - 7.5 + (w - 1.0) * 2.5, randf_range(0.92, 1.04), IMPACTS_BUS)
 	if armor_state == "pierce":
-		play_2d("armor_pierce", volume_db - 2.0, randf_range(0.95, 1.05))
-	elif armor_state == "ricochet" or (material == "metal" and randf() < 0.35):
+		play_2d("armor_pierce", volume_db - 1.5, randf_range(0.94, 1.06))
+	elif armor_state == "ricochet" or (material == "metal" and randf() < 0.30):
 		var ric := _samples.pick_ricochet()
 		if ric != null:
-			var ric_db := volume_db - (2.5 if armor_state == "ricochet" else 6.0)
-			play_stream(ric, ric_db, randf_range(0.95, 1.10), IMPACTS_BUS)
+			var ric_db := volume_db - (2.0 if armor_state == "ricochet" else 6.0)
+			play_stream(ric, ric_db, randf_range(0.94, 1.12), IMPACTS_BUS)
 	return true
 
 
