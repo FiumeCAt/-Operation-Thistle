@@ -137,6 +137,25 @@ def make_side_blink_head(head_left_px: Image.Image) -> Image.Image:
     return Image.fromarray(arr, mode="RGBA")
 
 
+def add_joint_shading(img: Image.Image, row_frac: float, highlight_delta: int = 18, shadow_delta: int = -18) -> Image.Image:
+    """Add crisp subtle pixel-art joint highlight + crease (knee cap / elbow fold) for clear articulation readability."""
+    arr = np.asarray(img.convert("RGBA"), dtype=np.int16).copy()
+    h, w, _ = arr.shape
+    mask = arr[:, :, 3] > 200
+    occ_rows = np.where(mask.any(axis=1))[0]
+    if len(occ_rows) < 6:
+        return img
+    y_joint = int(occ_rows[0] + (occ_rows[-1] - occ_rows[0]) * row_frac)
+    for dy, delta in ((-1, highlight_delta), (0, highlight_delta // 2), (1, shadow_delta)):
+        y = y_joint + dy
+        if 0 <= y < h:
+            xs = np.where(mask[y])[0]
+            if len(xs) >= 3:
+                inner = xs[1:-1]
+                arr[y, inner, :3] = np.clip(arr[y, inner, :3] + delta, 0, 255)
+    return Image.fromarray(arr.astype(np.uint8), mode="RGBA")
+
+
 def main() -> int:
     p_v2 = SRC_DIR / "catgirl_seedream_parts_v2.png"
     p_v1 = SRC_DIR / "catgirl_seedream_parts.png"
@@ -247,6 +266,10 @@ def main() -> int:
         ("coat_flap_tip", True, False),
     ]:
         down_parts[k] = round_joint_caps(down_parts[k], top_cap=tc, bottom_cap=bc)
+
+    # Add subtle pixel-art knee-cap & elbow-fold joint readability shading
+    down_parts["shin_boot"] = add_joint_shading(down_parts["shin_boot"], 0.12, 20, -16)
+    down_parts["arm_forearm"] = add_joint_shading(down_parts["arm_forearm"], 0.14, 18, -16)
 
     # Create crisp pixel side-view blink head from cleaned head_left
     down_parts["head_left_blink"] = make_side_blink_head(down_parts["head_left"])

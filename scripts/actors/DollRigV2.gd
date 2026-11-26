@@ -633,28 +633,66 @@ func _apply_facing_layers() -> void:
 			coat_l_pivot.visible = true
 			coat_r_pivot.visible = true
 
-	# 双腿站位间距与侧面层级
+	# 双腿站位间距、侧面层级与远近腿明暗分离（防止交错步态糊成一团）
 	var side_l := lower_direction == 2 or lower_direction == 3
 	var leg_flip := lower_direction == 3
 	if leg_l_hip != null and leg_r_hip != null:
 		leg_l_hip.position.x = -2.0 if side_l else -5.5
 		leg_r_hip.position.x = 2.0 if side_l else 5.5
+		var far_tint := Color(0.76, 0.79, 0.86, 1.0)
+		var near_tint := Color.WHITE
 		for sp in leg_l_hip.find_children("*", "Sprite2D", true, false):
-			(sp as Sprite2D).flip_h = leg_flip
-			(sp as Sprite2D).z_index = -4 if side_l else -3
+			var s2d := sp as Sprite2D
+			s2d.flip_h = leg_flip
+			s2d.z_index = -4 if side_l else -3
+			s2d.modulate = far_tint if side_l else near_tint
 		for sp in leg_r_hip.find_children("*", "Sprite2D", true, false):
-			(sp as Sprite2D).flip_h = leg_flip
-			(sp as Sprite2D).z_index = -2
+			var s2d := sp as Sprite2D
+			s2d.flip_h = leg_flip
+			s2d.z_index = -2
+			s2d.modulate = near_tint
 
-	# 收枪手臂显隐：持枪时由 WeaponRig2D 接管双臂，收枪或翻滚团身时由骨架自带双臂演出
+	# 收枪手臂显隐与远近层级：侧面同时保留远/近双臂交替摆动（远臂压暗置后、近臂提亮置前）
 	var show_holster_arms := (not armed) or holstered or _dodging
 	if arm_l_shoulder != null and arm_r_shoulder != null:
-		arm_l_shoulder.visible = show_holster_arms and (upper_direction != 3)
-		arm_r_shoulder.visible = show_holster_arms and (upper_direction != 2)
-		var arm_z := -2 if upper_direction == 1 else 4
-		for a_root in [arm_l_shoulder, arm_r_shoulder]:
-			for sp in a_root.find_children("*", "Sprite2D", true, false):
-				(sp as Sprite2D).z_index = arm_z
+		arm_l_shoulder.visible = show_holster_arms
+		arm_r_shoulder.visible = show_holster_arms
+		var arm_far_tint := Color(0.78, 0.81, 0.88, 1.0)
+		var l_z := 4
+		var r_z := 4
+		var l_tint := Color.WHITE
+		var r_tint := Color.WHITE
+		match upper_direction:
+			1:
+				l_z = -2
+				r_z = -2
+			2:
+				# 朝左：左臂在远侧置后、右臂在近侧置前
+				arm_l_shoulder.position.x = -3.0
+				arm_r_shoulder.position.x = 2.0
+				l_z = -3
+				r_z = 4
+				l_tint = arm_far_tint
+			3:
+				# 朝右：左臂在远侧置后、右臂在近侧置前
+				arm_l_shoulder.position.x = 3.0
+				arm_r_shoulder.position.x = -2.0
+				l_z = -3
+				r_z = 4
+				l_tint = arm_far_tint
+			_:
+				arm_l_shoulder.position.x = -10.0
+				arm_r_shoulder.position.x = 10.0
+		for sp in arm_l_shoulder.find_children("*", "Sprite2D", true, false):
+			var s2d := sp as Sprite2D
+			s2d.z_index = l_z
+			s2d.modulate = l_tint
+			s2d.flip_h = flip_u
+		for sp in arm_r_shoulder.find_children("*", "Sprite2D", true, false):
+			var s2d := sp as Sprite2D
+			s2d.z_index = r_z
+			s2d.modulate = r_tint
+			s2d.flip_h = flip_u
 
 
 func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,
@@ -686,60 +724,119 @@ func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,
 
 		var side_lower := lower_direction == 2 or lower_direction == 3
 		var face_sign := -1.0 if lower_direction == 2 else 1.0
-		var swing_amp := 0.62 if is_run else (0.38 if is_strafe else 0.46)
-		var knee_amp := 0.82 if is_run else (0.50 if is_strafe else 0.62)
+		var swing_amp := 0.66 if is_run else (0.42 if is_strafe else 0.50)
+		var knee_scale := 1.0 if is_run else (0.64 if is_strafe else 0.78)
+		var knee_base_y := THIGH_LEN - 2.0
 
 		if side_lower:
-			# 侧面二段式屈膝步态：大腿摆动 + 抬腿后屈膝 + 踩实伸直
-			var l_thigh := s * swing_amp * face_sign
-			var r_thigh := -s * swing_amp * face_sign
-			var l_lift := clampf(cos(_gait_phase) * phase_dir, 0.0, 1.0)
-			var r_lift := clampf(-cos(_gait_phase) * phase_dir, 0.0, 1.0)
-			# Godot 2D 正旋转为顺时针（小腿向 -X 摆），因此朝右(3)时向后屈膝为 +1，朝左(2)时向后屈膝为 -1！
-			var knee_dir := -1.0 if lower_direction == 2 else 1.0
-			var l_knee := l_lift * knee_amp * knee_dir
-			var r_knee := r_lift * knee_amp * knee_dir
-			leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, l_thigh, clampf(dt * 22.0, 0.0, 1.0))
-			leg_r_hip.rotation = lerp_angle(leg_r_hip.rotation, r_thigh, clampf(dt * 22.0, 0.0, 1.0))
-			leg_l_knee.rotation = lerp_angle(leg_l_knee.rotation, l_knee, clampf(dt * 22.0, 0.0, 1.0))
-			leg_r_knee.rotation = lerp_angle(leg_r_knee.rotation, r_knee, clampf(dt * 22.0, 0.0, 1.0))
+			# 解剖学二段式屈膝步态（theta = 左腿相位，theta + PI = 右腿相位）：
+			# - 抬腿前摆经过中心（cos > 0）时深度后屈膝，脚清晰离地；
+			# - 后蹬离地（-sin > 0）时脚跟自然向后勾起；
+			# - 前迈着地（sin > 0）时仍保留轻微运动微屈，彻底告别“硬直木棍腿”。
+			var th_l := _gait_phase
+			var th_r := wrapf(_gait_phase + PI, 0.0, TAU)
+			var l_fwd := sin(th_l) * swing_amp
+			var r_fwd := sin(th_r) * swing_amp
+			# Godot 2D：+rotation 顺时针（向 -X 摆），因此朝右(+1)前迈为 -fwd，朝左(-1)前迈为 +fwd
+			var l_thigh := -l_fwd * face_sign
+			var r_thigh := -r_fwd * face_sign
+
+			var l_tuck := clampf(cos(th_l) * phase_dir, 0.0, 1.0)
+			var r_tuck := clampf(cos(th_r) * phase_dir, 0.0, 1.0)
+			var l_kick := clampf(-sin(th_l), 0.0, 1.0)
+			var r_kick := clampf(-sin(th_r), 0.0, 1.0)
+			var l_flex := clampf(0.16 + l_tuck * 0.92 + l_kick * 0.68 + clampf(sin(th_l), 0.0, 1.0) * 0.22, 0.12, 1.38) * knee_scale
+			var r_flex := clampf(0.16 + r_tuck * 0.92 + r_kick * 0.68 + clampf(sin(th_r), 0.0, 1.0) * 0.22, 0.12, 1.38) * knee_scale
+			# 膝盖严格向身体后方弯曲（朝右 +1 顺时针，朝左 -1 逆时针）
+			var knee_back := face_sign
+			leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, l_thigh, clampf(dt * 24.0, 0.0, 1.0))
+			leg_r_hip.rotation = lerp_angle(leg_r_hip.rotation, r_thigh, clampf(dt * 24.0, 0.0, 1.0))
+			leg_l_knee.rotation = lerp_angle(leg_l_knee.rotation, l_flex * knee_back, clampf(dt * 24.0, 0.0, 1.0))
+			leg_r_knee.rotation = lerp_angle(leg_r_knee.rotation, r_flex * knee_back, clampf(dt * 24.0, 0.0, 1.0))
+			leg_l_knee.position.y = lerpf(leg_l_knee.position.y, knee_base_y, clampf(dt * 20.0, 0.0, 1.0))
+			leg_r_knee.position.y = lerpf(leg_r_knee.position.y, knee_base_y, clampf(dt * 20.0, 0.0, 1.0))
 			leg_l_hip.scale = Vector2.ONE
 			leg_r_hip.scale = Vector2.ONE
-			# 支撑腿踩实时髋部自然下沉，腾空过渡帧轻微抬起，避免悬浮打滑
-			var contact_drop := absf(s) * (4.2 if is_run else 2.6)
-			target_bob = contact_drop - (1.8 if is_run else 0.9)
+			for pair in [[leg_l_hip, "LegLThigh"], [leg_r_hip, "LegRThigh"], [leg_l_knee, "LegLShin"], [leg_r_knee, "LegRShin"]]:
+				var sp := (pair[0] as Node2D).get_child(0) as Sprite2D
+				var bs: Vector2 = _part_scale_base.get(String(pair[1]), Vector2.ONE)
+				if sp != null:
+					sp.scale = sp.scale.lerp(bs, clampf(dt * 22.0, 0.0, 1.0))
+			# 支撑腿踩实时髋部自然下沉，腾空过渡帧微抬，脚底不打滑
+			var contact_drop := absf(s) * (4.6 if is_run else 2.8)
+			target_bob = contact_drop - (2.0 if is_run else 1.0)
 		else:
-			# 正面/背面步态：膝盖纵深透视压缩 + 轻柔左右重心摇摆
-			var l_raise := maxf(s, 0.0)
-			var r_raise := maxf(-s, 0.0)
-			var compress := 0.24 if is_run else 0.16
-			leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, -s * 0.10, clampf(dt * 20.0, 0.0, 1.0))
-			leg_r_hip.rotation = lerp_angle(leg_r_hip.rotation, s * 0.10, clampf(dt * 20.0, 0.0, 1.0))
-			leg_l_knee.rotation = lerp_angle(leg_l_knee.rotation, l_raise * 0.14, clampf(dt * 20.0, 0.0, 1.0))
-			leg_r_knee.rotation = lerp_angle(leg_r_knee.rotation, -r_raise * 0.14, clampf(dt * 20.0, 0.0, 1.0))
-			leg_l_hip.scale = Vector2(1.0, 1.0 - l_raise * compress)
-			leg_r_hip.scale = Vector2(1.0, 1.0 - r_raise * compress)
-			target_bob = absf(s) * (3.2 if is_run else 2.0) - 0.8
-			target_pelvis_x = s * (1.8 if is_run else 1.1)
+			# 正面/背面 3D 透视屈膝步态：
+			# 抬腿时仅压缩大腿并把膝关节节点上提（呈现膝盖顶向镜头/背向提膝），小腿保持自然垂挂离地！
+			var l_lift := clampf(sin(_gait_phase), 0.0, 1.0)
+			var r_lift := clampf(-sin(_gait_phase), 0.0, 1.0)
+			var knee_lift_px := 9.5 if is_run else 6.2
+			var l_shin_sp := leg_l_knee.get_child(0) as Sprite2D
+			var r_shin_sp := leg_r_knee.get_child(0) as Sprite2D
+			var l_thigh_sp := leg_l_hip.get_child(0) as Sprite2D
+			var r_thigh_sp := leg_r_hip.get_child(0) as Sprite2D
+			var l_base_ts: Vector2 = _part_scale_base.get("LegLThigh", Vector2.ONE)
+			var r_base_ts: Vector2 = _part_scale_base.get("LegRThigh", Vector2.ONE)
+			var l_base_ss: Vector2 = _part_scale_base.get("LegLShin", Vector2.ONE)
+			var r_base_ss: Vector2 = _part_scale_base.get("LegRShin", Vector2.ONE)
 
-		# 收枪双臂自然反向摆动（带肘部微曲）
-		var arm_swing := s * (0.58 if is_run else 0.36)
-		arm_l_shoulder.rotation = lerp_angle(arm_l_shoulder.rotation, -arm_swing, clampf(dt * 18.0, 0.0, 1.0))
-		arm_r_shoulder.rotation = lerp_angle(arm_r_shoulder.rotation, arm_swing, clampf(dt * 18.0, 0.0, 1.0))
-		arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, -absf(arm_swing) * 0.55 - 0.12, clampf(dt * 18.0, 0.0, 1.0))
-		arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, -absf(arm_swing) * 0.55 - 0.12, clampf(dt * 18.0, 0.0, 1.0))
+			leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, -l_lift * 0.14 + r_lift * 0.06, clampf(dt * 22.0, 0.0, 1.0))
+			leg_r_hip.rotation = lerp_angle(leg_r_hip.rotation, r_lift * 0.14 - l_lift * 0.06, clampf(dt * 22.0, 0.0, 1.0))
+			leg_l_knee.position.y = lerpf(leg_l_knee.position.y, knee_base_y - l_lift * knee_lift_px, clampf(dt * 22.0, 0.0, 1.0))
+			leg_r_knee.position.y = lerpf(leg_r_knee.position.y, knee_base_y - r_lift * knee_lift_px, clampf(dt * 22.0, 0.0, 1.0))
+			leg_l_knee.rotation = lerp_angle(leg_l_knee.rotation, l_lift * 0.24, clampf(dt * 22.0, 0.0, 1.0))
+			leg_r_knee.rotation = lerp_angle(leg_r_knee.rotation, -r_lift * 0.24, clampf(dt * 22.0, 0.0, 1.0))
+			if l_thigh_sp != null:
+				l_thigh_sp.scale = Vector2(l_base_ts.x * (1.0 + l_lift * 0.08), l_base_ts.y * (1.0 - l_lift * 0.34))
+			if r_thigh_sp != null:
+				r_thigh_sp.scale = Vector2(r_base_ts.x * (1.0 + r_lift * 0.08), r_base_ts.y * (1.0 - r_lift * 0.34))
+			if l_shin_sp != null:
+				l_shin_sp.scale = Vector2(l_base_ss.x, l_base_ss.y * (1.0 - l_lift * 0.10))
+			if r_shin_sp != null:
+				r_shin_sp.scale = Vector2(r_base_ss.x, r_base_ss.y * (1.0 - r_lift * 0.10))
+			leg_l_hip.scale = Vector2.ONE
+			leg_r_hip.scale = Vector2.ONE
+			target_bob = absf(s) * (3.6 if is_run else 2.2) - 1.0
+			target_pelvis_x = s * (2.0 if is_run else 1.2)
+
+		# 收枪双臂二段式自然反向摆动（肘部严格向身体前方自然弯曲！）
+		var arm_face := -1.0 if upper_direction == 2 else 1.0
+		var arm_amp := 0.68 if is_run else 0.42
+		var arm_l_fwd := -sin(_gait_phase) * arm_amp
+		var arm_r_fwd := sin(_gait_phase) * arm_amp
+		var elbow_fwd_sign := -arm_face  # 朝右(+1)肘向前弯为逆时针(-)，朝左(-1)为顺时针(+)
+		var side_u := upper_direction == 2 or upper_direction == 3
+		if side_u:
+			arm_l_shoulder.rotation = lerp_angle(arm_l_shoulder.rotation, -arm_l_fwd * arm_face, clampf(dt * 20.0, 0.0, 1.0))
+			arm_r_shoulder.rotation = lerp_angle(arm_r_shoulder.rotation, -arm_r_fwd * arm_face, clampf(dt * 20.0, 0.0, 1.0))
+			var el_l := (0.38 if is_run else 0.22) + clampf(arm_l_fwd, -0.1, 1.0) * (0.95 if is_run else 0.55)
+			var el_r := (0.38 if is_run else 0.22) + clampf(arm_r_fwd, -0.1, 1.0) * (0.95 if is_run else 0.55)
+			arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, el_l * elbow_fwd_sign, clampf(dt * 20.0, 0.0, 1.0))
+			arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, el_r * elbow_fwd_sign, clampf(dt * 20.0, 0.0, 1.0))
+		else:
+			arm_l_shoulder.rotation = lerp_angle(arm_l_shoulder.rotation, -s * 0.22 + 0.08, clampf(dt * 18.0, 0.0, 1.0))
+			arm_r_shoulder.rotation = lerp_angle(arm_r_shoulder.rotation, s * 0.22 - 0.08, clampf(dt * 18.0, 0.0, 1.0))
+			arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, -(0.28 + maxf(-s, 0.0) * (0.55 if is_run else 0.30)), clampf(dt * 18.0, 0.0, 1.0))
+			arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, (0.28 + maxf(s, 0.0) * (0.55 if is_run else 0.30)), clampf(dt * 18.0, 0.0, 1.0))
 	else:
-		# 站立待机：双脚稳踩地面、微呼吸起伏
+		# 站立待机：双脚稳踩地面、微呼吸起伏，复位正/背透视压缩
 		leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
 		leg_r_hip.rotation = lerp_angle(leg_r_hip.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
 		leg_l_knee.rotation = lerp_angle(leg_l_knee.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
 		leg_r_knee.rotation = lerp_angle(leg_r_knee.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
+		leg_l_knee.position.y = lerpf(leg_l_knee.position.y, THIGH_LEN - 2.0, clampf(dt * 16.0, 0.0, 1.0))
+		leg_r_knee.position.y = lerpf(leg_r_knee.position.y, THIGH_LEN - 2.0, clampf(dt * 16.0, 0.0, 1.0))
 		leg_l_hip.scale = leg_l_hip.scale.lerp(Vector2.ONE, clampf(dt * 14.0, 0.0, 1.0))
 		leg_r_hip.scale = leg_r_hip.scale.lerp(Vector2.ONE, clampf(dt * 14.0, 0.0, 1.0))
+		for pair in [[leg_l_hip, "LegLThigh"], [leg_r_hip, "LegRThigh"], [leg_l_knee, "LegLShin"], [leg_r_knee, "LegRShin"]]:
+			var sp := (pair[0] as Node2D).get_child(0) as Sprite2D
+			var bs: Vector2 = _part_scale_base.get(String(pair[1]), Vector2.ONE)
+			if sp != null:
+				sp.scale = sp.scale.lerp(bs, clampf(dt * 14.0, 0.0, 1.0))
 		arm_l_shoulder.rotation = lerp_angle(arm_l_shoulder.rotation, 0.05 + breath * 0.03, clampf(dt * 10.0, 0.0, 1.0))
 		arm_r_shoulder.rotation = lerp_angle(arm_r_shoulder.rotation, -0.05 - breath * 0.03, clampf(dt * 10.0, 0.0, 1.0))
-		arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, -0.10, clampf(dt * 10.0, 0.0, 1.0))
-		arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, 0.10, clampf(dt * 10.0, 0.0, 1.0))
+		arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, -0.14, clampf(dt * 10.0, 0.0, 1.0))
+		arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, 0.14, clampf(dt * 10.0, 0.0, 1.0))
 
 	_hip_bob = lerpf(_hip_bob, target_bob, clampf(dt * 18.0, 0.0, 1.0))
 	pelvis.position = Vector2(

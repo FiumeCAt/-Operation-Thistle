@@ -467,7 +467,7 @@ func _apply_pose() -> void:
 	if _pivot == null:
 		return
 	var flip := absf(aim_angle) > PI * 0.5
-	var arm_reach := 2.0 if dodging else _arm_length()
+	var arm_reach := 2.0 if dodging else (_arm_length() - (2.6 if (sprinting and not aiming) else 0.0))
 	_wrist_local = POSE_IK.solve_primary_arm(_upper_arm, _forearm, arm_reach, _elbow_sign)
 	_align_gun(flip)
 	if _hand != null:
