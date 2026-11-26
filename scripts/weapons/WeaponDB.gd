@@ -296,6 +296,46 @@ static func differential_reserve_cost_enabled() -> bool:
 	return bool(GameData.table("ammo").get("differential_reserve_cost", false))
 
 
+static var _ammo_color_cache: Dictionary = {}
+
+
+static func _parse_ammo_color(hex: String) -> Color:
+	if _ammo_color_cache.has(hex):
+		return _ammo_color_cache[hex]
+	var col := Color.html(hex)
+	_ammo_color_cache[hex] = col
+	return col
+
+
+static func _build_ammo(id: StringName, rec: Dictionary, spread_mul: float, diff_cost_on: bool) -> AmmoData:
+	var a := AmmoData.new()
+	a.id = id
+	a.display_name = String(rec.get("display_name", String(id)))
+	a.short_name = String(rec.get("short", a.display_name))
+	a.caliber = StringName(rec.get("caliber", String(id)))
+	a.category = StringName(rec.get("category", "shotgun"))
+	a.role = StringName(rec.get("role", "std"))
+	a.tier = clampi(int(rec.get("tier", tier_from_rha(float(rec.get("ap", 0.0))))), 0, 6)
+	var raw_cost := float(rec.get("reserve_cost_diff", rec.get("reserve_cost", 1.0))) \
+		if diff_cost_on else float(rec.get("reserve_cost", 1.0))
+	a.reserve_cost = clampf(raw_cost, 0.5, 5.0)
+	a.pellets = int(rec.get("pellets", 1))
+	a.damage = float(rec.get("damage", 0.0))
+	a.spread = float(rec.get("spread", 0.0)) * spread_mul
+	a.muzzle_velocity_mps = clampf(
+		float(rec.get("muzzle_velocity_mps", 400.0)), 50.0, 2500.0)
+	a.bullet_time_scale = clampf(
+		float(rec.get("bullet_time_scale", 0.294)), 0.05, 1.0)
+	a.drag_per_m = clampf(float(rec.get("drag_per_m", 0.005)), 0.0, 0.05)
+	a.ads_spread_mul = clampf(float(rec.get("ads_spread_mul", 0.45)), 0.05, 1.0)
+	a.attachment_spread_scale = clampf(
+		float(rec.get("attachment_spread_scale", 1.0)), 0.0, 1.0)
+	a.ap = float(rec.get("ap", 0.0))
+	a.reserve_max = int(rec.get("reserve_max", 0))
+	a.color = _parse_ammo_color(String(rec.get("color", "#ffffff")))
+	return a
+
+
 static func ammo_table() -> Dictionary:
 	var out := {}
 	var table: Dictionary = GameData.table("ammo").get("data", {})
@@ -305,49 +345,32 @@ static func ammo_table() -> Dictionary:
 		var rec: Dictionary = table.get(String(id), {})
 		if rec.is_empty():
 			continue
-		var a := AmmoData.new()
-		a.id = id
-		a.display_name = String(rec.get("display_name", String(id)))
-		a.short_name = String(rec.get("short", a.display_name))
-		a.caliber = StringName(rec.get("caliber", String(id)))
-		a.category = StringName(rec.get("category", "shotgun"))
-		a.role = StringName(rec.get("role", "std"))
-		a.tier = clampi(int(rec.get("tier", tier_from_rha(float(rec.get("ap", 0.0))))), 0, 6)
-		var raw_cost := float(rec.get("reserve_cost_diff", rec.get("reserve_cost", 1.0))) \
-			if diff_cost_on else float(rec.get("reserve_cost", 1.0))
-		a.reserve_cost = clampf(raw_cost, 0.5, 5.0)
-		a.pellets = int(rec.get("pellets", 1))
-		a.damage = float(rec.get("damage", 0.0))
-		a.spread = float(rec.get("spread", 0.0)) * spread_mul
-		a.muzzle_velocity_mps = clampf(
-			float(rec.get("muzzle_velocity_mps", 400.0)), 50.0, 2500.0)
-		a.bullet_time_scale = clampf(
-			float(rec.get("bullet_time_scale", 0.294)), 0.05, 1.0)
-		a.drag_per_m = clampf(float(rec.get("drag_per_m", 0.005)), 0.0, 0.05)
-		a.ads_spread_mul = clampf(float(rec.get("ads_spread_mul", 0.45)), 0.05, 1.0)
-		a.attachment_spread_scale = clampf(
-			float(rec.get("attachment_spread_scale", 1.0)), 0.0, 1.0)
-		a.ap = float(rec.get("ap", 0.0))
-		a.reserve_max = int(rec.get("reserve_max", 0))
-		a.color = Color.html(String(rec.get("color", "#ffffff")))
-		out[a.id] = a
+		out[id] = _build_ammo(id, rec, spread_mul, diff_cost_on)
 	return out
 
 
+## 单条按需构建弹药实例（避免热路径为了查 1 种弹药重建全部 30 个 AmmoData）。
 static func get_ammo(id: StringName) -> AmmoData:
-	var table := ammo_table()
-	if table.has(id):
-		return table[id]
-	return table.get(&"buckshot", null)
+	var table: Dictionary = GameData.table("ammo").get("data", {})
+	var key := String(id)
+	var use_id := id
+	var rec: Dictionary = table.get(key, {})
+	if rec.is_empty():
+		use_id = &"buckshot"
+		rec = table.get("buckshot", {})
+		if rec.is_empty():
+			return null
+	return _build_ammo(use_id, rec, base_spread_mul(), differential_reserve_cost_enabled())
 
 
 ## 返回指定口径可携带的 3 档弹药 ID（肉伤 / 常规 / 穿甲），按 AMMO_ORDER 排序。
 static func ammo_for_caliber(caliber: StringName) -> Array[StringName]:
-	var table := ammo_table()
+	var table: Dictionary = GameData.table("ammo").get("data", {})
+	var cal_str := String(caliber)
 	var out: Array[StringName] = []
 	for id in AMMO_ORDER:
-		var a: AmmoData = table.get(id)
-		if a != null and a.caliber == caliber:
+		var rec: Dictionary = table.get(String(id), {})
+		if not rec.is_empty() and String(rec.get("caliber", String(id))) == cal_str:
 			out.append(id)
 	return out
 

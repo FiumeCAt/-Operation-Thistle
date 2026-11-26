@@ -205,13 +205,16 @@ func warm_muzzle_fx() -> void:
 		muzzle_flash.name = "MuzzleFlash2D"
 		_fx_layer.add_child(muzzle_flash)
 	muzzle_flash.set_flash_mode(muzzle_flash_mode)
-	muzzle_fx = Shot2D.pixel_fx(_fx_layer, "projectiles/muzzle-pistol",
-		Vector2.ZERO, 0.0, 60, 1.0, PixelFx2D.Mode.BAKED)
-	if muzzle_fx == null:
-		return
-	muzzle_fx.free_when_done = false
-	muzzle_fx.modulate.a = 0.0
-	muzzle_fx.stop()
+	var fx := PixelFx2D.new()
+	fx.effect = "projectiles/muzzle-pistol"
+	fx.mode = PixelFx2D.Mode.BAKED
+	fx.autoplay = false
+	fx.free_when_done = false
+	fx.z_index = 60
+	fx.modulate.a = 0.0
+	_fx_layer.add_child(fx)
+	fx.global_position = Vector2.ZERO
+	muzzle_fx = fx
 
 
 func play_muzzle_fx(pos: Vector2, angle: float, intensity := 1.0, suppressed := false) -> void:
@@ -223,7 +226,9 @@ func play_muzzle_fx(pos: Vector2, angle: float, intensity := 1.0, suppressed := 
 		muzzle_flash.set_flash_mode(muzzle_flash_mode)
 		muzzle_flash.trigger(pos, angle, intensity, suppressed)
 	if muzzle_fx != null and is_instance_valid(muzzle_fx):
-		if suppressed or muzzle_flash_mode == "off":
+		var ready_for_pixelfx := DisplayServer.get_name() == "headless" \
+			or CombatFxWarmup.is_ready("projectiles/muzzle-pistol", {}, "")
+		if suppressed or muzzle_flash_mode == "off" or not ready_for_pixelfx:
 			muzzle_fx.stop()
 			muzzle_fx.modulate.a = 0.0
 		else:

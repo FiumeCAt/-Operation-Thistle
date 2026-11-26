@@ -54,6 +54,25 @@ func _run() -> void:
 	_check(done, "prebake_step finishes across frames (%d)" % steps)
 	var again := PixelFx2D.prebake_step("impacts/hit-spark", opts, "", 0)
 	_check(again, "finished effect reports ready immediately")
+	_check(CombatFxWarmup.is_ready("impacts/hit-spark", opts, ""),
+		"CombatFxWarmup.is_ready reports true once track is baked")
+
+	# 验证磁盘缓存序列化/反序列化往返（使用独立临时文件，测完清理，不污染常规缓存）
+	var mod_spark: Script = load("res://addons/pixelfx/fx/impacts/hit-spark.gd")
+	var key_spark := CombatFxWarmup.cache_key(mod_spark, opts, "")
+	var baked_tr = PixelFx2D._cache.get(key_spark)
+	var tmp_cache := "user://verify_fx_cache_roundtrip.dat"
+	CombatFxWarmup._save_cached_track(tmp_cache, key_spark, baked_tr)
+	var loaded_tr = CombatFxWarmup._try_load_cached_track(tmp_cache, key_spark, mod_spark, opts)
+	_check(loaded_tr != null and loaded_tr.done() and loaded_tr.frames.size() == baked_tr.frames.size(),
+		"ZSTD disk cache round-trips baked Baker.Track losslessly")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp_cache))
+
+	var ammo_single := WeaponDB.get_ammo(&"762nato_ap")
+	var ammo_fallback := WeaponDB.get_ammo(&"nonexistent_ammo")
+	_check(ammo_single != null and ammo_single.id == &"762nato_ap" and is_equal_approx(ammo_single.ap, 190.0)
+		and ammo_fallback != null and ammo_fallback.id == &"buckshot",
+		"WeaponDB.get_ammo resolves single ammo directly with buckshot fallback")
 
 	var main = load("res://scenes/core/Main2D.tscn").instantiate()
 	main.mouse_aim_enabled = false

@@ -781,7 +781,7 @@ func update_weapon(rig) -> void:
 		var can_auto := bool(rig.supports_full_auto()) if rig.has_method("supports_full_auto") else bool(data.auto_fire)
 		var mode := String(rig.get_fire_mode()) if rig.has_method("get_fire_mode") else ("auto" if can_auto else "semi")
 		fire_selector.set_state(mode, can_auto)
-	var ammo: AmmoData = WeaponDB.ammo_table().get(data.ammo_id)
+	var ammo: AmmoData = WeaponDB.get_ammo(data.ammo_id)
 	var short_name: String = String(data.display_name).split(" // ")[0]
 	_title.text = "%s // %s" % [short_name, data.caliber_label]
 	if ammo != null:

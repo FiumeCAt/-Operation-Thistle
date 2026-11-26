@@ -133,13 +133,12 @@ static func compute(weapon_id: StringName, installed: Dictionary,
 	var speed := float(base.bullet_speed_mps) * speed_mul
 
 	# 弹药派生：结合武器固有属性加成（damage_mul / ap_bonus / weakspot_mul）计算最终伤害、穿甲、散布与每秒 DPS。
-	var ammo_table := WeaponDB.ammo_table()
 	var active_ammo_id: StringName = base.ammo_id
-	if ammo_override != &"" and ammo_table.has(ammo_override):
-		var cand: AmmoData = ammo_table[ammo_override]
-		if cand.caliber == base.caliber:
+	if ammo_override != &"":
+		var cand: AmmoData = WeaponDB.get_ammo(ammo_override)
+		if cand != null and cand.id == ammo_override and cand.caliber == base.caliber:
 			active_ammo_id = ammo_override
-	var ammo: AmmoData = ammo_table.get(active_ammo_id)
+	var ammo: AmmoData = WeaponDB.get_ammo(active_ammo_id)
 	var weapon_damage_mul := clampf(float(base.damage_mul), 0.2, 3.0)
 	var weapon_ap_bonus := float(base.ap_bonus)
 	var weapon_weakspot_mul := clampf(float(base.weakspot_mul), 0.5, 3.0)

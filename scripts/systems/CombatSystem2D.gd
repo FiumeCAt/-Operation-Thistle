@@ -205,13 +205,10 @@ func wall_between(origin: Vector2, point: Vector2) -> Dictionary:
 	return _owner.get_world_2d().direct_space_state.intersect_ray(query)
 
 
-## 当前弹种：跟随武器装配表里的 ammo 字段，支持全部口径。
+## 当前弹种：单条直读，避免每帧准心更新重建整张 30 种弹药表。
 func current_ammo() -> AmmoData:
-	var table := WeaponDB.ammo_table()
 	var data: WeaponData = _doll.weapon_rig.data if (_doll != null and _doll.weapon_rig != null) else null
-	if data != null and table.has(data.ammo_id):
-		return table[data.ammo_id]
-	return table[&"buckshot"]
+	return WeaponDB.get_ammo(data.ammo_id if data != null else &"buckshot")
 
 
 ## 全锥角（弧度）。统一委托 SpreadModel 计算，供准心圆环与开火共用。

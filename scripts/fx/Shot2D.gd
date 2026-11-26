@@ -79,6 +79,10 @@ static func impact(parent: Node, pos: Vector2, color := Color(1.0, 0.5, 0.35)) -
 static func wall_hit(parent: Node, pos: Vector2, dir := Vector2.RIGHT) -> void:
 	if parent == null or not parent.is_inside_tree():
 		return
+	if DisplayServer.get_name() != "headless" \
+			and not CombatFxWarmup.is_ready("impacts/bullet-impact", {"height": 0}, ""):
+		impact(parent, pos, Color(0.86, 0.82, 0.72))
+		return
 	pixel_fx(parent, "impacts/bullet-impact", pos, dir.angle(), 58, 0.7,
 		PixelFx2D.Mode.BAKED, "", {"height": 0})
 

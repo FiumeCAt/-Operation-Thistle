@@ -8,6 +8,28 @@ class_name HitFX2D
 const METAL_PRESET := "volt"
 const METAL_KILL_PRESET := "gold"
 const BLOOD_PRESET := "blood"
+static var _expanded_opts_cache: Dictionary = {}
+
+
+static func _expanded_opts(id: String, preset: String, options: Dictionary) -> Dictionary:
+	var ck := "%s|%s|%s" % [id, preset, JSON.stringify(options)]
+	if _expanded_opts_cache.has(ck):
+		return _expanded_opts_cache[ck]
+	var probe := PixelFx2D.new()
+	probe.effect = id
+	if preset != "":
+		probe.palette_preset = preset
+	probe.options = options
+	var opts := probe.fx_options()
+	probe.free()
+	_expanded_opts_cache[ck] = opts
+	return opts
+
+
+static func _fx_ready(id: String, preset: String, options: Dictionary) -> bool:
+	if DisplayServer.get_name() == "headless":
+		return true
+	return CombatFxWarmup.is_ready(id, _expanded_opts(id, preset, options), "")
 
 
 ## 统一入口：材质决定特效库里的哪一支，方向决定喷溅朝向。
@@ -20,26 +42,34 @@ static func enemy_hit(parent: Node, pos: Vector2, dir: Vector2,
 	var s := (1.05 + clampf(weight, 0.7, 1.8) * 0.28) * (1.0 if level >= 2 else 0.6)
 	var with_crit := killed and level >= 2
 	if material == "flesh":
-		Shot2D.pixel_fx(parent, "impacts/blunt-hit", pos, dir.angle(), 70, s,
-			PixelFx2D.Mode.BAKED, BLOOD_PRESET, {
-				"height": 0,
-				"warm": "#d42a30",
-				"dust": "#6a101c",
-				"clod": "#a01824",
-			}, 0.75)
-		if with_crit:
+		var blood_opts := {
+			"height": 0,
+			"warm": "#d42a30",
+			"dust": "#6a101c",
+			"clod": "#a01824",
+		}
+		if _fx_ready("impacts/blunt-hit", BLOOD_PRESET, blood_opts):
+			Shot2D.pixel_fx(parent, "impacts/blunt-hit", pos, dir.angle(), 70, s,
+				PixelFx2D.Mode.BAKED, BLOOD_PRESET, blood_opts, 0.75)
+		else:
+			Shot2D.impact(parent, pos, Color(0.86, 0.22, 0.22))
+		if with_crit and _fx_ready("impacts/crit-hit", BLOOD_PRESET, {"height": 0, "aim": 0.0}):
 			Shot2D.pixel_fx(parent, "impacts/crit-hit", pos, dir.angle(), 71, s * 1.05,
 				PixelFx2D.Mode.BAKED, BLOOD_PRESET, {"height": 0, "aim": 0.0}, 0.8)
 	else:
-		Shot2D.pixel_fx(parent, "impacts/hit-spark", pos, dir.angle(), 70, s,
-			PixelFx2D.Mode.BAKED, METAL_PRESET, {"height": 0, "aim": 0.0}, 0.62)
-		if with_crit:
+		if _fx_ready("impacts/hit-spark", METAL_PRESET, {"height": 0, "aim": 0.0}):
+			Shot2D.pixel_fx(parent, "impacts/hit-spark", pos, dir.angle(), 70, s,
+				PixelFx2D.Mode.BAKED, METAL_PRESET, {"height": 0, "aim": 0.0}, 0.62)
+		else:
+			Shot2D.impact(parent, pos, Color(0.95, 0.88, 0.45))
+		if with_crit and _fx_ready("impacts/crit-hit", METAL_KILL_PRESET, {"height": 0, "aim": 0.0}):
 			Shot2D.pixel_fx(parent, "impacts/crit-hit", pos, dir.angle(), 71, s * 1.05,
 				PixelFx2D.Mode.BAKED, METAL_KILL_PRESET, {"height": 0, "aim": 0.0}, 0.8)
 	if is_weakspot:
 		# 弱点命中叠一层金红爆发火花（复用已预热的 gold hit-spark，零额外烘焙卡顿）。
-		Shot2D.pixel_fx(parent, "impacts/hit-spark", pos, dir.angle(), 72, s * 1.18,
-			PixelFx2D.Mode.BAKED, "gold", {"height": 0, "aim": 0.0}, 0.75)
+		if _fx_ready("impacts/hit-spark", "gold", {"height": 0, "aim": 0.0}):
+			Shot2D.pixel_fx(parent, "impacts/hit-spark", pos, dir.angle(), 72, s * 1.18,
+				PixelFx2D.Mode.BAKED, "gold", {"height": 0, "aim": 0.0}, 0.75)
 		Shot2D.impact(parent, pos, Color(1.0, 0.34, 0.16))
 
 
