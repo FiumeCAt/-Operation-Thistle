@@ -145,22 +145,51 @@ func _run() -> void:
 	_check(armed_arms_hidden and holstered_arms_shown and wr.get_stance_id() == &"rifle",
 		"holstered rig arms cleanly hand off to WeaponRig2D when armed")
 
-	# 10) 皮肤包完整性（doll_v2 & mannequin 全 19+3 分件 + mannequin 1:1 target_h 像素锁定）
-	_check(DollRigV2.skin_exists("doll_v2") and WeaponRig2D.skin_has_arm2("doll_v2"),
-		"doll_v2 skin has all required parts and 3 arm2 weapon-arm textures")
-	_check(DollRigV2.skin_exists("mannequin") and WeaponRig2D.skin_has_arm2("mannequin"),
-		"mannequin skin has all required parts and 3 arm2 weapon-arm textures")
-	var manifest_path := DollRigV2.skin_manifest_path("mannequin")
-	var manifest_raw = JSON.parse_string(FileAccess.get_file_as_string(manifest_path)) if FileAccess.file_exists(manifest_path) else null
-	_check(manifest_raw is Dictionary and int((manifest_raw as Dictionary).get("parts_count", 0)) == 19
-		and int((manifest_raw as Dictionary).get("arm2_count", 0)) == 3,
-		"mannequin skin_manifest.json exists and declares 19 parts + 3 arm2")
+	# 10) 皮肤包完整性（doll_v2 / doll_thistle / mannequin 全 19+3 分件 + skin_manifest.json + 严格 1:1 target_h）
+	for sid: String in ["doll_v2", "doll_thistle", "mannequin"]:
+		_check(DollRigV2.skin_exists(sid) and WeaponRig2D.skin_has_arm2(sid),
+			"%s skin has all required parts and 3 arm2 weapon-arm textures" % sid)
+		var mpath := DollRigV2.skin_manifest_path(sid)
+		var mraw = JSON.parse_string(FileAccess.get_file_as_string(mpath)) if FileAccess.file_exists(mpath) else null
+		_check(mraw is Dictionary and int((mraw as Dictionary).get("parts_count", 0)) == 19
+			and int((mraw as Dictionary).get("arm2_count", 0)) == 3,
+			"%s skin_manifest.json exists and declares 19 parts + 3 arm2" % sid)
 
-	# 11) set_skin() 热切换同步 DollRigV2 与 WeaponRig2D + 1:1 scale 校验 + 左蓝/右橙分色
+	# 10b) 验证默认正式皮 doll_v2 全部 19 分件严格 1:1 匹配 target_h（零非整数缩放畸变）
+	var v2_1to1 := true
+	for k in rv2._part_scale_base:
+		var sc_v2: Vector2 = rv2._part_scale_base[k]
+		if not sc_v2.is_equal_approx(Vector2.ONE):
+			v2_1to1 = false
+			break
+	_check(v2_1to1, "all 19 refined doll_v2 parts match DollRigV2 target_h 1:1 (zero non-integer scale distortion)")
+
+	# 11) set_skin('doll_thistle') 热切换 + 严格 1:1 + 无体模分色污染 + 新武器继承
+	var switched_t := doll.set_skin("doll_thistle")
+	await process_frame
+	_check(switched_t and doll.get_skin() == "doll_thistle" and rv2.skin_id == "doll_thistle"
+		and wr.skin_id == "doll_thistle" and rv2.has_all_part_textures(),
+		"set_skin('doll_thistle') hot-swaps both DollRigV2 (19 parts) and WeaponRig2D (3 arm2)")
+	var th_1to1 := true
+	for k in rv2._part_scale_base:
+		var sc_th: Vector2 = rv2._part_scale_base[k]
+		if not sc_th.is_equal_approx(Vector2.ONE):
+			th_1to1 = false
+			break
+	_check(th_1to1, "all 19 doll_thistle parts match DollRigV2 target_h 1:1 (zero non-integer scale distortion)")
+	var l_thigh_th := rv2.leg_l_hip.get_child(0) as Sprite2D
+	var r_thigh_th := rv2.leg_r_hip.get_child(0) as Sprite2D
+	_check(l_thigh_th != null and r_thigh_th != null and l_thigh_th.texture == r_thigh_th.texture,
+		"formal skin doll_thistle disables mannequin left-blue / right-orange limb tinting")
+	var wr_th := doll.equip_weapon_id(&"g17")
+	await process_frame
+	_check(wr_th.skin_id == "doll_thistle", "newly equipped WeaponRig2D inherits active skin_id ('doll_thistle')")
+
+	# 11b) set_skin('mannequin') 热切换同步 DollRigV2 与 WeaponRig2D + 1:1 scale 校验 + 左蓝/右橙分色
 	var switched_m := doll.set_skin("mannequin")
 	await process_frame
 	_check(switched_m and doll.get_skin() == "mannequin" and rv2.skin_id == "mannequin"
-		and wr.skin_id == "mannequin" and rv2.has_all_part_textures(),
+		and wr_th.skin_id == "mannequin" and rv2.has_all_part_textures(),
 		"set_skin('mannequin') hot-swaps both DollRigV2 (19 parts) and WeaponRig2D (3 arm2)")
 	var all_1to1 := true
 	for k in rv2._part_scale_base:
@@ -185,16 +214,19 @@ func _run() -> void:
 	_check(not traversal_ok and doll.get_skin() == "doll_v2" and rv2.has_all_part_textures(),
 		"path-traversal skin id rejected and safely falls back to 'doll_v2'")
 
-	# 13) DebugMenu2D 一键外观开关实时热切换当前场景角色皮肤
+	# 13) DebugMenu2D 一键外观轮切实时热切换当前场景角色皮肤（doll_v2 -> doll_thistle -> mannequin -> doll_v2）
 	var dm := DebugMenu2D.new()
 	stage.add_child(dm)
 	await process_frame
-	var toggled_to := dm.toggle_character_skin()
-	_check(toggled_to == "mannequin" and doll.get_skin() == "mannequin" and wr2.skin_id == "mannequin",
-		"DebugMenu2D toggle switches live player to mannequin")
-	var toggled_back := dm.toggle_character_skin()
-	_check(toggled_back == "doll_v2" and doll.get_skin() == "doll_v2" and wr2.skin_id == "doll_v2",
-		"DebugMenu2D toggle switches live player back to formal doll_v2")
+	var toggled_1 := dm.toggle_character_skin()
+	_check(toggled_1 == "doll_thistle" and doll.get_skin() == "doll_thistle" and wr2.skin_id == "doll_thistle",
+		"DebugMenu2D toggle 1 switches live player to doll_thistle")
+	var toggled_2 := dm.toggle_character_skin()
+	_check(toggled_2 == "mannequin" and doll.get_skin() == "mannequin" and wr2.skin_id == "mannequin",
+		"DebugMenu2D toggle 2 switches live player to mannequin")
+	var toggled_3 := dm.toggle_character_skin()
+	_check(toggled_3 == "doll_v2" and doll.get_skin() == "doll_v2" and wr2.skin_id == "doll_v2",
+		"DebugMenu2D toggle 3 switches live player back to formal doll_v2")
 	var p := root.get_node_or_null("Progress")
 	if p != null and p.has_method("reset_debug"):
 		p.reset_debug()

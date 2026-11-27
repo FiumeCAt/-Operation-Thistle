@@ -32,11 +32,14 @@ assets/art/characters/<skin_id>/
 └── arm2/                     # 3 个横置持枪双臂分件 PNG（供 WeaponRig2D 加载）
 ```
 
-- **默认正式皮**：`doll_v2`；**功能分色体模**：`mannequin`（详见 `assets/art/characters/mannequin/skin_manifest.json`）。
+- **已实装皮肤包（全部严格 1:1 `target_h` 整数锁定）**：
+  - **`doll_v2`**（默认正式皮）：灰蓝猫耳少女（精修 1:1，附 `assets/art/characters/doll_v2/skin_manifest.json`，构建脚本 `tools/build_doll_v2_parts.py`）；
+  - **`doll_thistle`**（第二套正式皮）：白发高马尾红白水手战术人偶（附 `assets/art/characters/doll_thistle/skin_manifest.json`，构建脚本 `tools/build_doll_thistle_parts.py`）；
+  - **`mannequin`**（动作基准体模）：功能分色标准体模（附 `assets/art/characters/mannequin/skin_manifest.json`，构建脚本 `tools/build_mannequin_parts.py`）。
 - **回退机制**：`Doll2D.set_skin(id)` 会同步切换 `DollRigV2` 与 `WeaponRig2D`；传入非法 ID 或缺失分件时自动按分件/整包安全回退至 `doll_v2`。
 - **切换入口**：
-  1. 命令行：`-- --skin=mannequin` 或 `-- --skin=doll_v2`（`Main2D._apply_visual_override()` 解析）；
-  2. 调试终端：`DebugMenu2D` 顶部栏一键切换「角色外观：正式皮 / 分色体模」（局内即时生效）。
+  1. 命令行：`-- --skin=doll_v2`、`-- --skin=doll_thistle` 或 `-- --skin=mannequin`（`Main2D._apply_visual_override()` 解析）；
+  2. 调试终端：`DebugMenu2D` 顶部栏一键轮切「角色外观：灰蓝猫耳 / 蓟花白裙 / 分色体模」（局内即时生效并持久化至存档偏好）。
 
 ---
 

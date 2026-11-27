@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Phase 7B Modular Doll Rig v2 分件裁剪、关节圆润包边、48 色锁定色板量化与 128px 像素化管线。
+"""Phase 7B+ 正式主角 doll_v2（灰蓝猫耳少女）1:1 像素换皮契约精修管线。
 
-输入（Seedream 5.5 生成的高清母版）：
-  - assets/art/characters/doll_v2/source/catgirl_seedream_parts_v2.png（透明底，主体头/无臂躯干/后发/衣袖）
-  - assets/art/characters/doll_v2/source/catgirl_seedream_parts.png（白底抠透明，竖直风衣下摆/深灰长袜双腿+球鞋/战术枪盒）
-
-输出（严格 128px×1 单一规格 + 全局 48 色锁定色板 + 1px 选择性暗轮廓）：
-  - assets/art/characters/doll_v2/parts/*.png  (19 个模块化骨骼分件，供 DollRigV2.gd 使用)
-  - assets/art/characters/doll_v2/arm2/*.png   (3 个横置武器持枪手臂分件，供 WeaponRig2D.gd 使用)
+严格遵循 docs/character_skin_contract.md 与 assets/art/characters/mannequin/skin_manifest.json：
+  - 全部 19 个身体分件严格满足 (W, H) == 契约精确尺寸（height == target_h，运行时 1:1 零畸变缩放）；
+  - 全部 3 个横置持枪双臂分件严格 26×14 / 27×13 / 12×10；
+  - 大型核心分件（正/背/侧头、无臂正/背/侧躯干、战术枪盒）源自 Seedream 5.5 高清母版并做明暗/对比度提纯与肩袖口清修；
+  - 精密关节肢体、侧面朝左（-X）战术球鞋、清晰手绘闭眼眨眼层、圆润握枪手掌、多层顺滑后发/衣摆/格裙均按 1:1 原生像素构建；
+  - 统一提取全局 48 色锁定色板 + 1px 选择性暗轮廓（sel-out）+ 输出 assets/art/characters/doll_v2/skin_manifest.json。
 """
 
 from __future__ import annotations
@@ -16,320 +15,379 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
-from pixel_char_pipeline import (  # noqa: E402
-    add_selective_outline,
-    apply_palette,
-    build_locked_palette,
-    harden_alpha,
-    premul_box_resize,
-    remove_isolated_pixels,
+from skin_part_helpers import (  # noqa: E402
+    add_neck_overlap,
+    add_torso_collar_and_pelvis_caps,
+    crop_tight,
+    draw_coat_or_dress_flaps,
+    draw_gripping_hand,
+    draw_hair_back_segments,
+    draw_horizontal_arm2_capsule,
+    draw_pleated_skirt_hem,
+    draw_side_shin_and_footwear,
+    draw_vertical_limb_capsule,
+    enhance_rgba,
+    finalize_and_export_skin,
+    fit_to_contract_canvas,
+    put,
+    put_rect,
+    render_contact_sheet,
+    soften_joint_cap_outline,
 )
 from sprite_utils import clean_auto  # noqa: E402
 
-SRC_DIR = ROOT / "assets/art/characters/doll_v2/source"
-OUT_PARTS = ROOT / "assets/art/characters/doll_v2/parts"
-OUT_ARM2 = ROOT / "assets/art/characters/doll_v2/arm2"
-PREVIEW_OUT = Path(r"C:\Users\81349\.gemini\antigravity\brain\39efb0de-c6a8-4d42-9309-96c4eeb3f0b1\scratch\doll_v2_parts_preview.png")
+OUT_ROOT = ROOT / "assets/art/characters/doll_v2"
+SRC_DIR = OUT_ROOT / "source"
+PREVIEW_OUT = Path(
+    r"C:\Users\81349\.gemini\antigravity\brain\c8612c36-8745-480a-9096-c8e0dcbd6621\scratch\doll_v2_refined_parts.png"
+)
+
+# ---- 灰蓝猫耳少女统一像素色系（与 Seedream 母版 100% 同源，并略提明暗对比以适配深灰战术水泥地）----
+HAIR_HI = (134, 140, 166, 255)
+HAIR_BASE = (92, 96, 118, 255)
+HAIR_SHADE = (64, 67, 86, 255)
+HAIR_DEEP = (46, 48, 64, 255)
+
+COAT_HI = (78, 90, 122, 255)
+COAT_BASE = (52, 61, 86, 255)
+COAT_SHADE = (34, 40, 58, 255)
+COAT_CUFF_HI = (94, 108, 142, 255)
+COAT_BUTTON = (156, 164, 186, 255)
+
+SKIRT_HI = (130, 136, 156, 255)
+SKIRT_BASE = (98, 104, 124, 255)
+SKIRT_SHADE = (68, 73, 90, 255)
+SKIRT_PLAID = (78, 84, 104, 255)
+LACE_WHITE = (224, 228, 238, 255)
+
+TIGHTS_HI = (102, 104, 126, 255)
+TIGHTS_BASE = (74, 76, 96, 255)
+TIGHTS_SHADE = (50, 52, 68, 255)
+KNEE_HI = (118, 120, 142, 255)
+KNEE_CREASE = (44, 46, 62, 255)
+
+SHOE_HI = (154, 162, 184, 255)
+SHOE_BASE = (112, 120, 142, 255)
+SHOE_SHADE = (74, 80, 98, 255)
+SHOE_MIDSOLE = (224, 228, 238, 255)
+SHOE_SOLE = (54, 58, 72, 255)
+SHOE_LACE = (232, 236, 244, 255)
+
+SKIN_HI = (250, 232, 224, 255)
+SKIN_BASE = (236, 212, 204, 255)
+SKIN_SHADE = (206, 174, 168, 255)
+BLUSH_COL = (232, 184, 182, 255)
+LASH_DARK = (38, 34, 52, 255)
+IRIS_COL = (112, 106, 152, 255)
+EYE_WHITE = (246, 244, 250, 255)
 
 
-def crop_tight(img: Image.Image, box: tuple[int, int, int, int], pad: int = 4) -> Image.Image:
-    sub = img.crop(box)
-    bb = sub.getbbox()
-    if bb is None:
-        return sub
-    x0 = max(0, bb[0] - pad)
-    y0 = max(0, bb[1] - pad)
-    x1 = min(sub.width, bb[2] + pad)
-    y1 = min(sub.height, bb[3] + pad)
-    return sub.crop((x0, y0, x1, y1))
-
-
-def scale_to_height(img: Image.Image, target_h: int) -> Image.Image:
-    ratio = target_h / float(max(img.height, 1))
-    tw = max(4, int(round(img.width * ratio)))
-    return premul_box_resize(img, (tw, target_h))
-
-
-def round_joint_caps(img: Image.Image, top_cap: bool = False, bottom_cap: bool = False) -> Image.Image:
-    """Add soft 2px rounded ellipse overlap at limb joint cuts so large rotations never show gaps."""
-    arr = np.asarray(img.convert("RGBA"), dtype=np.uint8).copy()
+def polish_front_head_eyes(head_px: Image.Image) -> Image.Image:
+    """Clarify front-view anime eyes on 38×36 head so pupils & catchlights read crisply at 128px×1."""
+    arr = np.asarray(head_px.convert("RGBA"), dtype=np.uint8).copy()
     h, w, _ = arr.shape
-    mask = arr[:, :, 3] > 128
-
-    def fill_cap(row_y: int, direction: int) -> None:
-        xs = np.where(mask[row_y])[0]
-        if len(xs) < 2:
-            return
-        x0, x1 = int(xs[0]), int(xs[-1])
-        cx = 0.5 * (x0 + x1)
-        rx = max(1.5, 0.5 * (x1 - x0))
-        sample_rgb = np.median(arr[row_y, xs, :3], axis=0).astype(np.uint8)
-        for dy in (1, 2):
-            ny = row_y + dy * direction
-            if ny < 0 or ny >= h:
-                continue
-            half_w = rx * np.sqrt(max(0.0, 1.0 - (dy / 2.6) ** 2))
-            for x in range(max(0, int(round(cx - half_w))), min(w, int(round(cx + half_w)) + 1)):
-                if arr[ny, x, 3] < 128:
-                    arr[ny, x, :3] = sample_rgb
-                    arr[ny, x, 3] = 255
-
-    if top_cap:
-        occ = np.where(mask.any(axis=1))[0]
-        if len(occ) > 0:
-            fill_cap(int(occ[0]), -1)
-    if bottom_cap:
-        occ = np.where(mask.any(axis=1))[0]
-        if len(occ) > 0:
-            fill_cap(int(occ[-1]), 1)
-    return Image.fromarray(arr, mode="RGBA")
+    # Restrict face skin search strictly below cat-ear zone (y >= 16) so pale inner ear fluff never shifts eye_y!
+    face_roi = arr[16:32, 9:29]
+    skin_mask = (face_roi[:, :, 3] > 200) & (face_roi[:, :, 0] > 195) & (face_roi[:, :, 1] > 170) & (face_roi[:, :, 2] > 160)
+    ys, _xs = np.where(skin_mask)
+    if len(ys) < 12:
+        return head_px
+    y_min, y_max = 16 + int(ys.min()), 16 + int(ys.max())
+    eye_y = int(round(y_min + (y_max - y_min) * 0.38))
+    out = Image.fromarray(arr, mode="RGBA")
+    for cx in (14, 23):
+        if 0 <= eye_y - 1 < h:
+            for dx in (-1, 0, 1):
+                if out.getpixel((cx + dx, eye_y - 1))[3] > 200:
+                    put(out, cx + dx, eye_y - 1, LASH_DARK)
+        if 0 <= eye_y < h and 0 <= eye_y + 1 < h:
+            put(out, cx, eye_y, IRIS_COL)
+            put(out, cx, eye_y + 1, IRIS_COL)
+            put(out, cx - 1, eye_y, EYE_WHITE)
+    return out
 
 
-def make_symmetric_blink_head(head_open: Image.Image, head_wink: Image.Image) -> Image.Image:
-    """Create pixel-locked both-eyes-closed head by copying the closed eye from head_wink onto both eyes of head_open."""
-    # Resize wink to match open exactly
-    w_im = head_wink.resize(head_open.size, Image.Resampling.LANCZOS)
-    o_arr = np.asarray(head_open.convert("RGBA"), dtype=np.uint8).copy()
-    w_arr = np.asarray(w_im.convert("RGBA"), dtype=np.uint8)
-    h, w, _ = o_arr.shape
-    # In head_wink, viewer's right eye (x: 52%..68%, y: 63%..79%) is cleanly closed!
-    y0, y1 = int(h * 0.61), int(h * 0.80)
-    rx0, rx1 = int(w * 0.52), int(w * 0.70)
-    # Copy right closed eye to right side of open head
-    o_arr[y0:y1, rx0:rx1] = w_arr[y0:y1, rx0:rx1]
-    # Mirror right closed eye horizontally onto left eye region (x: 30%..48%)
-    lx1 = w - rx0
-    lx0 = w - rx1
-    o_arr[y0:y1, lx0:lx1] = w_arr[y0:y1, rx0:rx1][:, ::-1, :]
-    return Image.fromarray(o_arr, mode="RGBA")
-
-
-def make_side_blink_head(head_left_px: Image.Image) -> Image.Image:
-    """Paint a clean pixel closed eyelid over the side-view eye (zero stray eye-highlight dots)."""
-    arr = np.asarray(head_left_px.convert("RGBA"), dtype=np.uint8).copy()
+def paint_front_blink_clean(head_front_final: Image.Image) -> Image.Image:
+    """Create crisp, zero-artifact closed-eye front head directly over finalized 38×36 head_front."""
+    arr = np.asarray(head_front_final.convert("RGBA"), dtype=np.uint8).copy()
     h, w, _ = arr.shape
-    # Sample smooth warm cheek skin color just below the eye
-    cheek = arr[int(h * 0.72) : int(h * 0.84), int(w * 0.14) : int(w * 0.34)]
-    skin_px = cheek[(cheek[:, :, 3] > 200) & (cheek[:, :, 0] > 195) & (cheek[:, :, 1] > 170)]
-    skin_rgb = np.median(skin_px[:, :3], axis=0).astype(np.uint8) if len(skin_px) > 0 else np.array([240, 222, 214], dtype=np.uint8)
-    # Cleanly replace the side-profile eye region (only pixels that aren't dark hair outline)
-    y0, y1 = int(h * 0.56), int(h * 0.74)
-    x0, x1 = int(w * 0.14), int(w * 0.31)
-    for y in range(y0, y1):
-        for x in range(x0, x1):
+    face_roi = arr[16:32, 9:29]
+    skin_mask = (face_roi[:, :, 3] > 200) & (face_roi[:, :, 0] > 195) & (face_roi[:, :, 1] > 170) & (face_roi[:, :, 2] > 160)
+    ys, _xs = np.where(skin_mask)
+    if len(ys) < 12:
+        return head_front_final
+    y_min, y_max = 16 + int(ys.min()), 16 + int(ys.max())
+    eye_y = int(round(y_min + (y_max - y_min) * 0.38))
+    cheek = arr[max(0, eye_y + 2) : min(h, y_max), 12:26]
+    cheek_px = cheek[(cheek[:, :, 3] > 200) & (cheek[:, :, 0] > 195) & (cheek[:, :, 1] > 170)]
+    skin_rgb = np.median(cheek_px[:, :3], axis=0).astype(np.uint8) if len(cheek_px) > 0 else np.array(SKIN_BASE[:3], dtype=np.uint8)
+
+    for y in range(max(16, eye_y - 2), min(h, eye_y + 3)):
+        for x in list(range(12, 17)) + list(range(21, 26)):
             if arr[y, x, 3] > 200:
                 r, g, b = int(arr[y, x, 0]), int(arr[y, x, 1]), int(arr[y, x, 2])
-                # Skip hair bangs (dark cool grey-blue with r < 110 and b > r)
-                is_hair = r < 115 and b >= r and g < 115
+                is_bang = (r < 125 and b >= r and g < 125) and (y <= eye_y - 1 or x in (17, 18, 19, 20))
+                if not is_bang:
+                    arr[y, x, :3] = skin_rgb
+
+    out = Image.fromarray(arr, mode="RGBA")
+    for x0 in (12, 22):
+        put(out, x0, eye_y, LASH_DARK)
+        put(out, x0 + 1, eye_y + 1, LASH_DARK)
+        put(out, x0 + 2, eye_y + 1, LASH_DARK)
+        put(out, x0 + 3, eye_y, LASH_DARK)
+        bx = x0 if x0 < 18 else x0 + 3
+        if eye_y + 2 < h and out.getpixel((bx, eye_y + 2))[3] > 200:
+            put(out, bx, eye_y + 2, BLUSH_COL)
+    return out
+
+
+def paint_side_blink_clean(head_left_final: Image.Image) -> Image.Image:
+    """Create crisp closed-eye side profile directly over finalized 36×36 head_left (facing -X)."""
+    arr = np.asarray(head_left_final.convert("RGBA"), dtype=np.uint8).copy()
+    h, w, _ = arr.shape
+    # Restrict search strictly to face zone (y=16..31, x=4..18) below cat ears!
+    face_roi = arr[16:32, 4:18]
+    skin_mask = (face_roi[:, :, 3] > 200) & (face_roi[:, :, 0] > 195) & (face_roi[:, :, 1] > 170) & (face_roi[:, :, 2] > 160)
+    ys, xs = np.where(skin_mask)
+    if len(ys) < 8:
+        return head_left_final
+    y_min, y_max = 16 + int(ys.min()), 16 + int(ys.max())
+    x_min = 4 + int(xs.min())
+    eye_y = int(round(y_min + (y_max - y_min) * 0.28))
+    skin_rgb = np.median(face_roi[skin_mask][:, :3], axis=0).astype(np.uint8)
+
+    for y in range(max(16, eye_y - 2), min(h, eye_y + 3)):
+        for x in range(max(1, x_min), min(w - 1, x_min + 6)):
+            if arr[y, x, 3] > 200:
+                r, g, b = int(arr[y, x, 0]), int(arr[y, x, 1]), int(arr[y, x, 2])
+                is_hair = r < 125 and b >= r and g < 125 and (x >= x_min + 4 or y < eye_y - 1)
                 if not is_hair:
                     arr[y, x, :3] = skin_rgb
-    # Draw crisp 1px dark closed eyelid curve
-    lash_y = int(h * 0.67)
-    for dx, x in enumerate(range(int(w * 0.17), int(w * 0.28))):
-        ly = lash_y + (1 if dx in (1, 2) else 0)
-        if 0 <= ly < h and arr[ly, x, 3] > 200:
-            arr[ly, x, :3] = [42, 38, 52]
-    return Image.fromarray(arr, mode="RGBA")
+
+    out = Image.fromarray(arr, mode="RGBA")
+    lx = max(2, x_min + 1)
+    put(out, lx, eye_y, LASH_DARK)
+    put(out, lx + 1, eye_y + 1, LASH_DARK)
+    put(out, lx + 2, eye_y + 1, LASH_DARK)
+    put(out, lx + 3, eye_y, LASH_DARK)
+    if eye_y + 2 < h and out.getpixel((lx + 2, eye_y + 2))[3] > 200:
+        put(out, lx + 2, eye_y + 2, BLUSH_COL)
+    return out
 
 
-def add_joint_shading(img: Image.Image, row_frac: float, highlight_delta: int = 18, shadow_delta: int = -18) -> Image.Image:
-    """Add crisp subtle pixel-art joint highlight + crease (knee cap / elbow fold) for clear articulation readability."""
-    arr = np.asarray(img.convert("RGBA"), dtype=np.int16).copy()
-    h, w, _ = arr.shape
-    mask = arr[:, :, 3] > 200
-    occ_rows = np.where(mask.any(axis=1))[0]
-    if len(occ_rows) < 6:
-        return img
-    y_joint = int(occ_rows[0] + (occ_rows[-1] - occ_rows[0]) * row_frac)
-    for dy, delta in ((-1, highlight_delta), (0, highlight_delta // 2), (1, shadow_delta)):
-        y = y_joint + dy
-        if 0 <= y < h:
-            xs = np.where(mask[y])[0]
-            if len(xs) >= 3:
-                inner = xs[1:-1]
-                arr[y, inner, :3] = np.clip(arr[y, inner, :3] + delta, 0, 255)
-    return Image.fromarray(arr.astype(np.uint8), mode="RGBA")
+def build_arm_upper_v2() -> Image.Image:
+    """10×20 oversized dark-navy coat upper sleeve (shoulder=(5,3), elbow=(5,17))."""
+    img = draw_vertical_limb_capsule(
+        10, 20, top_r=3.0, bot_r=3.0,
+        base_col=COAT_BASE, hi_col=COAT_HI, shade_col=COAT_SHADE,
+        half_w_top=3.2, half_w_bot=3.4, inset=1,
+    )
+    # Subtle shoulder seam highlight
+    put_rect(img, 3, 4, 6, 4, COAT_HI)
+    return img
+
+
+def build_arm_forearm_v2() -> Image.Image:
+    """10×20 navy coat forearm with folded buttoned cuff + cute fair hand (elbow=(5,3), wrist=(5,15))."""
+    img = draw_vertical_limb_capsule(
+        10, 20, top_r=3.0, bot_r=2.5,
+        base_col=COAT_BASE, hi_col=COAT_HI, shade_col=COAT_SHADE,
+        half_w_top=3.3, half_w_bot=3.6, inset=1,
+    )
+    # Clear bottom 5 rows and replace with crisp folded cuff (y=11..14) + rounded fair hand (y=15..18)
+    for y in range(14, 19):
+        for x in range(1, 9):
+            img.putpixel((x, y), (0, 0, 0, 0))
+    # Folded oversized cuff band (y=11..14)
+    put_rect(img, 2, 11, 7, 11, COAT_SHADE)
+    put_rect(img, 2, 12, 7, 13, COAT_BASE)
+    put_rect(img, 2, 12, 3, 13, COAT_CUFF_HI)
+    put(img, 6, 13, COAT_BUTTON)
+    put_rect(img, 2, 14, 7, 14, COAT_SHADE)
+    # Cute rounded fair hand (y=15..18)
+    put_rect(img, 3, 15, 6, 17, SKIN_BASE)
+    put_rect(img, 3, 15, 4, 16, SKIN_HI)
+    put_rect(img, 6, 16, 6, 17, SKIN_SHADE)
+    put_rect(img, 4, 18, 5, 18, SKIN_SHADE)
+    return img
+
+
+def build_arm2_parts_v2() -> dict[str, Image.Image]:
+    """Build exact 26×14 / 27×13 / 12×10 horizontal (+X) weapon-holding sleeves + rounded gripping hand."""
+    up = draw_horizontal_arm2_capsule(
+        26, 14, left_r=5.2, right_r=5.0,
+        base_col=COAT_BASE, hi_col=COAT_HI, shade_col=COAT_SHADE,
+        taper_right=0.06, inset=1,
+    )
+    # Subtle fabric fold along upper sleeve
+    put_rect(up, 8, 7, 17, 7, COAT_SHADE)
+
+    fo = draw_horizontal_arm2_capsule(
+        27, 13, left_r=4.8, right_r=4.4,
+        base_col=COAT_BASE, hi_col=COAT_HI, shade_col=COAT_SHADE,
+        taper_right=0.10, inset=1,
+    )
+    # Crisp folded buttoned cuff near wrist (x=18..23)
+    put_rect(fo, 18, 2, 18, 10, COAT_SHADE)
+    put_rect(fo, 19, 2, 22, 4, COAT_CUFF_HI)
+    put_rect(fo, 19, 5, 22, 8, COAT_BASE)
+    put_rect(fo, 19, 9, 22, 10, COAT_SHADE)
+    put(fo, 21, 8, COAT_BUTTON)
+
+    hand = draw_gripping_hand(
+        12, 10,
+        palm_base=SKIN_BASE, palm_hi=SKIN_HI, palm_shade=SKIN_SHADE,
+    )
+    return {"upper_arm": up, "forearm": fo, "hand": hand}
 
 
 def main() -> int:
     p_v2 = SRC_DIR / "catgirl_seedream_parts_v2.png"
     p_v1 = SRC_DIR / "catgirl_seedream_parts.png"
-    im_v2 = Image.open(p_v2).convert("RGBA")
-    im_v1 = clean_auto(Image.open(p_v1).convert("RGBA"))
+    im_v2 = enhance_rgba(Image.open(p_v2).convert("RGBA"), contrast=1.18, saturation=1.20, brightness=1.15)
+    im_v1 = enhance_rgba(clean_auto(Image.open(p_v1).convert("RGBA")), contrast=1.15, saturation=1.16, brightness=1.12)
 
-    # ---- 1) Crop raw high-res parts from Seedream 5.5 sheets ----
+    # ---- 1) Crop high-res Seedream parts & fit cleanly into exact 1:1 contract canvases ----
     head_front_raw = crop_tight(im_v2, (100, 36, 496, 404))
-    head_wink_raw = crop_tight(im_v2, (576, 36, 968, 404))
-    head_blink_raw = make_symmetric_blink_head(head_front_raw, head_wink_raw)
     head_left_raw = crop_tight(im_v2, (1076, 36, 1440, 404))
     head_back_raw = crop_tight(im_v2, (1528, 36, 1904, 396))
 
-    # Hair flowing clump -> rotate vertical-hanging & split into 2 spring segments + side lock
-    hair_raw = crop_tight(im_v2, (2008, 84, 2408, 440))
-    hair_hang = hair_raw.rotate(-68, resample=Image.Resampling.BICUBIC, expand=True)
-    hb = hair_hang.getbbox()
-    if hb:
-        hair_hang = hair_hang.crop(hb)
-    hh = hair_hang.height
-    hair_root_raw = hair_hang.crop((0, 0, hair_hang.width, int(hh * 0.62)))
-    hair_tip_raw = hair_hang.crop((0, int(hh * 0.44), hair_hang.width, hh))
-    hair_side_raw = hair_hang.crop((int(hair_hang.width * 0.18), int(hh * 0.28), int(hair_hang.width * 0.62), hh))
-
-    # Armless 3-view torsos from v2
     torso_front_raw = crop_tight(im_v2, (56, 524, 540, 1148))
     torso_left_raw = crop_tight(im_v2, (600, 520, 980, 1148))
     torso_back_raw = crop_tight(im_v2, (1028, 524, 1496, 1156))
-    # Skirt hem strip extracted cleanly from bottom of front torso
-    skirt_hem_raw = crop_tight(
-        torso_front_raw,
-        (int(torso_front_raw.width * 0.08), int(torso_front_raw.height * 0.74),
-         int(torso_front_raw.width * 0.92), torso_front_raw.height),
-    )
-
-    # Flowing vertical coat flap from v1 [6] -> split into 2 spring segments
-    flap_raw = crop_tight(im_v1, (716, 848, 1072, 1408))
-    fh = flap_raw.height
-    coat_root_raw = flap_raw.crop((0, 0, flap_raw.width, int(fh * 0.64)))
-    coat_tip_raw = flap_raw.crop((0, int(fh * 0.48), flap_raw.width, fh))
-
-    # Full dark-tights leg + grey sneaker from v1 [10] -> split at knee (47%) with overlap
-    leg_raw = crop_tight(im_v1, (1840, 824, 2036, 1516))
-    lh = leg_raw.height
-    thigh_raw = leg_raw.crop((0, 0, leg_raw.width, int(lh * 0.50)))
-    shin_raw = leg_raw.crop((0, int(lh * 0.43), leg_raw.width, lh))
-
-    # Tactical gun case from v1 [11]
     guncase_raw = crop_tight(im_v1, (2104, 792, 2408, 1472))
 
-    # Oversized navy sleeves + hand from v2 [9], [15], [11]
-    arm_up_raw = crop_tight(im_v2, (1972, 544, 2160, 900))
-    arm_fore_raw = crop_tight(im_v2, (1996, 1052, 2172, 1544))
-    hand_raw = crop_tight(im_v2, (2012, 904, 2156, 1036))
+    # Heads (38×36 front/back, 36×36 left) with 1px sel-out margin & tucked neck overlap cap at y=31
+    head_front = fit_to_contract_canvas(head_front_raw, 38, 36, pad_left=1, pad_right=1, pad_top=1, pad_bottom=2, align_y="bottom")
+    head_front = add_neck_overlap(head_front, SKIN_BASE[:3], SKIN_SHADE[:3], cx=18.5)
+    head_front = polish_front_head_eyes(head_front)
 
-    # ---- 2) Downsample every part to exact 128px-body pixel target dimensions ----
-    def scale_wh(im: Image.Image, tw: int, th: int) -> Image.Image:
-        return premul_box_resize(im, (max(4, tw), max(4, th)))
+    head_back = fit_to_contract_canvas(head_back_raw, 38, 36, pad_left=1, pad_right=1, pad_top=1, pad_bottom=2, align_y="bottom")
+    head_back = add_neck_overlap(head_back, HAIR_SHADE[:3], HAIR_DEEP[:3], cx=18.5)
 
-    down_parts: dict[str, Image.Image] = {
-        "head_front": scale_to_height(head_front_raw, 36),
-        "head_front_blink": scale_to_height(head_blink_raw, 36),
-        "head_left": scale_to_height(head_left_raw, 36),
-        "head_back": scale_to_height(head_back_raw, 36),
-        "hair_back_root": scale_to_height(hair_root_raw, 21),
-        "hair_back_tip": scale_to_height(hair_tip_raw, 14),
-        "hair_side": scale_to_height(hair_side_raw, 13),
-        "torso_front": scale_to_height(torso_front_raw, 46),
-        "torso_left": scale_to_height(torso_left_raw, 46),
-        "torso_back": scale_to_height(torso_back_raw, 46),
-        "skirt_hem": scale_to_height(skirt_hem_raw, 14),
-        "coat_flap_root": scale_wh(coat_root_raw, 13, 20),
-        "coat_flap_tip": scale_wh(coat_tip_raw, 12, 12),
-        # Sleek anime tights & sneaker proportions matching 128px catgirl 3-view
-        "thigh": scale_wh(thigh_raw, 10, 31),
-        "shin_boot": scale_wh(shin_raw, 13, 33),
-        "gun_case": scale_wh(guncase_raw, 17, 64),
-        "arm_upper": scale_wh(arm_up_raw, 10, 19),
-        "arm_forearm": scale_wh(arm_fore_raw, 10, 20),
+    head_left = fit_to_contract_canvas(head_left_raw, 36, 36, pad_left=1, pad_right=1, pad_top=1, pad_bottom=2, align_y="bottom")
+    head_left = add_neck_overlap(head_left, SKIN_BASE[:3], SKIN_SHADE[:3], cx=17.5)
+
+    # Armless torsos (36×46 front, 34×46 back, 26×46 left), cleanly rounded shoulders at (±10, 10)
+    torso_front = fit_to_contract_canvas(torso_front_raw, 36, 46, pad_left=1, pad_right=1, pad_top=1, pad_bottom=1, align_y="center")
+    torso_front = add_torso_collar_and_pelvis_caps(torso_front, COAT_SHADE[:3], SKIRT_SHADE[:3], trim_shoulders=True, max_shoulder_half_w=12.6)
+
+    torso_back = fit_to_contract_canvas(torso_back_raw, 34, 46, pad_left=1, pad_right=1, pad_top=1, pad_bottom=1, align_y="center")
+    torso_back = add_torso_collar_and_pelvis_caps(torso_back, COAT_SHADE[:3], SKIRT_SHADE[:3], trim_shoulders=True, max_shoulder_half_w=11.8)
+
+    torso_left = fit_to_contract_canvas(torso_left_raw, 26, 46, pad_left=1, pad_right=1, pad_top=1, pad_bottom=1, align_y="center")
+    torso_left = add_torso_collar_and_pelvis_caps(torso_left, COAT_SHADE[:3], SKIRT_SHADE[:3], trim_shoulders=False)
+
+    # Tactical gun case (18×64)
+    gun_case = fit_to_contract_canvas(guncase_raw, 18, 64, pad_left=1, pad_right=1, pad_top=1, pad_bottom=1, align_y="center")
+
+    # ---- 2) Native 1:1 pixel-crafted articulated limbs, side-profile sneakers, layered bob hair & trench flaps ----
+    thigh = draw_vertical_limb_capsule(
+        10, 33, top_r=3.2, bot_r=3.2,
+        base_col=TIGHTS_BASE, hi_col=TIGHTS_HI, shade_col=TIGHTS_SHADE,
+        half_w_top=3.1, half_w_bot=2.8, inset=1,
+    )
+    # Subtle sheen strip along front edge of tights + knee-top highlight
+    put_rect(thigh, 3, 6, 3, 25, TIGHTS_HI)
+    put_rect(thigh, 4, 27, 5, 28, KNEE_HI)
+
+    shin_boot = draw_side_shin_and_footwear(
+        shin_base=TIGHTS_BASE, shin_hi=TIGHTS_HI, shin_shade=TIGHTS_SHADE,
+        boot_base=SHOE_BASE, boot_hi=SHOE_HI, boot_shade=SHOE_SHADE,
+        sole_col=SHOE_SOLE, midsole_col=SHOE_MIDSOLE, lace_col=SHOE_LACE,
+        boot_top_y=25, knee_hi=KNEE_HI, knee_crease=KNEE_CREASE, sole_thick=1,
+    )
+
+    arm_upper = build_arm_upper_v2()
+    arm_forearm = build_arm_forearm_v2()
+    arm2_parts = build_arm2_parts_v2()
+
+    hair_back_root, hair_back_tip, hair_side = draw_hair_back_segments(
+        base_col=HAIR_BASE, hi_col=HAIR_HI, shade_col=HAIR_SHADE, deep_col=HAIR_DEEP,
+        style="bob",
+    )
+    coat_flap_root, coat_flap_tip = draw_coat_or_dress_flaps(
+        base_col=COAT_BASE, hi_col=COAT_HI, shade_col=COAT_SHADE,
+        trim_col=COAT_CUFF_HI, style="trenchcoat",
+    )
+    skirt_hem = draw_pleated_skirt_hem(
+        base_col=SKIRT_BASE, hi_col=SKIRT_HI, shade_col=SKIRT_SHADE,
+        trim_col=LACE_WHITE, plaid_col=SKIRT_PLAID,
+    )
+
+    raw_parts: dict[str, Image.Image] = {
+        "head_front": head_front,
+        "head_front_blink": head_front.copy(),  # replaced post-quantize by clean hand-painted blink!
+        "head_back": head_back,
+        "head_left": head_left,
+        "head_left_blink": head_left.copy(),    # replaced post-quantize by clean hand-painted blink!
+        "torso_front": torso_front,
+        "torso_back": torso_back,
+        "torso_left": torso_left,
+        "hair_back_root": hair_back_root,
+        "hair_back_tip": hair_back_tip,
+        "hair_side": hair_side,
+        "coat_flap_root": coat_flap_root,
+        "coat_flap_tip": coat_flap_tip,
+        "skirt_hem": skirt_hem,
+        "thigh": thigh,
+        "shin_boot": shin_boot,
+        "gun_case": gun_case,
+        "arm_upper": arm_upper,
+        "arm_forearm": arm_forearm,
     }
 
-    # Horizontal weapon-rig arm2 parts matching WeaponRig2D sizes (~26x14, 27x13, 12x10)
-    w_up_rot = arm_up_raw.rotate(90, resample=Image.Resampling.BICUBIC, expand=True)
-    fore_only = arm_fore_raw.crop((0, 0, arm_fore_raw.width, int(arm_fore_raw.height * 0.72)))
-    w_fo_rot = fore_only.rotate(90, resample=Image.Resampling.BICUBIC, expand=True)
-    # Compact gripping hand cropped around palm core so it wraps rifle/pistol grips neatly
-    hand_core = hand_raw.crop((int(hand_raw.width * 0.14), int(hand_raw.height * 0.14),
-                               int(hand_raw.width * 0.86), int(hand_raw.height * 0.82)))
-    w_hand_rot = hand_core.rotate(90, resample=Image.Resampling.BICUBIC, expand=True)
-    down_arm2: dict[str, Image.Image] = {
-        "upper_arm": premul_box_resize(w_up_rot, (26, 14)),
-        "forearm": premul_box_resize(w_fo_rot, (27, 13)),
-        "hand": premul_box_resize(w_hand_rot, (12, 10)),
-    }
-
-    # ---- 3) Harden alpha & clean stray 1px dust ----
-    for d in (down_parts, down_arm2):
-        for k, im in list(d.items()):
-            d[k] = remove_isolated_pixels(harden_alpha(im, threshold=126))
-
-    # Add rounded joint overlap caps at limb cuts
-    for k, tc, bc in [
-        ("thigh", True, True),
-        ("shin_boot", True, False),
-        ("arm_upper", True, True),
-        ("arm_forearm", True, False),
-        ("coat_flap_root", True, False),
-        ("coat_flap_tip", True, False),
-    ]:
-        down_parts[k] = round_joint_caps(down_parts[k], top_cap=tc, bottom_cap=bc)
-
-    # Add subtle pixel-art knee-cap & elbow-fold joint readability shading
-    down_parts["shin_boot"] = add_joint_shading(down_parts["shin_boot"], 0.12, 20, -16)
-    down_parts["arm_forearm"] = add_joint_shading(down_parts["arm_forearm"], 0.14, 18, -16)
-
-    # Create crisp pixel side-view blink head from cleaned head_left
-    down_parts["head_left_blink"] = make_side_blink_head(down_parts["head_left"])
-
-    # ---- 4) Extract ONE single global 48-color locked palette anchored to catgirl_seedream_parts_v2 ----
     palette_anchors = [
-        down_parts["head_front"],
-        down_parts["head_left"],
-        down_parts["head_back"],
-        down_parts["torso_front"],
-        down_parts["torso_left"],
-        down_parts["torso_back"],
-        down_parts["thigh"],
-        down_parts["shin_boot"],
-        down_parts["gun_case"],
-        down_parts["arm_forearm"],
+        head_front, head_left, head_back,
+        torso_front, torso_left, torso_back,
+        thigh, shin_boot, gun_case,
+        arm_forearm, coat_flap_root, skirt_hem,
     ]
-    palette = build_locked_palette(palette_anchors, max_colors=48)
 
-    # ---- 5) Apply locked palette + 1px selective dark outline & save ----
-    OUT_PARTS.mkdir(parents=True, exist_ok=True)
-    OUT_ARM2.mkdir(parents=True, exist_ok=True)
+    # Finalize with 48-color locked palette + 1px sel-out + seamless soft-shaded joint caps (zero black ring seams!)
+    joint_hooks = {
+        "thigh": lambda im: soften_joint_cap_outline(im, top_rows=4, bottom_rows=4),
+        "shin_boot": lambda im: soften_joint_cap_outline(im, top_rows=4),
+        "arm_upper": lambda im: soften_joint_cap_outline(im, top_rows=4, bottom_rows=4),
+        "arm_forearm": lambda im: soften_joint_cap_outline(im, top_rows=4),
+        "coat_flap_tip": lambda im: soften_joint_cap_outline(im, top_rows=3),
+        "hair_back_tip": lambda im: soften_joint_cap_outline(im, top_rows=3),
+        "arm2_upper_arm": lambda im: soften_joint_cap_outline(im, left_cols=4, right_cols=4),
+        "arm2_forearm": lambda im: soften_joint_cap_outline(im, left_cols=4),
+    }
+    saved_parts, saved_arm2 = finalize_and_export_skin(
+        skin_id="doll_v2",
+        display_name="灰蓝猫耳少女 (Doll v2 · 精修 1:1)",
+        out_root=OUT_ROOT,
+        raw_parts=raw_parts,
+        raw_arm2=arm2_parts,
+        palette_anchors=palette_anchors,
+        max_colors=48,
+        outline_strength=0.32,
+        post_quantize_hooks=joint_hooks,
+    )
 
-    saved_parts: dict[str, Image.Image] = {}
-    for k, im in down_parts.items():
-        q = apply_palette(im, palette)
-        # Skip heavy outer outline on blink overlay & tiny hair tips? Keep clean subtle sel-out everywhere!
-        out_im = add_selective_outline(q, strength=0.38)
-        out_im.save(OUT_PARTS / f"{k}.png")
-        saved_parts[k] = out_im
+    # Pixel-locked clean blink layers derived directly from finalized head_front / head_left (zero outline shift!)
+    blink_front = paint_front_blink_clean(saved_parts["head_front"])
+    blink_front.save(OUT_ROOT / "parts/head_front_blink.png")
+    saved_parts["head_front_blink"] = blink_front
 
-    for k, im in down_arm2.items():
-        q = apply_palette(im, palette)
-        out_im = add_selective_outline(q, strength=0.38)
-        out_im.save(OUT_ARM2 / f"{k}.png")
-        saved_parts["arm2_" + k] = out_im
+    blink_left = paint_side_blink_clean(saved_parts["head_left"])
+    blink_left.save(OUT_ROOT / "parts/head_left_blink.png")
+    saved_parts["head_left_blink"] = blink_left
 
-    # ---- 6) Render 3x zoomed visual inspection contact sheet ----
-    cols = 6
-    keys = list(saved_parts.keys())
-    rows = (len(keys) + cols - 1) // cols
-    cell_w, cell_h = 220, 240
-    sheet = Image.new("RGBA", (cols * cell_w, rows * cell_h), (42, 46, 54, 255))
-    draw = ImageDraw.Draw(sheet)
-    for idx, k in enumerate(keys):
-        im = saved_parts[k]
-        r, c = divmod(idx, cols)
-        ox, oy = c * cell_w, r * cell_h
-        # Checkerboard backing inside cell
-        draw.rectangle([ox + 6, oy + 22, ox + cell_w - 6, oy + cell_h - 6], fill=(64, 68, 78, 255))
-        scale = 3 if max(im.width, im.height) <= 56 else 2
-        zoomed = im.resize((im.width * scale, im.height * scale), Image.Resampling.NEAREST)
-        px = ox + (cell_w - zoomed.width) // 2
-        py = oy + 22 + (cell_h - 28 - zoomed.height) // 2
-        sheet.paste(zoomed, (px, py), zoomed)
-        draw.text((ox + 8, oy + 4), f"{k} ({im.width}x{im.height})", fill=(255, 225, 130, 255))
-    PREVIEW_OUT.parent.mkdir(parents=True, exist_ok=True)
-    sheet.save(PREVIEW_OUT)
-    print(f"[build_doll_v2_parts] Saved {len(down_parts)} rig parts + {len(down_arm2)} arm2 parts (48-color locked palette)")
-    print(f"[build_doll_v2_parts] Preview sheet: {PREVIEW_OUT}")
+    render_contact_sheet(
+        saved_parts, saved_arm2, PREVIEW_OUT,
+        title="doll_v2 (Refined 1:1 Contract · 19+3 Parts · 48-Color Locked Palette)",
+    )
+    print(f"[build_doll_v2_parts] Exported 19 parts + 3 arm2 + skin_manifest.json to {OUT_ROOT}")
+    print(f"[build_doll_v2_parts] Contact sheet: {PREVIEW_OUT}")
     return 0
 
 

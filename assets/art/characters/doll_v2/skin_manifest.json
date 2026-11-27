@@ -1,0 +1,586 @@
+{
+  "schema_version": 1,
+  "skin_id": "doll_v2",
+  "display_name": "灰蓝猫耳少女 (Doll v2 · 精修 1:1)",
+  "pixel_spec": {
+    "world_height_px": 128,
+    "canvas_size": [
+      160,
+      160
+    ],
+    "ground_origin": [
+      80,
+      148
+    ],
+    "scale_mode": "1:1_integer",
+    "texture_filter": "NEAREST"
+  },
+  "skeleton_constants": {
+    "PELVIS_HEIGHT": 58,
+    "THIGH_LEN": 28,
+    "SHIN_LEN": 30,
+    "TORSO_HEIGHT": 40,
+    "NECK_OFFSET_Y": -39,
+    "SHOULDER_OFFSET_Y": -33,
+    "UPPER_ARM_LEN": 16,
+    "FOREARM_LEN": 16,
+    "ARM2_SCALE": 0.5
+  },
+  "color_coding": {
+    "limb_side_coloring": false
+  },
+  "parts_count": 19,
+  "arm2_count": 3,
+  "parts": {
+    "head_front": {
+      "file": "parts/head_front.png",
+      "width": 38,
+      "height": 36,
+      "target_h": 36,
+      "offset": [
+        0,
+        -14
+      ],
+      "pivots_px": {
+        "neck": [
+          18.5,
+          32
+        ]
+      },
+      "z_index": {
+        "0": 5
+      },
+      "flip_rule": "none",
+      "role": "正面头部（视线朝向镜头）"
+    },
+    "head_front_blink": {
+      "file": "parts/head_front_blink.png",
+      "width": 38,
+      "height": 36,
+      "target_h": 36,
+      "offset": [
+        0,
+        -14
+      ],
+      "pivots_px": {
+        "neck": [
+          18.5,
+          32
+        ]
+      },
+      "z_index": {
+        "0": 6
+      },
+      "flip_rule": "none",
+      "role": "正面独立眨眼覆盖层"
+    },
+    "head_back": {
+      "file": "parts/head_back.png",
+      "width": 38,
+      "height": 36,
+      "target_h": 36,
+      "offset": [
+        0,
+        -14
+      ],
+      "pivots_px": {
+        "neck": [
+          18.5,
+          32
+        ]
+      },
+      "z_index": {
+        "1": 5
+      },
+      "flip_rule": "none",
+      "role": "背面头部"
+    },
+    "head_left": {
+      "file": "parts/head_left.png",
+      "width": 36,
+      "height": 36,
+      "target_h": 36,
+      "offset": [
+        0,
+        -14
+      ],
+      "pivots_px": {
+        "neck": [
+          18,
+          32
+        ]
+      },
+      "z_index": {
+        "2": 5,
+        "3": 5
+      },
+      "flip_rule": "flip_h_when_dir_3",
+      "role": "侧视头部（原图朝左 -X）"
+    },
+    "head_left_blink": {
+      "file": "parts/head_left_blink.png",
+      "width": 36,
+      "height": 36,
+      "target_h": 36,
+      "offset": [
+        0,
+        -14
+      ],
+      "pivots_px": {
+        "neck": [
+          18,
+          32
+        ]
+      },
+      "z_index": {
+        "2": 6,
+        "3": 6
+      },
+      "flip_rule": "flip_h_when_dir_3",
+      "role": "侧视独立眨眼覆盖层（原图朝左）"
+    },
+    "torso_front": {
+      "file": "parts/torso_front.png",
+      "width": 36,
+      "height": 46,
+      "target_h": 46,
+      "offset": [
+        0,
+        -20
+      ],
+      "pivots_px": {
+        "pelvis": [
+          18,
+          43
+        ],
+        "neck": [
+          18,
+          4
+        ],
+        "shoulder_l": [
+          28,
+          10
+        ],
+        "shoulder_r": [
+          8,
+          10
+        ]
+      },
+      "z_index": {
+        "0": 1
+      },
+      "flip_rule": "none",
+      "role": "正面无臂躯干"
+    },
+    "torso_back": {
+      "file": "parts/torso_back.png",
+      "width": 34,
+      "height": 46,
+      "target_h": 46,
+      "offset": [
+        0,
+        -20
+      ],
+      "pivots_px": {
+        "pelvis": [
+          17,
+          43
+        ],
+        "neck": [
+          17,
+          4
+        ],
+        "shoulder_l": [
+          7,
+          10
+        ],
+        "shoulder_r": [
+          27,
+          10
+        ]
+      },
+      "z_index": {
+        "1": 1
+      },
+      "flip_rule": "none",
+      "role": "背面无臂躯干"
+    },
+    "torso_left": {
+      "file": "parts/torso_left.png",
+      "width": 26,
+      "height": 46,
+      "target_h": 46,
+      "offset": [
+        0,
+        -20
+      ],
+      "pivots_px": {
+        "pelvis": [
+          13,
+          43
+        ],
+        "neck": [
+          13,
+          4
+        ],
+        "shoulder": [
+          13,
+          10
+        ]
+      },
+      "z_index": {
+        "2": 1,
+        "3": 1
+      },
+      "flip_rule": "flip_h_when_dir_3",
+      "role": "侧视无臂躯干（原图朝左 -X）"
+    },
+    "hair_back_root": {
+      "file": "parts/hair_back_root.png",
+      "width": 26,
+      "height": 18,
+      "target_h": 18,
+      "offset": [
+        0,
+        5
+      ],
+      "pivots_px": {
+        "root": [
+          13,
+          4
+        ]
+      },
+      "z_index": {
+        "0": -1,
+        "1": 4,
+        "2": -1,
+        "3": -1
+      },
+      "flip_rule": "flip_h_when_dir_3",
+      "role": "次级物理后发上段"
+    },
+    "hair_back_tip": {
+      "file": "parts/hair_back_tip.png",
+      "width": 20,
+      "height": 12,
+      "target_h": 12,
+      "offset": [
+        0,
+        4
+      ],
+      "pivots_px": {
+        "joint": [
+          10,
+          2
+        ]
+      },
+      "z_index": {
+        "0": -1,
+        "1": 4,
+        "2": -1,
+        "3": -1
+      },
+      "flip_rule": "flip_h_when_dir_3",
+      "role": "次级物理后发发梢"
+    },
+    "hair_side": {
+      "file": "parts/hair_side.png",
+      "width": 6,
+      "height": 12,
+      "target_h": 12,
+      "offset": [
+        0,
+        5
+      ],
+      "pivots_px": {
+        "root": [
+          3,
+          1
+        ]
+      },
+      "z_index": {
+        "0": 4
+      },
+      "flip_rule": "mirror_right_side",
+      "role": "正面两侧鬓发微动片"
+    },
+    "coat_flap_root": {
+      "file": "parts/coat_flap_root.png",
+      "width": 14,
+      "height": 21,
+      "target_h": 21,
+      "offset": [
+        0,
+        9
+      ],
+      "pivots_px": {
+        "root": [
+          7,
+          1.5
+        ]
+      },
+      "z_index": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "flip_rule": "mirror_right_flap",
+      "role": "次级物理衣摆上段"
+    },
+    "coat_flap_tip": {
+      "file": "parts/coat_flap_tip.png",
+      "width": 12,
+      "height": 13,
+      "target_h": 13,
+      "offset": [
+        0,
+        5
+      ],
+      "pivots_px": {
+        "joint": [
+          6,
+          1.5
+        ]
+      },
+      "z_index": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "flip_rule": "mirror_right_flap",
+      "role": "次级物理衣摆下段"
+    },
+    "skirt_hem": {
+      "file": "parts/skirt_hem.png",
+      "width": 34,
+      "height": 13,
+      "target_h": 13,
+      "offset": [
+        0,
+        3
+      ],
+      "pivots_px": {
+        "waist": [
+          17,
+          3.5
+        ]
+      },
+      "z_index": {
+        "0": -1,
+        "1": -1
+      },
+      "flip_rule": "hidden_on_side",
+      "role": "正/背面裙摆下沿微摆片"
+    },
+    "thigh": {
+      "file": "parts/thigh.png",
+      "width": 10,
+      "height": 33,
+      "target_h": 33,
+      "offset": [
+        0,
+        13
+      ],
+      "pivots_px": {
+        "hip": [
+          5,
+          3.5
+        ],
+        "knee": [
+          5,
+          29.5
+        ]
+      },
+      "z_index": {
+        "near": -2,
+        "far": -4,
+        "front_back": -3
+      },
+      "flip_rule": "flip_h_when_lower_dir_3",
+      "role": "大腿段（含上下 3.5px 圆角重叠包边）"
+    },
+    "shin_boot": {
+      "file": "parts/shin_boot.png",
+      "width": 14,
+      "height": 34,
+      "target_h": 34,
+      "offset": [
+        0,
+        14
+      ],
+      "pivots_px": {
+        "knee": [
+          7,
+          3
+        ],
+        "ankle": [
+          7,
+          25
+        ],
+        "sole_y": 33
+      },
+      "z_index": {
+        "near": -2,
+        "far": -4,
+        "front_back": -3
+      },
+      "flip_rule": "flip_h_when_lower_dir_3",
+      "role": "小腿+鞋靴段（原图鞋尖朝左 -X）"
+    },
+    "gun_case": {
+      "file": "parts/gun_case.png",
+      "width": 18,
+      "height": 64,
+      "target_h": 64,
+      "offset": [
+        0,
+        -6
+      ],
+      "pivots_px": {
+        "mount": [
+          9,
+          38
+        ]
+      },
+      "z_index": {
+        "0": -6,
+        "1": 7,
+        "2": -2,
+        "3": -2
+      },
+      "flip_rule": "flip_h_when_dir_3",
+      "role": "背后战术装备/枪盒挂件"
+    },
+    "arm_upper": {
+      "file": "parts/arm_upper.png",
+      "width": 10,
+      "height": 20,
+      "target_h": 20,
+      "offset": [
+        0,
+        7
+      ],
+      "pivots_px": {
+        "shoulder": [
+          5,
+          3
+        ],
+        "elbow": [
+          5,
+          17
+        ]
+      },
+      "z_index": {
+        "0": 4,
+        "1": -2,
+        "near": 4,
+        "far": -3
+      },
+      "flip_rule": "flip_h_when_dir_3",
+      "role": "收枪状态上臂段（含肩/肘 3px 包边）"
+    },
+    "arm_forearm": {
+      "file": "parts/arm_forearm.png",
+      "width": 10,
+      "height": 20,
+      "target_h": 20,
+      "offset": [
+        0,
+        7
+      ],
+      "pivots_px": {
+        "elbow": [
+          5,
+          3
+        ],
+        "wrist": [
+          5,
+          15
+        ]
+      },
+      "z_index": {
+        "0": 4,
+        "1": -2,
+        "near": 4,
+        "far": -3
+      },
+      "flip_rule": "flip_h_when_dir_3",
+      "role": "收枪状态前臂与手部"
+    }
+  },
+  "arm2": {
+    "upper_arm": {
+      "file": "arm2/upper_arm.png",
+      "width": 26,
+      "height": 14,
+      "arm_scale": 0.5,
+      "world_size": [
+        13.0,
+        7.0
+      ],
+      "offset": [
+        13.0,
+        0.0
+      ],
+      "pivots_px": {
+        "shoulder": [
+          3,
+          7
+        ],
+        "elbow": [
+          22,
+          7
+        ]
+      },
+      "role": "持枪水平上臂（左肩→右肘，0.5× 缩放）"
+    },
+    "forearm": {
+      "file": "arm2/forearm.png",
+      "width": 27,
+      "height": 13,
+      "arm_scale": 0.5,
+      "world_size": [
+        13.5,
+        6.5
+      ],
+      "offset": [
+        13.5,
+        0.0
+      ],
+      "pivots_px": {
+        "elbow": [
+          3,
+          6.5
+        ],
+        "wrist": [
+          23,
+          6.5
+        ]
+      },
+      "role": "持枪水平前臂（左肘→右腕，0.5× 缩放）"
+    },
+    "hand": {
+      "file": "arm2/hand.png",
+      "width": 12,
+      "height": 10,
+      "arm_scale": 0.5,
+      "world_size": [
+        6.0,
+        5.0
+      ],
+      "offset": [
+        0.0,
+        0.0
+      ],
+      "pivots_px": {
+        "grip": [
+          6,
+          5
+        ]
+      },
+      "role": "持枪握持手掌（居中对齐握把，0.5× 缩放）"
+    }
+  }
+}

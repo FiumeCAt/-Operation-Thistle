@@ -164,7 +164,7 @@ func _build() -> void:
 	_skin_toggle_button = PixelUI.button("角色外观：正式皮", 34)
 	_skin_toggle_button.add_theme_font_size_override("font_size", 17)
 	_skin_toggle_button.custom_minimum_size.x = 232
-	_skin_toggle_button.tooltip_text = "一键热切换正式像素皮（doll_v2）与功能分色标准体模（mannequin）"
+	_skin_toggle_button.tooltip_text = "一键轮切角色皮肤包：灰蓝猫耳 (doll_v2) → 蓟花白裙 (doll_thistle) → 分色体模 (mannequin)"
 	_skin_toggle_button.pressed.connect(toggle_character_skin)
 	enable_row.add_child(_skin_toggle_button)
 	_status = PixelUI.label(enable_row, "", 19, PixelUI.DIM)
@@ -974,15 +974,24 @@ func _reset_values() -> void:
 		character_skin_changed.emit("doll_v2")
 
 
+const SKIN_CYCLE_ORDER: Array[String] = ["doll_v2", "doll_thistle", "mannequin"]
+const SKIN_DISPLAY_LABELS := {
+	"doll_v2": "灰蓝猫耳",
+	"doll_thistle": "蓟花白裙",
+	"mannequin": "分色体模",
+}
+
+
 func toggle_character_skin() -> String:
 	var cur := _current_character_skin()
-	var next_skin := "mannequin" if cur != "mannequin" else "doll_v2"
+	var idx := SKIN_CYCLE_ORDER.find(cur)
+	var next_skin := SKIN_CYCLE_ORDER[(idx + 1) % SKIN_CYCLE_ORDER.size()] if idx >= 0 else "doll_v2"
 	if _p != null and _p.has_method("set_character_skin"):
 		_p.set_character_skin(next_skin)
 	_sync_live_player_skin(next_skin)
 	_refresh_skin_button(next_skin)
-	_set_message("角色外观已切换为：分色体模 (mannequin)" if next_skin == "mannequin"
-		else "角色外观已切换为：正式皮 (doll_v2)", false)
+	var label := String(SKIN_DISPLAY_LABELS.get(next_skin, next_skin))
+	_set_message("角色外观已切换为：%s (%s)" % [label, next_skin], false)
 	character_skin_changed.emit(next_skin)
 	return next_skin
 
@@ -1005,10 +1014,10 @@ func _sync_live_player_skin(skin_id: String) -> void:
 func _refresh_skin_button(skin_id: String) -> void:
 	if _skin_toggle_button == null:
 		return
-	var is_mannequin := skin_id == "mannequin"
-	_skin_toggle_button.text = "角色外观：分色体模" if is_mannequin else "角色外观：正式皮"
-	_skin_toggle_button.add_theme_color_override(
-		"font_color", PixelUI.CYAN if is_mannequin else PixelUI.TEXT)
+	var label := String(SKIN_DISPLAY_LABELS.get(skin_id, skin_id))
+	_skin_toggle_button.text = "角色外观：" + label
+	var tint := PixelUI.CYAN if skin_id == "mannequin" else (PixelUI.AMBER if skin_id == "doll_thistle" else PixelUI.TEXT)
+	_skin_toggle_button.add_theme_color_override("font_color", tint)
 
 
 func _load_values() -> void:

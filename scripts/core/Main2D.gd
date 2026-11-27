@@ -444,7 +444,7 @@ func _is_dodge_blocked() -> bool:
 
 ## 通过命令行切换角色表现：
 ##   默认：Modular Doll Rig v2 正式皮肤（doll_v2）+ 当前配装主武器
-##   `-- --skin=mannequin`              热切换角色皮肤包（doll_v2 / mannequin）
+##   `-- --skin=doll_thistle`           热切换角色皮肤包（doll_v2 / doll_thistle / mannequin）
 ##   `-- --rig=normal` / `--rig=chibi`  实验性的分件骨架（头/躯干/四肢/武器箱）
 ##   `-- --lod=1024`                    切换整身图集精度
 ##   `-- --weapon=off`                  不举枪
