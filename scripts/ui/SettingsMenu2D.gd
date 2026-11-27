@@ -22,6 +22,7 @@ var _shake_buttons: Dictionary = {}
 var _trail_buttons: Dictionary = {}
 var _scope_blur_buttons: Dictionary = {}
 var _scope_distortion_buttons: Dictionary = {}
+var _self_light_buttons: Dictionary = {}
 var _hitstop_buttons: Dictionary = {}
 var _sample_buttons: Dictionary = {}
 var _hit_fx_buttons: Dictionary = {}
@@ -352,6 +353,7 @@ func _build_right_column() -> Control:
 	_add_toggle_row(rows, "弹道线条效果", _trail_buttons, _set_bullet_trail)
 	_add_toggle_row(rows, "镜内运动模糊", _scope_blur_buttons, _set_scope_blur)
 	_add_toggle_row(rows, "镜内畸变", _scope_distortion_buttons, _set_scope_distortion)
+	_add_toggle_row(rows, "角色贴身补光", _self_light_buttons, _set_player_self_light)
 
 	_sep(rows, PixelUI.PURPLE)
 	PixelUI.section_bar(rows, "实验性功能", "EXPERIMENTAL", PixelUI.PURPLE)
@@ -874,6 +876,7 @@ func _load_values() -> void:
 	var bullet_trail := true
 	var scope_blur := true
 	var scope_distortion := true
+	var self_light := false
 	var hitstop := false
 	var shake_scale := 100.0
 	var sample_impacts := true
@@ -900,6 +903,7 @@ func _load_values() -> void:
 		bullet_trail = bool(p.data.get("bullet_trail_enabled", true))
 		scope_blur = bool(p.data.get("scope_motion_blur", true))
 		scope_distortion = bool(p.data.get("scope_lens_distortion", true))
+		self_light = bool(p.player_self_light()) if p.has_method("player_self_light") else bool(p.data.get("player_self_light", false))
 		hitstop = bool(p.data.get("hitstop_enabled", false))
 		shake_scale = clampf(float(p.data.get("shake_scale", 100.0)), 0.0, 1000.0)
 		sample_impacts = bool(p.data.get("sample_impacts", true))
@@ -941,6 +945,7 @@ func _load_values() -> void:
 	_refresh_trail_buttons(bullet_trail)
 	_refresh_scope_blur_buttons(scope_blur)
 	_refresh_scope_distortion_buttons(scope_distortion)
+	_refresh_self_light_buttons(self_light)
 	_refresh_hitstop_buttons(hitstop)
 	_refresh_sample_buttons(sample_impacts)
 	_refresh_hit_fx_buttons(hit_fx_level)
@@ -1046,6 +1051,13 @@ func _set_scope_distortion(enabled: bool) -> void:
 	_refresh_scope_distortion_buttons(enabled)
 
 
+func _set_player_self_light(enabled: bool) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_player_self_light"):
+		p.set_player_self_light(enabled)
+	_refresh_self_light_buttons(enabled)
+
+
 func _refresh_fire_buttons(mode: String) -> void:
 	_interval_button.text = ("▶ " if mode == "interval" else "   ") + "秒/发 // INTERVAL"
 	_rpm_button.text = ("▶ " if mode == "rpm" else "   ") + "RPM // 发/分钟"
@@ -1108,6 +1120,10 @@ func _refresh_trail_buttons(enabled: bool) -> void:
 
 func _refresh_scope_distortion_buttons(enabled: bool) -> void:
 	_refresh_toggle_buttons(_scope_distortion_buttons, enabled)
+
+
+func _refresh_self_light_buttons(enabled: bool) -> void:
+	_refresh_toggle_buttons(_self_light_buttons, enabled)
 
 
 func _refresh_toggle_buttons(buttons: Dictionary, enabled: bool) -> void:

@@ -45,8 +45,9 @@ func _run() -> void:
 		and rv2.viewport.transparent_bg and rv2.viewport.msaa_2d == Viewport.MSAA_DISABLED,
 		"SubViewport uses 160x160 transparent MSAA_DISABLED pixel rasterization")
 	_check(rv2.rig_canvas != null and rv2.rig_canvas.texture_filter == CanvasItem.TEXTURE_FILTER_NEAREST
-		and rv2.rig_canvas.scale.is_equal_approx(Vector2.ONE),
-		"RigCanvas renders 1:1 with TEXTURE_FILTER_NEAREST (128px x1 locked)")
+		and rv2.rig_canvas.scale.is_equal_approx(Vector2.ONE)
+		and rv2.rig_canvas.material is ShaderMaterial,
+		"RigCanvas renders 1:1 with TEXTURE_FILTER_NEAREST and anti-overexposure ShaderMaterial")
 
 	# 3) 完整纸娃娃分层与未来换装槽位（Shadow / Legs 二段膝 / Torso+ArmorSlot / BackGear+BackpackSlot / Head+Blink / SecondaryMotion）
 	_check(rv2.shadow_sprite != null and rv2.leg_l_hip != null and rv2.leg_l_knee != null
@@ -167,15 +168,18 @@ func _run() -> void:
 	_check(stow_behind_left, "holstered side weapon tucks behind back (z<0, +X when facing left, never floating on chest)")
 	wr.draw()
 
-	# 10) 皮肤包完整性（doll_v2 / doll_thistle / mannequin 全 19+3 分件 + skin_manifest.json + 严格 1:1 target_h）
+	# 10) 皮肤包完整性（doll_v2 / mannequin 19+3，doll_thistle 轻装无背包 18+3 + skin_manifest.json + 严格 1:1 target_h）
+	var expected_parts := {"doll_v2": 19, "doll_thistle": 18, "mannequin": 19}
 	for sid: String in ["doll_v2", "doll_thistle", "mannequin"]:
 		_check(DollRigV2.skin_exists(sid) and WeaponRig2D.skin_has_arm2(sid),
 			"%s skin has all required parts and 3 arm2 weapon-arm textures" % sid)
 		var mpath := DollRigV2.skin_manifest_path(sid)
 		var mraw = JSON.parse_string(FileAccess.get_file_as_string(mpath)) if FileAccess.file_exists(mpath) else null
-		_check(mraw is Dictionary and int((mraw as Dictionary).get("parts_count", 0)) == 19
-			and int((mraw as Dictionary).get("arm2_count", 0)) == 3,
-			"%s skin_manifest.json exists and declares 19 parts + 3 arm2" % sid)
+		var want_n := int(expected_parts[sid])
+		_check(mraw is Dictionary and int((mraw as Dictionary).get("parts_count", 0)) == want_n
+			and int((mraw as Dictionary).get("arm2_count", 0)) == 3
+			and typeof((mraw as Dictionary).get("extra_components_default", null)) == TYPE_DICTIONARY,
+			"%s skin_manifest.json exists and declares %d parts + 3 arm2 + extra_components_default" % [sid, want_n])
 
 	# 10b) 验证默认正式皮 doll_v2 全部 19 分件严格 1:1 匹配 target_h（零非整数缩放畸变）
 	var v2_1to1 := true
@@ -186,12 +190,34 @@ func _run() -> void:
 			break
 	_check(v2_1to1, "all 19 refined doll_v2 parts match DollRigV2 target_h 1:1 (zero non-integer scale distortion)")
 
-	# 11) set_skin('doll_thistle') 热切换 + 严格 1:1 + 无体模分色污染 + 新武器继承
+	# 10c) 验证额外组件显隐接口（doll_v2 默认显示背挂枪盒；可运行期隐藏/恢复且转向不覆写）
+	_check(doll.has_extra_component_asset(&"back_gear") and doll.is_extra_component_visible(&"back_gear")
+		and rv2.back_gear_pivot.visible and rv2.gun_case.visible,
+		"doll_v2 shows optional back_gear (gun_case) by default")
+	_check(doll.set_extra_component_visible(&"back_gear", false)
+		and not doll.is_extra_component_visible(&"back_gear")
+		and not rv2.back_gear_pivot.visible and not rv2.gun_case.visible,
+		"set_extra_component_visible('back_gear', false) hides gun_case immediately")
+	rv2.update_rig(Vector2.ZERO, 250.0, 380.0, aim_up, true, true, false, false,
+		false, 0.0, Vector2.ZERO, 0.02)
+	_check(not rv2.back_gear_pivot.visible and not rv2.gun_case.visible,
+		"hidden extra component stays hidden across facing/layer updates")
+	doll.set_extra_components({"coat_flaps": false, "hair_secondary": false, "armor": false})
+	_check(not rv2.coat_l_pivot.visible and not rv2.hair_back_pivot.visible and not rv2.armor_slot.visible,
+		"set_extra_components() batch-hides coat_flaps, hair_secondary, and armor_slot")
+	doll.clear_extra_component_overrides()
+	_check(rv2.back_gear_pivot.visible and rv2.coat_l_pivot.visible and rv2.hair_back_pivot.visible and rv2.armor_slot.visible,
+		"clear_extra_component_overrides() restores skin manifest defaults cleanly")
+
+	# 11) set_skin('doll_thistle') 热切换 + 严格 1:1 + 设定无背包（不串用 doll_v2 gun_case）+ 无体模分色污染 + 新武器继承
 	var switched_t := doll.set_skin("doll_thistle")
 	await process_frame
 	_check(switched_t and doll.get_skin() == "doll_thistle" and rv2.skin_id == "doll_thistle"
 		and wr.skin_id == "doll_thistle" and rv2.has_all_part_textures(),
-		"set_skin('doll_thistle') hot-swaps both DollRigV2 (19 parts) and WeaponRig2D (3 arm2)")
+		"set_skin('doll_thistle') hot-swaps both DollRigV2 (18 core parts) and WeaponRig2D (3 arm2)")
+	_check(not doll.has_extra_component_asset(&"back_gear") and not doll.is_extra_component_visible(&"back_gear")
+		and rv2.gun_case.texture == null and not rv2.back_gear_pivot.visible,
+		"doll_thistle has no backpack/gun_case and never inherits doll_v2 gun_case fallback")
 	var th_1to1 := true
 	for k in rv2._part_scale_base:
 		var sc_th: Vector2 = rv2._part_scale_base[k]

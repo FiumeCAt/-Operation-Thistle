@@ -69,6 +69,7 @@ var _detail_desc: Label
 var _weapon_note: Label
 var _status_label: Label
 var _back_button: Button
+var _back_gear_btn: Button
 var _preview_vp: SubViewport
 var _preview_time := 0.0
 var _dodge_cycle := 0.0
@@ -272,8 +273,18 @@ func _build_showcase_column() -> Control:
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	col.add_theme_constant_override("separation", 10)
 
-	var hdr := PixelUI.label(col, "实机骨骼动态预览 // LIVE PREVIEW", 17, PixelUI.theme_accent())
+	var hdr_row := HBoxContainer.new()
+	hdr_row.add_theme_constant_override("separation", 10)
+	col.add_child(hdr_row)
+	var hdr := PixelUI.label(hdr_row, "实机骨骼动态预览 // LIVE PREVIEW", 17, PixelUI.theme_accent())
 	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	hdr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hdr.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_back_gear_btn = PixelUI.button("背挂：显示", 28)
+	_back_gear_btn.add_theme_font_size_override("font_size", 14)
+	_back_gear_btn.custom_minimum_size.x = 176
+	_back_gear_btn.pressed.connect(_toggle_preview_back_gear)
+	hdr_row.add_child(_back_gear_btn)
 
 	# 实时像素光栅化展示框
 	var stage_frame := PanelContainer.new()
@@ -459,6 +470,14 @@ func _apply_preview_skin(skin_id: String) -> void:
 		preview_doll.set_skin(skin_id)
 
 
+func _toggle_preview_back_gear() -> void:
+	if preview_doll == null or not preview_doll.has_extra_component_asset(&"back_gear"):
+		return
+	var next_on := not preview_doll.is_extra_component_visible(&"back_gear")
+	preview_doll.set_extra_component_visible(&"back_gear", next_on)
+	_refresh_control_buttons()
+
+
 func _refresh_theme() -> void:
 	if _panel != null:
 		_panel.apply_active_theme()
@@ -515,6 +534,17 @@ func _refresh_control_buttons() -> void:
 	for pid in pose_buttons:
 		var btn: Button = pose_buttons[pid]
 		_style_toggle_chip(btn, pid == preview_pose, acc)
+	if _back_gear_btn != null:
+		var has_gear := preview_doll != null and preview_doll.has_extra_component_asset(&"back_gear")
+		_back_gear_btn.disabled = not has_gear
+		if has_gear:
+			var gear_on := preview_doll.is_extra_component_visible(&"back_gear")
+			_back_gear_btn.text = "背挂组件：显示" if gear_on else "背挂组件：隐藏"
+			_style_toggle_chip(_back_gear_btn, gear_on, acc)
+		else:
+			_back_gear_btn.text = "背挂组件：无（轻装）"
+			_style_toggle_chip(_back_gear_btn, false, acc)
+			_back_gear_btn.add_theme_color_override("font_color", PixelUI.theme_dim())
 
 
 func _style_toggle_chip(btn: Button, active: bool, acc: Color) -> void:

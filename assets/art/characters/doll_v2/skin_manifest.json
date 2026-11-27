@@ -29,6 +29,13 @@
   "color_coding": {
     "limb_side_coloring": false
   },
+  "extra_components_default": {
+    "back_gear": true,
+    "armor": true,
+    "backpack": true,
+    "coat_flaps": true,
+    "hair_secondary": true
+  },
   "parts_count": 19,
   "arm2_count": 3,
   "parts": {

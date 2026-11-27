@@ -274,6 +274,14 @@ static func set_scope_lens_distortion(data: Dictionary, enabled: bool) -> void:
 	data["scope_lens_distortion"] = enabled
 
 
+static func player_self_light(data: Dictionary) -> bool:
+	return bool(data.get("player_self_light", false))
+
+
+static func set_player_self_light(data: Dictionary, enabled: bool) -> void:
+	data["player_self_light"] = enabled
+
+
 static func reticle_style(data: Dictionary, sight_id: String, fallback: String) -> String:
 	var styles: Dictionary = data.get("reticle_styles", {})
 	return String(styles.get(sight_id, fallback))

@@ -60,6 +60,15 @@ func _run() -> void:
 		"hit flash effect defaults to reduced")
 	_check(sm._trail_buttons.size() == 2 and bool(p.data["bullet_trail_enabled"]),
 		"弹道线条效果默认开启")
+	_check(sm._self_light_buttons.size() == 2 and not bool(p.data["player_self_light"])
+		and not p.player_self_light(),
+		"角色贴身补光默认关闭以防角色自发光过曝")
+	sm._set_player_self_light(true)
+	_check(p.player_self_light() and sm._self_light_buttons[true].text.contains("▶"),
+		"角色贴身补光可在设置内手动开启并写入存档")
+	sm._set_player_self_light(false)
+	_check(not p.player_self_light() and sm._self_light_buttons[false].text.contains("▶"),
+		"角色贴身补光可正常关闭回默认态")
 	_check(not bool(p.data["hitstop_enabled"]) and _near(float(p.data["shake_scale"]), 100.0),
 		"hitstop defaults to off and shake to 100%")
 	_check(_near(sm._shake_scale_slider.value, 100.0) and sm._shake_scale_edit.text == "100",

@@ -394,39 +394,6 @@ def build_arm2_parts_thistle() -> dict[str, Image.Image]:
     return {"upper_arm": up, "forearm": fo, "hand": hand}
 
 
-def build_tactical_back_pack() -> Image.Image:
-    """18×64 sleek matte-black & crimson tactical drop-scabbard/comms pack positioned cleanly
-    at mid-to-lower back (y=17..58) so her iconic white high ponytail remains unobstructed!"""
-    w, h = 18, 64
-    img = new_img(w, h)
-    # Compact tactical hardcase/pack body (x=3..14, y=18..57) with beveled corners
-    for y in range(18, 58):
-        inset_x = 4 if y in (18, 57) else 3
-        for x in range(inset_x, w - inset_x):
-            if x <= inset_x + 1:
-                col = BOOT_HI
-            elif x >= w - inset_x - 2 or y >= 55:
-                col = BOOT_SHADE
-            else:
-                col = BOOT_BASE
-            img.putpixel((x, y), col)
-    # Slim upper comms antenna / folding stock rail (x=11..13, y=10..18)
-    put_rect(img, 11, 10, 12, 18, BOOT_SHADE)
-    put(img, 11, 10, RED_HI)
-    put(img, 11, 11, RED_BASE)
-    # Crimson tactical harness straps & MOLLE bands
-    for by in (25, 39, 50):
-        put_rect(img, 3, by, 14, by + 1, BOOT_SHADE)
-        put_rect(img, 5, by, 12, by, RED_BASE)
-        put(img, 6, by, RED_HI)
-        put_rect(img, 8, by, 9, by + 1, TAC_METAL)
-    # Tactical pouch flap accent at center (y=29..36)
-    put_rect(img, 5, 29, 12, 36, BOOT_CUFF)
-    put_rect(img, 5, 35, 12, 36, BOOT_SHADE)
-    put_rect(img, 8, 31, 9, 33, RED_BASE)
-    return img
-
-
 def main() -> int:
     # Slightly dial brightness to 0.93 & boost contrast so pure-white hair/dress retains rich fold detail under VisionFog2D light
     src = enhance_rgba(Image.open(SRC_PATH).convert("RGBA"), contrast=1.14, saturation=1.12, brightness=0.93)
@@ -474,7 +441,6 @@ def main() -> int:
     arm_upper = build_arm_upper_thistle()
     arm_forearm = build_arm_forearm_thistle()
     arm2_parts = build_arm2_parts_thistle()
-    gun_case = build_tactical_back_pack()
 
     hair_back_root, hair_back_tip, hair_side = draw_hair_back_segments(
         base_col=HAIR_BASE, hi_col=HAIR_HI, shade_col=HAIR_SHADE, deep_col=HAIR_DEEP,
@@ -489,6 +455,7 @@ def main() -> int:
         trim_col=RED_BASE, plaid_col=None,
     )
 
+    # 设定遵循：白发少女无背包（不生成可选 gun_case，仅输出 18 核心分件 + 3 arm2）
     raw_parts: dict[str, Image.Image] = {
         "head_front": head_front,
         "head_front_blink": head_front.copy(),
@@ -506,7 +473,6 @@ def main() -> int:
         "skirt_hem": skirt_hem,
         "thigh": thigh,
         "shin_boot": shin_boot,
-        "gun_case": gun_case,
         "arm_upper": arm_upper,
         "arm_forearm": arm_forearm,
     }
@@ -514,7 +480,7 @@ def main() -> int:
     palette_anchors = [
         head_front, head_left, head_back,
         torso_front, torso_left, torso_back,
-        thigh, shin_boot, gun_case,
+        thigh, shin_boot,
         arm_forearm, coat_flap_tip, skirt_hem,
     ]
 
@@ -539,6 +505,7 @@ def main() -> int:
         max_colors=48,
         outline_strength=0.14,
         post_quantize_hooks=joint_hooks,
+        extra_components_default={"back_gear": False},
     )
 
     # Pixel-locked clean blink layers derived directly from finalized head_front / head_left
@@ -552,9 +519,9 @@ def main() -> int:
 
     render_contact_sheet(
         saved_parts, saved_arm2, PREVIEW_OUT,
-        title="doll_thistle (White-Hair High-Ponytail Tactical Sailor · 1:1 Contract · 19+3 Parts)",
+        title="doll_thistle (White-Hair High-Ponytail Tactical Sailor · 1:1 Contract · 18+3 Parts · No Backpack)",
     )
-    print(f"[build_doll_thistle_parts] Exported 19 parts + 3 arm2 + skin_manifest.json to {OUT_ROOT}")
+    print(f"[build_doll_thistle_parts] Exported {len(saved_parts)} parts + {len(saved_arm2)} arm2 + skin_manifest.json to {OUT_ROOT}")
     print(f"[build_doll_thistle_parts] Contact sheet: {PREVIEW_OUT}")
     return 0
 

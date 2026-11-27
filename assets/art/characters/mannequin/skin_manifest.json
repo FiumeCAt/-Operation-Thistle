@@ -49,6 +49,13 @@
     "torso_front_marker_hex": "#28eca8",
     "torso_back_marker_hex": "#e85860"
   },
+  "extra_components_default": {
+    "back_gear": true,
+    "armor": true,
+    "backpack": true,
+    "coat_flaps": true,
+    "hair_secondary": true
+  },
   "parts_count": 19,
   "arm2_count": 3,
   "parts": {

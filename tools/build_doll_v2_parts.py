@@ -371,6 +371,7 @@ def main() -> int:
         max_colors=48,
         outline_strength=0.32,
         post_quantize_hooks=joint_hooks,
+        extra_components_default={"back_gear": True},
     )
 
     # Pixel-locked clean blink layers derived directly from finalized head_front / head_left (zero outline shift!)

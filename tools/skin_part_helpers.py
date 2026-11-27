@@ -52,6 +52,8 @@ PARTS_CONTRACT: dict[str, dict] = {
     "arm_forearm": {"width": 10, "height": 20, "target_h": 20, "offset": [0, 7], "pivots_px": {"elbow": [5, 3], "wrist": [5, 15]}, "z_index": {"0": 4, "1": -2, "near": 4, "far": -3}, "flip_rule": "flip_h_when_dir_3", "role": "收枪状态前臂与手部"},
 }
 
+OPTIONAL_PARTS: set[str] = {"gun_case"}
+
 ARM2_CONTRACT: dict[str, dict] = {
     "upper_arm": {"width": 26, "height": 14, "arm_scale": 0.5, "world_size": [13.0, 7.0], "offset": [13.0, 0.0], "pivots_px": {"shoulder": [3, 7], "elbow": [22, 7]}, "role": "持枪水平上臂（左肩→右肘，0.5× 缩放）"},
     "forearm": {"width": 27, "height": 13, "arm_scale": 0.5, "world_size": [13.5, 6.5], "offset": [13.5, 0.0], "pivots_px": {"elbow": [3, 6.5], "wrist": [23, 6.5]}, "role": "持枪水平前臂（左肘→右腕，0.5× 缩放）"},
@@ -724,6 +726,7 @@ def finalize_and_export_skin(
     max_colors: int = 48,
     outline_strength: float = 0.34,
     post_quantize_hooks: dict[str, Callable[[Image.Image], Image.Image]] | None = None,
+    extra_components_default: dict[str, bool] | None = None,
 ) -> tuple[dict[str, Image.Image], dict[str, Image.Image]]:
     """Quantize to 1 locked palette, apply 1px sel-out within strict 1:1 sizes, verify sizes, and write manifest."""
     palette = build_locked_palette(palette_anchors, max_colors=max_colors)
@@ -737,6 +740,14 @@ def finalize_and_export_skin(
     hooks = post_quantize_hooks or {}
 
     for key, spec in PARTS_CONTRACT.items():
+        if key not in raw_parts:
+            if key in OPTIONAL_PARTS:
+                # 清理历史遗留的可选分件 PNG 与 .import，防止无背包角色残留旧文件
+                for stale in (out_parts / f"{key}.png", out_parts / f"{key}.png.import"):
+                    if stale.exists():
+                        stale.unlink()
+                continue
+            raise KeyError(f"[{skin_id}] missing required core part: {key}")
         im = raw_parts[key]
         assert im.size == (spec["width"], spec["height"]), (
             f"[{skin_id}] part {key} size {im.size} != contract {(spec['width'], spec['height'])}"
@@ -767,6 +778,17 @@ def finalize_and_export_skin(
         saved_arm2[key] = out_im
         arm2_manifest[key] = {"file": f"arm2/{key}.png", **spec}
 
+    extra_defaults = {
+        "back_gear": "gun_case" in saved_parts,
+        "armor": True,
+        "backpack": True,
+        "coat_flaps": True,
+        "hair_secondary": True,
+    }
+    if extra_components_default:
+        for k, v in extra_components_default.items():
+            extra_defaults[str(k)] = bool(v)
+
     manifest = {
         "schema_version": 1,
         "skin_id": skin_id,
@@ -792,6 +814,7 @@ def finalize_and_export_skin(
         "color_coding": {
             "limb_side_coloring": False,
         },
+        "extra_components_default": extra_defaults,
         "parts_count": len(parts_manifest),
         "arm2_count": len(arm2_manifest),
         "parts": parts_manifest,

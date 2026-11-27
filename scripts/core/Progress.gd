@@ -685,6 +685,15 @@ func set_scope_lens_distortion(enabled: bool) -> bool:
 	SETTINGS_STORE.set_scope_lens_distortion(data, enabled)
 	return save_data()
 
+
+func player_self_light() -> bool:
+	return SETTINGS_STORE.player_self_light(data)
+
+
+func set_player_self_light(enabled: bool) -> bool:
+	SETTINGS_STORE.set_player_self_light(data, enabled)
+	return save_data()
+
 func reticle_style(sight_id: String, fallback: String) -> String:
 	return SETTINGS_STORE.reticle_style(data, sight_id, fallback)
 

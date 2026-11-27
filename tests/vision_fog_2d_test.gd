@@ -46,6 +46,16 @@ func _run() -> void:
 	_check(fog._clear_light.shadow_enabled and fog._dark_light.shadow_enabled
 		and not fog._self_light.shadow_enabled,
 		"vision cone and dark vision cast shadows; self light skips them")
+	_check(not fog.self_light_enabled and not fog._self_light.visible,
+		"player self light defaults to off to prevent character overexposure")
+	fog.set_self_light_enabled(true)
+	_check(fog.self_light_enabled and fog._self_light.visible,
+		"set_self_light_enabled(true) enables player self light")
+	fog.set_debug(true)
+	_check(not fog._self_light.visible, "debug bright mode still hides self light")
+	fog.set_debug(false)
+	fog.set_self_light_enabled(false)
+	_check(not fog._self_light.visible, "set_self_light_enabled(false) restores off state")
 	_check(main.canvas_modulate.color.is_equal_approx(fog.AMBIENT),
 		"world ambient is darkened into fog")
 	_check(fog._clear_light.get_parent() == fog and fog.get_parent() == main.get_node("World2D"),

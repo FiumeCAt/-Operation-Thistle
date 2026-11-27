@@ -16,6 +16,7 @@ const UNITS := preload("res://scripts/core/GameUnits.gd")
 const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
 const FEED_STATE := preload("res://scripts/weapons/WeaponFeedState2D.gd")
 const POSE_IK := preload("res://scripts/weapons/WeaponPoseIK2D.gd")
+const RIG_V2 := preload("res://scripts/actors/DollRigV2.gd")
 
 const SKIN_ROOT := "res://assets/art/characters/"
 const DEFAULT_SKIN := "doll_v2"
@@ -235,6 +236,7 @@ func setup(id: StringName) -> void:
 	_gun.name = "Gun"
 	_gun.texture = tex
 	_gun.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_gun.material = RIG_V2.get_player_light_material()
 	_gun.scale = Vector2.ONE * _gun_scale
 	_pivot.add_child(_gun)
 	_align_gun(false)
@@ -408,6 +410,7 @@ func _make_limb(parent: Node2D, node_name: String, part_name: String,
 	var use_tex := _arm_tex(part_name, fallback, side)
 	limb.texture = use_tex
 	limb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	limb.material = RIG_V2.get_player_light_material()
 	limb.scale = Vector2.ONE * ARM_SCALE
 	limb.offset = Vector2(use_tex.get_width() * 0.5, 0.0)
 	parent.add_child(limb)
@@ -419,6 +422,7 @@ func _make_hand(parent: Node2D, node_name: String, side: String = "") -> Sprite2
 	hand.name = node_name
 	hand.texture = _arm_tex("hand", HAND_TEX, side)
 	hand.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	hand.material = RIG_V2.get_player_light_material()
 	hand.scale = Vector2.ONE * ARM_SCALE
 	parent.add_child(hand)
 	return hand

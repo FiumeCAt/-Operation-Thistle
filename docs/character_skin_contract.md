@@ -3,7 +3,7 @@
 > **核心定位红线**：
 > - `mannequin`（功能分色标准体模）仅用于 **骨架动作基准验收 + 1:1 换皮尺寸契约**；
 > - **严禁**把体模导出的动作序列帧喂给 AI 逐帧重绘；
-> - 新增正式角色时，只需用静态立绘（正/背/侧静态视图）按本契约裁切为 **19 个静态身体分件 + 3 个持枪臂分件**，放入 `assets/art/characters/<skin_id>/`，**零改代码即可继承全部步态、瞄准、持枪、弹簧物理与翻滚动画**。
+> - 新增正式角色时，只需用静态立绘（正/背/侧静态视图）按本契约裁切为 **18 个核心静态身体分件 + 3 个持枪臂分件**（`gun_case.png` 背包/枪盒改为**可选额外组件**，后续新角色默认**不再生成背包**），放入 `assets/art/characters/<skin_id>/`，**零改代码即可继承全部步态、瞄准、持枪、弹簧物理与翻滚动画**。
 
 ---
 
@@ -27,16 +27,16 @@
 
 ```text
 assets/art/characters/<skin_id>/
-├── skin_manifest.json        # 可选元清单（声明分色模式、精确尺寸与枢轴）
-├── parts/                    # 19 个身体分件 PNG（严格 height == target_h，实现 1:1 零畸变）
+├── skin_manifest.json        # 元清单（声明分色模式、extra_components_default、精确尺寸与枢轴）
+├── parts/                    # 18 个核心身体分件 PNG + 可选 gun_case.png（严格 height == target_h，1:1 零畸变）
 └── arm2/                     # 3 个横置持枪双臂分件 PNG（供 WeaponRig2D 加载）
 ```
 
 - **已实装皮肤包（全部严格 1:1 `target_h` 整数锁定）**：
-  - **`doll_v2`**（默认正式皮）：灰蓝猫耳少女（精修 1:1，附 `assets/art/characters/doll_v2/skin_manifest.json`，构建脚本 `tools/build_doll_v2_parts.py`）；
-  - **`doll_thistle`**（第二套正式皮）：白发高马尾红白水手战术人偶（附 `assets/art/characters/doll_thistle/skin_manifest.json`，构建脚本 `tools/build_doll_thistle_parts.py`）；
-  - **`mannequin`**（动作基准体模）：功能分色标准体模（附 `assets/art/characters/mannequin/skin_manifest.json`，构建脚本 `tools/build_mannequin_parts.py`）。
-- **回退机制**：`Doll2D.set_skin(id)` 会同步切换 `DollRigV2` 与 `WeaponRig2D`；传入非法 ID 或缺失分件时自动按分件/整包安全回退至 `doll_v2`。
+  - **`doll_v2`**（默认正式皮）：灰蓝猫耳少女（19+3，保留专属背挂枪盒 `gun_case.png`，`extra_components_default.back_gear = true`）；
+  - **`doll_thistle`**（第二套正式皮）：白发高马尾红白水手战术人偶（18+3 轻装无背包，`extra_components_default.back_gear = false`）；
+  - **`mannequin`**（动作基准体模）：功能分色标准体模（19+3，含背挂基准框用于前后遮挡验收）。
+- **回退机制**：`Doll2D.set_skin(id)` 会同步切换 `DollRigV2` 与 `WeaponRig2D`；传入非法 ID 或缺失核心分件时自动按分件/整包安全回退至 `doll_v2`。**可选分件（如 `gun_case.png`）绝不会跨皮肤回退串用**——无 `gun_case.png` 的角色（如 `doll_thistle`）自动保持无背挂状态。
 - **切换入口**：
   1. 主菜单「角色 // OPERATOR」界面（`CharacterMenu2D`）：支持 4 向实机骨骼预览（待机/行走/冲刺/持枪/翻滚）并一键切换正式角色（`doll_v2` / `doll_thistle`），自动持久化至存档；
   2. 命令行：`-- --skin=doll_v2`、`-- --skin=doll_thistle` 或 `-- --skin=mannequin`（`Main2D._apply_visual_override()` 解析）；
@@ -72,7 +72,7 @@ assets/art/characters/<skin_id>/
 | 14 | `skirt_hem.png` | **34 × 13** | `(0, 3)` | 挂点 `(17, 3.5)`（挂于 `Torso (0, -2)`） | `0/1: -1` | 侧面隐藏防双裙边 |
 | 15 | `thigh.png` | **10 × 33** | `(0, 13)` | 髋 `(5, 3.5)`、膝 `(5, 29.5)` | 正/背 `-3`；侧近 `-2` / 侧远 `-4` | 侧朝右 (`3`) 翻转；正/背按左右外展翻转 |
 | 16 | `shin_boot.png` | **14 × 34** | `(0, 14)` | 膝 `(7, 3)`、踝 `(7, 25)`、鞋底 `y = 33`，鞋尖朝左 `-X` | 正/背 `-3`；侧近 `-2` / 侧远 `-4` | 侧朝右 (`3`) 翻转；正/背鞋尖略向外撇 |
-| 17 | `gun_case.png` | **18 × 64** | `(0, -6)` | 挂点 `(9, 38)`（挂于 `Torso/BackGear`） | `0: -6`、`1: 7`、`2/3: -2` | 朝右 (`3`) 水平翻转 |
+| 17 | `gun_case.png` *(可选)* | **18 × 64** | `(0, -6)` | 挂点 `(9, 38)`（挂于 `Torso/BackGear`） | `0: -6`、`1: 7`、`2/3: -2` | **可选额外组件**（仅 `doll_v2` / `mannequin` 使用；后续新角色默认不生成） |
 | 18 | `arm_upper.png` | **10 × 20** | `(0, 7)` | 肩 `(5, 3)`、肘 `(5, 17)` | `0: 4`、`1: -2`；侧近 `4` / 侧远 `-3` | 持枪时自动隐藏交由 `WeaponRig2D` |
 | 19 | `arm_forearm.png` | **10 × 20** | `(0, 7)` | 肘 `(5, 3)`、腕 `(5, 15)` | `0: 4`、`1: -2`；侧近 `4` / 侧远 `-3` | 持枪时自动隐藏交由 `WeaponRig2D` |
 
@@ -97,9 +97,37 @@ assets/art/characters/<skin_id>/
 
 ---
 
-## 5. 新角色换皮步骤（零改代码）
+## 5. 角色额外组件显隐接口与光照防过曝规范
+
+### 5.1 额外组件显隐接口（`Doll2D` / `DollRigV2`）
+
+为支持后续背挂、战术护甲、独立背包、衣摆与副发等部件化装备/换装，`DollRigV2` 与 `Doll2D` 统一暴露以下运行期接口：
+
+- 支持组件键（`DollRigV2.EXTRA_COMPONENT_KEYS`）：
+  - `&"back_gear"`：背后战术挂件总控（含皮肤自带 `gun_case` 与 `BackpackSlot`）
+  - `&"backpack"`：独立外挂背包槽（`Torso/BackGear/BackpackSlot`）
+  - `&"armor"`：胸甲/护甲外观挂点（`Torso/ArmorSlot`）
+  - `&"coat_flaps"`：左右弹簧衣摆（`CoatTailL/R`）
+  - `&"hair_secondary"`：动态后发与鬓发（`HairBack` / `HairSideL/R`）
+- 清单默认声明：在 `skin_manifest.json` 中通过 `"extra_components_default": {"back_gear": false, ...}` 声明皮肤默认显隐；切换皮肤时自动重载默认态。
+- 运行期控制 API：
+  - `set_extra_component_visible(component_id: StringName, enabled: bool) -> bool`
+  - `is_extra_component_visible(component_id: StringName) -> bool`
+  - `set_extra_components(overrides: Dictionary) -> void`
+  - `clear_extra_component_overrides() -> void`
+  - `get_extra_components() -> Dictionary`
+  - `has_extra_component_asset(component_id: StringName) -> bool`
+
+### 5.2 实机光照防过曝
+
+- `VisionFog2D` 的贴身角色补光 `player_self_light` 默认关闭（可在「设置 → 光学与特效 → 角色贴身补光」手动开启）；
+- `DollRigV2.get_player_light_material()` 挂载防过曝 `ShaderMaterial` 到角色画布、持枪双臂与武器贴图，压制多重 `PointLight2D` 叠加增益，避免银白发/白裙等高明度皮肤被过曝成纯白。
+
+---
+
+## 6. 新角色换皮步骤（零改代码）
 
 1. 准备新角色的静态正/背/侧立绘（推荐单一锁定 32–48 色板 + 1px 暗描边）。
-2. 新建目录 `assets/art/characters/<new_skin_id>/parts/` 与 `arm2/`，按第 3 节精确 `W×H` 与关节枢轴裁切导出全部 19+3 张透明 PNG（可使用 `tools/build_doll_v2_parts.py` 作为裁剪管线模板）。
-3. 复制 `assets/art/characters/mannequin/skin_manifest.json` 改写 `skin_id` 并将 `limb_side_coloring` 设为 `false`。
+2. 新建目录 `assets/art/characters/<new_skin_id>/parts/` 与 `arm2/`，按第 3 节精确 `W×H` 与关节枢轴裁切导出 **18 核心分件 + 3 arm2** 透明 PNG（默认**不生成** `gun_case.png` 背包，可使用 `tools/build_doll_thistle_parts.py` + `tools/skin_part_helpers.py` 作为裁剪管线模板）。
+3. 在 `skin_manifest.json` 中配置 `skin_id`、`color_coding.limb_side_coloring = false` 与 `extra_components_default`（默认 `back_gear = false`）。
 4. 运行 `Godot --headless --path . --import` 导入新贴图，再用 `-- --skin=<new_skin_id>` 启动实机或录屏验收即可。

@@ -715,6 +715,13 @@ def build_manifest(parts_meta: dict[str, dict], arm2_meta: dict[str, dict]) -> d
             "torso_front_marker_hex": "#28eca8",
             "torso_back_marker_hex": "#e85860",
         },
+        "extra_components_default": {
+            "back_gear": True,
+            "armor": True,
+            "backpack": True,
+            "coat_flaps": True,
+            "hair_secondary": True,
+        },
         "parts_count": len(parts_meta),
         "arm2_count": len(arm2_meta),
         "parts": parts_meta,

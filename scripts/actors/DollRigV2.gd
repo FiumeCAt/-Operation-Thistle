@@ -18,6 +18,15 @@ const DEFAULT_SKIN := "doll_v2"
 const PART_DIR := "res://assets/art/characters/doll_v2/parts/"
 const SHADOW_TEX_PATH := "res://assets/art/env/pixel_shadow_64.png"
 
+const CORE_PART_NAMES: Array[String] = [
+	"head_front", "head_front_blink", "head_back", "head_left", "head_left_blink",
+	"torso_front", "torso_back", "torso_left",
+	"hair_back_root", "hair_back_tip", "hair_side",
+	"coat_flap_root", "coat_flap_tip", "skirt_hem",
+	"thigh", "shin_boot",
+	"arm_upper", "arm_forearm",
+]
+const OPTIONAL_PART_NAMES: Array[String] = ["gun_case"]
 const PART_NAMES: Array[String] = [
 	"head_front", "head_front_blink", "head_back", "head_left", "head_left_blink",
 	"torso_front", "torso_back", "torso_left",
@@ -26,10 +35,18 @@ const PART_NAMES: Array[String] = [
 	"thigh", "shin_boot", "gun_case",
 	"arm_upper", "arm_forearm",
 ]
+const EXTRA_COMPONENT_KEYS: Array[StringName] = [
+	&"back_gear",
+	&"armor",
+	&"backpack",
+	&"coat_flaps",
+	&"hair_secondary",
+]
 const LIMB_COLOR_PARTS: Array[String] = ["thigh", "shin_boot", "arm_upper", "arm_forearm"]
 const MANNEQUIN_LEFT_TINT := Color(0.38, 0.80, 1.0, 1.0)
 const MANNEQUIN_RIGHT_TINT := Color(1.0, 0.62, 0.24, 1.0)
 static var _tinted_tex_cache: Dictionary = {}
+static var _player_light_mat: ShaderMaterial = null
 
 ## 统一 128px×1 像素规格画布：脚底基线位于 (80, 148)，头顶猫耳约 y = 20。
 const CANVAS_SIZE := Vector2i(160, 160)
@@ -97,6 +114,8 @@ var _textures_left: Dictionary = {}
 var _textures_right: Dictionary = {}
 var _part_scale_base: Dictionary = {}
 var _sprite_bindings: Array[Dictionary] = []
+var _skin_extra_defaults: Dictionary = {}
+var _extra_component_overrides: Dictionary = {}
 
 ## 运动学与物理状态
 var _gait_phase := 0.0
@@ -225,27 +244,51 @@ static func colorize_neutral_pixels(src: Texture2D, tint: Color) -> Texture2D:
 	return out
 
 
-func _read_skin_color_coding(id: String) -> void:
+## 防过曝角色光照衰减材质（缓存单例）：
+## 在 VisionFog2D 多重叠加 PointLight2D（主视野+余光+可选补光）下压低角色受光增益并设上限，
+## 避免白发/浅色服装被叠光烧成纯白看不清五官；无光源场景（选人界面 / F7 明亮模式）自动保持原色。
+static func get_player_light_material() -> ShaderMaterial:
+	if _player_light_mat != null:
+		return _player_light_mat
+	var sh := Shader.new()
+	sh.code = """shader_type canvas_item;
+void light() {
+	vec3 incoming = min(LIGHT_COLOR.rgb * LIGHT_ENERGY, vec3(0.85)) * 0.62;
+	LIGHT = vec4(incoming * COLOR.rgb, LIGHT_COLOR.a);
+}
+"""
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	_player_light_mat = mat
+	return _player_light_mat
+
+
+func _read_skin_manifest(id: String) -> Dictionary:
 	_limb_side_coloring = (id == "mannequin")
 	_left_limb_tint = MANNEQUIN_LEFT_TINT
 	_right_limb_tint = MANNEQUIN_RIGHT_TINT
+	var extra_raw: Dictionary = {}
 	var mpath := skin_manifest_path(id)
 	if mpath.is_empty() or not FileAccess.file_exists(mpath):
-		return
+		return extra_raw
 	var parsed = JSON.parse_string(FileAccess.get_file_as_string(mpath))
 	if typeof(parsed) != TYPE_DICTIONARY:
-		return
-	var cc = (parsed as Dictionary).get("color_coding", null)
-	if typeof(cc) != TYPE_DICTIONARY:
-		return
-	var cc_dict := cc as Dictionary
-	_limb_side_coloring = bool(cc_dict.get("limb_side_coloring", _limb_side_coloring))
-	var lt = cc_dict.get("left_limb_tint", null)
-	if lt is Array and (lt as Array).size() >= 3:
-		_left_limb_tint = Color(float(lt[0]), float(lt[1]), float(lt[2]), 1.0)
-	var rt = cc_dict.get("right_limb_tint", null)
-	if rt is Array and (rt as Array).size() >= 3:
-		_right_limb_tint = Color(float(rt[0]), float(rt[1]), float(rt[2]), 1.0)
+		return extra_raw
+	var root := parsed as Dictionary
+	var cc = root.get("color_coding", null)
+	if typeof(cc) == TYPE_DICTIONARY:
+		var cc_dict := cc as Dictionary
+		_limb_side_coloring = bool(cc_dict.get("limb_side_coloring", _limb_side_coloring))
+		var lt = cc_dict.get("left_limb_tint", null)
+		if lt is Array and (lt as Array).size() >= 3:
+			_left_limb_tint = Color(float(lt[0]), float(lt[1]), float(lt[2]), 1.0)
+		var rt = cc_dict.get("right_limb_tint", null)
+		if rt is Array and (rt as Array).size() >= 3:
+			_right_limb_tint = Color(float(rt[0]), float(rt[1]), float(rt[2]), 1.0)
+	var ec = root.get("extra_components_default", null)
+	if typeof(ec) == TYPE_DICTIONARY:
+		extra_raw = ec as Dictionary
+	return extra_raw
 
 
 func _load_skin_textures(req_skin_id: String) -> bool:
@@ -253,19 +296,33 @@ func _load_skin_textures(req_skin_id: String) -> bool:
 	var valid := not clean.is_empty() and skin_exists(clean)
 	var active_id := clean if valid else DEFAULT_SKIN
 	skin_id = active_id
-	_read_skin_color_coding(active_id)
+	var extra_raw := _read_skin_manifest(active_id)
 	_textures.clear()
 	_textures_left.clear()
 	_textures_right.clear()
 	var dir := skin_parts_dir(active_id)
 	var fallback_dir := skin_parts_dir(DEFAULT_SKIN)
-	for n: String in PART_NAMES:
+	for n: String in CORE_PART_NAMES:
 		var path: String = dir + n + ".png"
 		var chosen := path if ResourceLoader.exists(path) else (fallback_dir + n + ".png")
 		if ResourceLoader.exists(chosen):
 			var tex := load(chosen) as Texture2D
 			if tex != null:
 				_textures[n] = tex
+	# 可选额外分件（如 gun_case）：仅加载当前皮肤实际拥有的贴图，绝不串用到无背包角色上
+	for opt_n: String in OPTIONAL_PART_NAMES:
+		var opt_path: String = dir + opt_n + ".png"
+		if ResourceLoader.exists(opt_path):
+			var opt_tex := load(opt_path) as Texture2D
+			if opt_tex != null:
+				_textures[opt_n] = opt_tex
+	_skin_extra_defaults = {
+		&"back_gear": bool(extra_raw.get("back_gear", _textures.has("gun_case"))),
+		&"armor": bool(extra_raw.get("armor", true)),
+		&"backpack": bool(extra_raw.get("backpack", true)),
+		&"coat_flaps": bool(extra_raw.get("coat_flaps", true)),
+		&"hair_secondary": bool(extra_raw.get("hair_secondary", true)),
+	}
 	if _limb_side_coloring:
 		for ln: String in LIMB_COLOR_PARTS:
 			var base_tex: Texture2D = _textures.get(ln)
@@ -284,9 +341,10 @@ func _resolve_part_texture(tex_key: String, side: String = "") -> Texture2D:
 	return _textures.get(tex_key)
 
 
-## 运行时热切换皮肤包（默认 "doll_v2" / 功能分色体模 "mannequin"）；非法或缺失分件自动安全回退 "doll_v2"。
+## 运行时热切换皮肤包（默认 "doll_v2" / "doll_thistle" / 体模 "mannequin"）；非法或缺失核心分件自动安全回退 "doll_v2"。
 func set_skin(new_skin_id: String) -> bool:
 	var valid := _load_skin_textures(new_skin_id)
+	_extra_component_overrides.clear()
 	for bind: Dictionary in _sprite_bindings:
 		var sp := bind.get("sprite") as Sprite2D
 		if sp == null or not is_instance_valid(sp):
@@ -295,14 +353,17 @@ func set_skin(new_skin_id: String) -> bool:
 		var target_h := float(bind.get("target_h", 0.0))
 		var side := String(bind.get("side", ""))
 		var tex := _resolve_part_texture(tex_key, side)
+		sp.texture = tex
 		if tex != null:
-			sp.texture = tex
 			if target_h > 0.0 and tex.get_height() > 0:
 				var s := target_h / float(tex.get_height())
 				sp.scale = Vector2(s, s)
 			else:
 				sp.scale = Vector2.ONE
 			_part_scale_base[sp.name] = sp.scale
+		else:
+			sp.scale = Vector2.ONE
+			_part_scale_base[sp.name] = Vector2.ONE
 	if pelvis != null:
 		_apply_facing_layers()
 	return valid
@@ -313,10 +374,93 @@ func get_part_texture(tex_key: String) -> Texture2D:
 
 
 func has_all_part_textures() -> bool:
-	for n: String in PART_NAMES:
+	for n: String in CORE_PART_NAMES:
 		if not _textures.has(n):
 			return false
 	return true
+
+
+## ---- 角色额外组件显隐接口（back_gear / armor / backpack / coat_flaps / hair_secondary） ----
+
+func set_extra_component_visible(component_id: StringName, enabled: bool) -> bool:
+	if not EXTRA_COMPONENT_KEYS.has(component_id):
+		return false
+	_extra_component_overrides[component_id] = enabled
+	_apply_extra_component_visibility()
+	return true
+
+
+func is_extra_component_visible(component_id: StringName) -> bool:
+	if _extra_component_overrides.has(component_id):
+		return bool(_extra_component_overrides[component_id])
+	if _skin_extra_defaults.has(component_id):
+		return bool(_skin_extra_defaults[component_id])
+	return true
+
+
+func set_extra_components(overrides: Dictionary) -> void:
+	for raw_k in overrides:
+		var key := StringName(String(raw_k))
+		if EXTRA_COMPONENT_KEYS.has(key):
+			_extra_component_overrides[key] = bool(overrides[raw_k])
+	_apply_extra_component_visibility()
+
+
+func clear_extra_component_overrides() -> void:
+	_extra_component_overrides.clear()
+	_apply_extra_component_visibility()
+
+
+func get_extra_components() -> Dictionary:
+	var out: Dictionary = {}
+	for key: StringName in EXTRA_COMPONENT_KEYS:
+		out[key] = is_extra_component_visible(key)
+	return out
+
+
+func get_skin_default_extra_components() -> Dictionary:
+	return _skin_extra_defaults.duplicate()
+
+
+func has_extra_component_asset(component_id: StringName) -> bool:
+	match component_id:
+		&"back_gear":
+			return _textures.has("gun_case") or (backpack_slot != null and backpack_slot.get_child_count() > 0)
+		&"backpack":
+			return backpack_slot != null and backpack_slot.get_child_count() > 0
+		&"armor":
+			return armor_slot != null and armor_slot.get_child_count() > 0
+		&"coat_flaps":
+			return _textures.has("coat_flap_root")
+		&"hair_secondary":
+			return _textures.has("hair_back_root") or _textures.has("hair_side")
+		_:
+			return false
+
+
+func _apply_extra_component_visibility() -> void:
+	var show_back := is_extra_component_visible(&"back_gear")
+	var show_backpack := show_back and is_extra_component_visible(&"backpack")
+	var has_case := _textures.has("gun_case")
+	if gun_case != null:
+		gun_case.visible = show_back and has_case
+	if backpack_slot != null:
+		backpack_slot.visible = show_backpack
+	if back_gear_pivot != null:
+		var has_bp := backpack_slot != null and backpack_slot.get_child_count() > 0
+		back_gear_pivot.visible = (show_back and has_case) or (show_backpack and has_bp)
+	if armor_slot != null:
+		armor_slot.visible = is_extra_component_visible(&"armor")
+	var show_coat := is_extra_component_visible(&"coat_flaps")
+	var side_u := upper_direction == 2 or upper_direction == 3
+	if coat_l_pivot != null and coat_r_pivot != null:
+		coat_l_pivot.visible = show_coat
+		coat_r_pivot.visible = show_coat and (not side_u)
+	var show_hair := is_extra_component_visible(&"hair_secondary")
+	if hair_back_pivot != null:
+		hair_back_pivot.visible = show_hair
+	if hair_side_l_pivot != null and hair_side_r_pivot != null:
+		hair_side_l_pivot.visible = show_hair and upper_direction == 0
 
 
 func _make_sprite(node_name: String, tex_key: String, z: int,
@@ -366,11 +510,12 @@ func _build_viewport_and_rig() -> void:
 	viewport.disable_3d = true
 	add_child(viewport)
 
-	# 3) 世界侧 1:1 显示精灵（自动承接 VisionFog2D 光照与 Doll2D.modulate 受击闪白）
+	# 3) 世界侧 1:1 显示精灵（承接 VisionFog2D 光照并挂载防过曝衰减材质，保留 Doll2D.modulate 受击闪白）
 	rig_canvas = Sprite2D.new()
 	rig_canvas.name = "RigCanvas"
 	rig_canvas.texture = viewport.get_texture()
 	rig_canvas.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	rig_canvas.material = get_player_light_material()
 	rig_canvas.centered = false
 	rig_canvas.position = -GROUND_ORIGIN
 	rig_canvas.scale = Vector2.ONE
@@ -916,6 +1061,7 @@ func _apply_facing_layers() -> void:
 			s2d.z_index = r_z
 			s2d.modulate = r_tint
 			s2d.flip_h = flip_u
+	_apply_extra_component_visibility()
 
 
 func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,

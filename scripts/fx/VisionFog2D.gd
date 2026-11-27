@@ -64,6 +64,8 @@ var ambient_color: Color = AMBIENT
 var _clear_light: PointLight2D
 var _dark_light: PointLight2D
 var _self_light: PointLight2D
+## 角色贴身补光默认关闭（可在设置中手动开启），避免在浅色角色头身周围形成过曝白光晕。
+var self_light_enabled := false
 var _aim_angle := 0.0
 var _enemy_timer := 0.0
 var _debug := false
@@ -157,6 +159,13 @@ func total_half_deg() -> float:
 		TOTAL_HALF_DEG, MAX_TOTAL_HALF_DEG)
 
 
+## 开关角色贴身补光（由设置项 player_self_light 驱动，默认关闭）。
+func set_self_light_enabled(enabled: bool) -> void:
+	self_light_enabled = enabled
+	if _self_light != null:
+		_self_light.visible = (not _debug) and self_light_enabled
+
+
 ## 切换调试照明：F7 后恢复原亮度并显示全部敌人，方便排查碰撞/寻路。
 func set_debug(enabled: bool) -> void:
 	_debug = enabled
@@ -165,7 +174,7 @@ func set_debug(enabled: bool) -> void:
 	if _dark_light != null:
 		_dark_light.visible = not enabled
 	if _self_light != null:
-		_self_light.visible = not enabled
+		_self_light.visible = (not enabled) and self_light_enabled
 	if canvas_modulate != null:
 		canvas_modulate.color = Color(1, 1, 1) if enabled else ambient_color
 	if enabled:

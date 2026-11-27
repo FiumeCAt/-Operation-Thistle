@@ -241,6 +241,41 @@ func get_skin() -> String:
 	return skin_id
 
 
+## 角色额外组件显隐控制接口（back_gear / armor / backpack / coat_flaps / hair_secondary）。
+func set_extra_component_visible(component_id: StringName, enabled: bool) -> bool:
+	if rig_v2 == null:
+		return false
+	return rig_v2.set_extra_component_visible(component_id, enabled)
+
+
+func is_extra_component_visible(component_id: StringName) -> bool:
+	if rig_v2 == null:
+		return false
+	return rig_v2.is_extra_component_visible(component_id)
+
+
+func set_extra_components(overrides: Dictionary) -> void:
+	if rig_v2 != null:
+		rig_v2.set_extra_components(overrides)
+
+
+func clear_extra_component_overrides() -> void:
+	if rig_v2 != null:
+		rig_v2.clear_extra_component_overrides()
+
+
+func get_extra_components() -> Dictionary:
+	if rig_v2 == null:
+		return {}
+	return rig_v2.get_extra_components()
+
+
+func has_extra_component_asset(component_id: StringName) -> bool:
+	if rig_v2 == null:
+		return false
+	return rig_v2.has_extra_component_asset(component_id)
+
+
 func _on_footstep_planted(local_offset: Vector2, is_running: bool) -> void:
 	var dust_parent: Node = fx_layer if (fx_layer != null and is_instance_valid(fx_layer)) else get_parent()
 	if dust_parent != null and dust_parent.is_inside_tree():
@@ -464,6 +499,7 @@ func equip_weapon(tex: Texture2D, offset := Vector2.ZERO, scale_mul := 1.0) -> S
 		_weapon_sprite = Sprite2D.new()
 		_weapon_sprite.name = "Weapon"
 		_weapon_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_weapon_sprite.material = RIG_V2.get_player_light_material()
 		_weapon_mount.add_child(_weapon_sprite)
 	_weapon_sprite.texture = tex
 	_weapon_sprite.position = offset

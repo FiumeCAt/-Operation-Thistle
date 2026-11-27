@@ -29,7 +29,14 @@
   "color_coding": {
     "limb_side_coloring": false
   },
-  "parts_count": 19,
+  "extra_components_default": {
+    "back_gear": false,
+    "armor": true,
+    "backpack": true,
+    "coat_flaps": true,
+    "hair_secondary": true
+  },
+  "parts_count": 18,
   "arm2_count": 3,
   "parts": {
     "head_front": {
@@ -428,30 +435,6 @@
       },
       "flip_rule": "flip_h_when_lower_dir_3",
       "role": "小腿+鞋靴段（原图鞋尖朝左 -X）"
-    },
-    "gun_case": {
-      "file": "parts/gun_case.png",
-      "width": 18,
-      "height": 64,
-      "target_h": 64,
-      "offset": [
-        0,
-        -6
-      ],
-      "pivots_px": {
-        "mount": [
-          9,
-          38
-        ]
-      },
-      "z_index": {
-        "0": -6,
-        "1": 7,
-        "2": -2,
-        "3": -2
-      },
-      "flip_rule": "flip_h_when_dir_3",
-      "role": "背后战术装备/枪盒挂件"
     },
     "arm_upper": {
       "file": "parts/arm_upper.png",

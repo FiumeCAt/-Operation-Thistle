@@ -512,6 +512,9 @@ func _apply_talents() -> void:
 	hit_fx_level = clampi(int(progress.data.get("hit_fx_level", 1)), 0, 2)
 	bullet_trail_enabled = bool(progress.data.get("bullet_trail_enabled", true))
 	_apply_bullet_trail_setting()
+	if vision != null and vision.has_method("set_self_light_enabled"):
+		var self_light_on := bool(progress.player_self_light()) if progress.has_method("player_self_light") else false
+		vision.set_self_light_enabled(self_light_on)
 	# 整体视角缩放档位是持久设置；Alt+滚轮调整后立即保存。
 	var zoom_step := maxf(_cam_float(&"view_zoom_step", VIEW_ZOOM_STEP), 1.0)
 	view_zoom_pct = clampf(
@@ -561,6 +564,9 @@ func _on_settings_applied() -> void:
 	hit_fx_level = clampi(int(progress.data.get("hit_fx_level", 1)), 0, 2)
 	bullet_trail_enabled = bool(progress.data.get("bullet_trail_enabled", true))
 	_apply_bullet_trail_setting()
+	if vision != null and vision.has_method("set_self_light_enabled"):
+		var self_light_on := bool(progress.player_self_light()) if progress.has_method("player_self_light") else false
+		vision.set_self_light_enabled(self_light_on)
 	var zoom_step := maxf(_cam_float(&"view_zoom_step", VIEW_ZOOM_STEP), 1.0)
 	view_zoom_pct = clampf(
 		roundf(float(progress.data.get("view_zoom", 100)) / zoom_step) * zoom_step,
