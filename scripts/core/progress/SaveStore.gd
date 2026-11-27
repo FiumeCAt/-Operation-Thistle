@@ -25,6 +25,7 @@ const PICKUP_MERGE_MAX := 10.0
 
 const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
 const HUD_AUTO_HIDE_MODES := ["auto", "vitals_pinned", "pinned"]
+const CONTROL_HINT_MODES := ["once", "off", "always"]
 const MUZZLE_FLASH_MODES := ["full", "partial", "off"]
 const HEARING_DISPLAY_MODES := ["both", "ripple", "ring"]
 const CHARACTER_SKIN_IDS := ["doll_v2", "doll_thistle", "mannequin"]
@@ -38,7 +39,7 @@ const EXPORT_FORMAT := "operation_thistle_save"
 const EXPORT_VERSION := 1
 ## 本地偏好设置键集合：重置游戏进度（默认保留设置）或导入存档（可选不覆盖本地偏好）时保留这些键。
 const PREFERENCE_KEYS := [
-	"ammo_display", "hud_auto_hide_mode", "fire_rate_display", "armor_display",
+	"ammo_display", "hud_auto_hide_mode", "control_hint_mode", "fire_rate_display", "armor_display",
 	"volume", "sfx_volume", "music_volume", "bgm_play_mode", "bgm_pinned_track",
 	"screen_shake", "bullet_trail_enabled", "hitstop_enabled", "shake_scale",
 	"sample_impacts", "hit_fx_level", "muzzle_flash_mode",
@@ -95,6 +96,7 @@ static func defaults() -> Dictionary:
 		"armor_level": 1,
 		"ammo_display": "both",
 		"hud_auto_hide_mode": "auto",
+		"control_hint_mode": "once",
 		"fire_rate_display": "interval",
 		"armor_display": "value",
 		"volume": 0.8,
@@ -327,6 +329,10 @@ static func normalize_data(data: Dictionary, upgrade_max: Dictionary,
 		}
 	if not AMMO_DISPLAY_MODES.has(String(data.get("ammo_display", "both"))):
 		data["ammo_display"] = "both"
+	if not HUD_AUTO_HIDE_MODES.has(String(data.get("hud_auto_hide_mode", "auto"))):
+		data["hud_auto_hide_mode"] = "auto"
+	if not CONTROL_HINT_MODES.has(String(data.get("control_hint_mode", "once"))):
+		data["control_hint_mode"] = "once"
 	if not ["interval", "rpm"].has(String(data.get("fire_rate_display", "interval"))):
 		data["fire_rate_display"] = "interval"
 	if not ["value", "rha_mm"].has(String(data.get("armor_display", "value"))):

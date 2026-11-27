@@ -119,8 +119,18 @@ var damage_dealt: float:
 	get: return combat_system.damage_dealt
 	set(v): combat_system.damage_dealt = v
 var run_elapsed := 0.0
+## 局内 BGM 状态迟滞与防打断计时器（进战防单发误切、脱战留足余温、附近警戒敌人不断档）
+const BGM_COMBAT_EXIT_HOLD := 18.0
+const BGM_COMBAT_MIN_STAY := 14.0
+const BGM_EXPLORE_MIN_STAY := 8.0
+const BGM_COMBAT_FADE_IN := 1.8
+const BGM_EXPLORE_FADE_OUT := 3.8
 var _bgm_combat_hold := 0.0
 var _bgm_check_t := 0.0
+var _bgm_run_state := "explore"
+var _bgm_state_stay_t := 0.0
+var _bgm_recent_shots := 0
+var _bgm_shot_window_t := 0.0
 var enemies: Array[Enemy2D] = []
 ## 2D 天赋：枪械精度倍率与撤离资源倍率，在行动开始时从 Progress 读取。
 var talent_accuracy := 1.0
@@ -388,13 +398,15 @@ func _ready() -> void:
 	else:
 		_spawn_enemies()
 		hud.set_hint(HINT_DEFAULT)
+	_bgm_run_state = "combat" if waves_mode else "explore"
+	_bgm_state_stay_t = BGM_EXPLORE_MIN_STAY
 	var bgm_sfx := get_node_or_null("/root/Sfx")
 	if bgm_sfx != null:
-		var init_ctx := _build_bgm_context("combat" if waves_mode else "explore")
+		var init_ctx := _build_bgm_context(_bgm_run_state)
 		if bgm_sfx.has_method("set_bgm_context"):
 			bgm_sfx.set_bgm_context(init_ctx, 1.2)
 		elif bgm_sfx.has_method("set_bgm_state"):
-			bgm_sfx.set_bgm_state("combat" if waves_mode else "explore", 1.2)
+			bgm_sfx.set_bgm_state(_bgm_run_state, 1.2)
 	if debug_visual_mode:
 		_apply_debug_visual_mode()
 	else:
@@ -536,6 +548,8 @@ func _apply_talents() -> void:
 			hud.set_ammo_exact_rounds(bool(progress.data.get("ammo_exact_rounds", false)))
 		if progress.has_method("hud_auto_hide_mode"):
 			hud.set_hud_auto_hide_mode(String(progress.hud_auto_hide_mode()))
+		if progress.has_method("control_hint_mode"):
+			hud.set_control_hint_mode(String(progress.control_hint_mode()), true)
 	_view_zoom_visual = view_zoom_pct
 	# 护甲：基础存档值 + 护甲组件 + 护甲强化天赋，进入行动时补满（同步叠加调试上限倍率）。
 	var armor_mods := ModDB.modifiers(progress.armor_mods_2d(), true)
@@ -589,6 +603,8 @@ func _on_settings_applied() -> void:
 			hud.set_ammo_exact_rounds(bool(progress.data.get("ammo_exact_rounds", false)))
 		if progress.has_method("hud_auto_hide_mode"):
 			hud.set_hud_auto_hide_mode(String(progress.hud_auto_hide_mode()))
+		if progress.has_method("control_hint_mode"):
+			hud.set_control_hint_mode(String(progress.control_hint_mode()), false)
 	if doll != null and progress.has_method("debug_mul"):
 		doll.sync_debug_vitals(
 			float(progress.debug_mul("hp_max_mul")),
@@ -619,6 +635,7 @@ func _spawn_enemies() -> void:
 
 func _on_enemy_died(enemy: Enemy2D) -> void:
 	kills += 1
+	_bgm_combat_hold = maxf(_bgm_combat_hold, BGM_COMBAT_EXIT_HOLD)
 	if waves_mode:
 		wave_alive = maxi(wave_alive - 1, 0)
 	_alert_enemies_near_death(enemy)
@@ -1090,7 +1107,11 @@ func _trace_pellet(origin: Vector2, direction: Vector2, length: float) -> Dictio
 
 
 func _on_weapon_fired(muzzle: Vector2, dir: Vector2) -> void:
-	_bgm_combat_hold = 8.0
+	_bgm_recent_shots += 1
+	_bgm_shot_window_t = 3.0
+	# 已在战斗态则直接续满 18s 战斗余温；探索态连射（>=2发）或存在警戒敌人时才进入战斗曲，避免单发试枪打断探索 BGM
+	if _bgm_run_state == "combat" or _bgm_recent_shots >= 2:
+		_bgm_combat_hold = maxf(_bgm_combat_hold, BGM_COMBAT_EXIT_HOLD)
 	if hud != null and hud.has_method("notify_weapon_activity"):
 		hud.notify_weapon_activity()
 	combat_system.on_weapon_fired(muzzle, dir)
@@ -1109,23 +1130,57 @@ func _build_bgm_context(state: String) -> Dictionary:
 
 
 func _update_bgm_state(delta: float) -> void:
+	_bgm_state_stay_t += delta
 	if _bgm_combat_hold > 0.0:
 		_bgm_combat_hold = maxf(_bgm_combat_hold - delta, 0.0)
+	if _bgm_shot_window_t > 0.0:
+		_bgm_shot_window_t = maxf(_bgm_shot_window_t - delta, 0.0)
+		if _bgm_shot_window_t <= 0.0:
+			_bgm_recent_shots = 0
 	_bgm_check_t -= delta
 	if _bgm_check_t > 0.0:
 		return
-	_bgm_check_t = 0.40
+	_bgm_check_t = 0.45
 	var sfx := get_node_or_null("/root/Sfx")
 	if sfx == null or not sfx.has_method("set_bgm_state"):
 		return
-	var in_combat := waves_mode or _bgm_combat_hold > 0.0
-	if not in_combat:
-		for enemy in enemies:
-			if is_instance_valid(enemy) and not enemy._dead and String(enemy.state) == "combat":
-				in_combat = true
-				break
-	var target_state := "combat" if in_combat else "explore"
-	var fade := 0.9 if in_combat else 2.2
+	var active_combat_enemies := 0
+	var nearby_alert_enemies := 0
+	var ppos := doll.global_position if doll != null else Vector2.ZERO
+	var alert_rad_sq := (16.0 * TILE) * (16.0 * TILE)
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy._dead:
+			continue
+		var est := String(enemy.state)
+		if est == "combat":
+			active_combat_enemies += 1
+		elif est in ["suspicious", "search", "flee"]:
+			if enemy.global_position.distance_squared_to(ppos) <= alert_rad_sq:
+				nearby_alert_enemies += 1
+
+	# 只要仍在交火就刷新战斗余温；若附近仍有搜索/警戒敌人则维持至少 6s 缓冲，避免刚收尾转角又撞怪反复断曲
+	if active_combat_enemies > 0:
+		_bgm_combat_hold = maxf(_bgm_combat_hold, BGM_COMBAT_EXIT_HOLD)
+	elif _bgm_run_state == "combat" and nearby_alert_enemies > 0:
+		_bgm_combat_hold = maxf(_bgm_combat_hold, 6.0)
+
+	var target_state := _bgm_run_state
+	if waves_mode:
+		target_state = "combat"
+	elif _bgm_run_state == "explore":
+		var urgent_engage := active_combat_enemies > 0 or _bgm_combat_hold > 0.0
+		if urgent_engage and (_bgm_state_stay_t >= BGM_EXPLORE_MIN_STAY or active_combat_enemies >= 2 or _bgm_recent_shots >= 3):
+			target_state = "combat"
+	else:
+		# 战斗态退出需同时满足：无活跃接战敌人 + 18s 战斗余温耗尽 + 至少驻留 14s
+		if active_combat_enemies == 0 and _bgm_combat_hold <= 0.0 and _bgm_state_stay_t >= BGM_COMBAT_MIN_STAY:
+			target_state = "explore"
+
+	if target_state == _bgm_run_state and sfx.bgm_state() == target_state:
+		return
+	_bgm_run_state = target_state
+	_bgm_state_stay_t = 0.0
+	var fade := BGM_COMBAT_FADE_IN if target_state == "combat" else BGM_EXPLORE_FADE_OUT
 	if sfx.has_method("set_bgm_context"):
 		sfx.set_bgm_context(_build_bgm_context(target_state), fade)
 	else:
@@ -1388,7 +1443,9 @@ func _finish_run(success: bool, via_switch := false,
 
 
 func _on_player_damaged(_amount: int, armor_damage: int, hp_damage: int, pos: Vector2) -> void:
-	_bgm_combat_hold = 8.0
+	_bgm_combat_hold = maxf(_bgm_combat_hold, BGM_COMBAT_EXIT_HOLD)
+	if _bgm_run_state == "explore":
+		_bgm_state_stay_t = BGM_EXPLORE_MIN_STAY
 	feedback_system.on_player_damaged(armor_damage, hp_damage, pos)
 
 

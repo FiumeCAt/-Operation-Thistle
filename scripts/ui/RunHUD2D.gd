@@ -15,8 +15,12 @@ const PLATE_SIZE := Vector2(560, 132)
 const WEAPON_PLATE_SIZE := Vector2(456, 164)
 const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
 const HUD_AUTO_HIDE_MODES := ["auto", "vitals_pinned", "pinned"]
+const CONTROL_HINT_MODES := ["once", "off", "always"]
 const HUD_AUTO_HIDE_DELAY := 4.0
 const HUD_LOW_HP_KEEP_RATIO := 0.35
+const HINT_ONCE_HOLD_SEC := 8.0
+const HINT_FADE_OUT_RATE := 0.45
+const HINT_FADE_IN_RATE := 6.0
 const AMMO_DISPLAY_LABELS := {
 	"both": "[J] 图文",
 	"numeric": "[J] 数值",
@@ -72,6 +76,9 @@ var ammo_container: Control
 var ammo_display_mode := "both"
 var ammo_exact_rounds := false
 var hud_auto_hide_mode := "auto"
+var control_hint_mode := "once"
+var _hint_once_hold_t := HINT_ONCE_HOLD_SEC
+var _hint_alpha := 1.0
 var _vitals_hold_t := HUD_AUTO_HIDE_DELAY
 var _weapon_hold_t := HUD_AUTO_HIDE_DELAY
 var _vitals_alpha := 1.0
@@ -132,6 +139,52 @@ func _ready() -> void:
 			set_hud_auto_hide_mode(String(progress.hud_auto_hide_mode()))
 		elif progress.data is Dictionary:
 			set_hud_auto_hide_mode(String(progress.data.get("hud_auto_hide_mode", "auto")))
+		if progress.has_method("control_hint_mode"):
+			set_control_hint_mode(String(progress.control_hint_mode()), true)
+		elif progress.data is Dictionary:
+			set_control_hint_mode(String(progress.data.get("control_hint_mode", "once")), true)
+	else:
+		_apply_control_hint_alpha()
+
+
+func set_control_hint_mode(mode: String, reset_once_timer := false) -> void:
+	var clean := mode if CONTROL_HINT_MODES.has(mode) else "once"
+	var prev := control_hint_mode
+	control_hint_mode = clean
+	if clean == "always":
+		_hint_once_hold_t = 0.0
+		_hint_alpha = 1.0
+	elif clean == "off":
+		_hint_once_hold_t = 0.0
+		if _flash_t <= 0.0:
+			_hint_alpha = 0.0
+	else:
+		if reset_once_timer or prev != "once":
+			_hint_once_hold_t = HINT_ONCE_HOLD_SEC
+			_hint_alpha = 1.0
+	_apply_control_hint_alpha()
+
+
+func get_control_hint_mode() -> String:
+	return control_hint_mode
+
+
+func get_hint_bar_alpha() -> float:
+	return _hint_alpha
+
+
+func _apply_control_hint_alpha() -> void:
+	if _hint_bar != null:
+		_hint_bar.modulate.a = _hint_alpha
+		_hint_bar.visible = _hint_alpha > 0.005
+	var top_y := 54.0 if (_hint_alpha > 0.05) else 16.0
+	if _interact_bar != null:
+		_interact_bar.offset_top = top_y
+		_interact_bar.offset_bottom = top_y + 38.0
+	if _bgm_toast != null:
+		var toast_y := (top_y + 44.0) if (_interact_bar != null and _interact_bar.visible) else top_y
+		_bgm_toast.offset_top = toast_y
+		_bgm_toast.offset_bottom = toast_y + 32.0
 
 
 func set_hud_auto_hide_mode(mode: String) -> void:
@@ -294,6 +347,7 @@ func show_bgm_toast(title: String) -> void:
 	_bgm_toast.modulate.a = 1.0
 	_bgm_toast.visible = true
 	_bgm_toast_t = 3.5
+	_apply_control_hint_alpha()
 
 
 ## 左下：生成式金属板 + 两行信息（生命/资源、目标），不再放头像。
@@ -893,6 +947,7 @@ func set_interact_target(text: String, color: Color) -> void:
 		if sb != null:
 			sb.border_color = color
 		_interact_bar.show()
+	_apply_control_hint_alpha()
 
 
 func clear_interact_target() -> void:
@@ -900,6 +955,7 @@ func clear_interact_target() -> void:
 		interact_label.hide()
 	if _interact_bar != null:
 		_interact_bar.hide()
+	_apply_control_hint_alpha()
 
 
 ## 拾取/交互提示：左上提示临时变成亮绿色，2.2 秒后恢复。
@@ -910,6 +966,8 @@ func flash(text: String) -> void:
 		_hint_rich.text = PixelUI.bb(text, PixelUI.OK)
 		PixelUI.play_typewriter(_hint_rich)
 	_flash_t = 2.2
+	_hint_alpha = 1.0
+	_apply_control_hint_alpha()
 
 
 func update_weapon(rig) -> void:
@@ -1121,9 +1179,24 @@ func _process(delta: float) -> void:
 		_bgm_toast.modulate.a = clampf(_bgm_toast_t / 0.75, 0.0, 1.0)
 		if _bgm_toast_t <= 0.0:
 			_bgm_toast.visible = false
+	_step_control_hint(delta)
 	_step_hud_auto_hide(delta)
 	for item in expired:
 		_feed_items.erase(item)
+
+
+func _step_control_hint(delta: float) -> void:
+	if control_hint_mode == "once" and _hint_once_hold_t > 0.0:
+		_hint_once_hold_t = maxf(_hint_once_hold_t - delta, 0.0)
+	var want_show := _flash_t > 0.0 \
+		or control_hint_mode == "always" \
+		or (control_hint_mode == "once" and _hint_once_hold_t > 0.0)
+	var target := 1.0 if want_show else 0.0
+	var rate := HINT_FADE_IN_RATE if target > _hint_alpha else HINT_FADE_OUT_RATE
+	var next_a := move_toward(_hint_alpha, target, delta * rate)
+	if absf(next_a - _hint_alpha) > 0.0005 or (_hint_bar != null and _hint_bar.visible != (next_a > 0.005)):
+		_hint_alpha = next_a
+		_apply_control_hint_alpha()
 
 
 func _step_hud_auto_hide(delta: float) -> void:

@@ -373,6 +373,50 @@ func _run() -> void:
 		hud._step_hud_auto_hide(0.05)
 	_check(hud.get_vitals_alpha() > 0.95 and hud.get_weapon_alpha() > 0.95,
 		"pinned mode keeps both vitals and weapon plates permanently visible")
+
+	# 左上角操作提示栏三档设置（once 开局淡出 / off 关闭 / always 常驻）持久化 + RunHUD2D 行为验证。
+	sm = SettingsMenu2D.new()
+	root.add_child(sm)
+	await process_frame
+	sm.open()
+	_check(sm._control_hint_buttons.size() == 3 and p.control_hint_mode() == "once"
+		and sm._control_hint_buttons["once"].text.contains("▶"),
+		"control hint bar setting exposes 3 modes and defaults to once")
+	sm._set_control_hint_mode("off")
+	_check(p.control_hint_mode() == "off" and sm._control_hint_buttons["off"].text.contains("▶"),
+		"control hint bar switches to off immediately")
+	sm._set_control_hint_mode("always")
+	sm.queue_free()
+	await process_frame
+	p.load_data()
+	_check(p.control_hint_mode() == "always", "control hint bar mode persists across reload")
+	p.set_control_hint_mode("once")
+
+	hud.set_control_hint_mode("once", true)
+	_check(hud.get_hint_bar_alpha() > 0.95 and hud._hint_bar.visible,
+		"control hint bar starts visible in once mode")
+	hud._hint_once_hold_t = 0.0
+	for _i in 30:
+		hud._step_control_hint(0.1)
+	_check(hud.get_hint_bar_alpha() < 0.05 and not hud._hint_bar.visible
+		and hud._interact_bar.offset_top <= 20.0,
+		"control hint bar fades out smoothly in once mode and shifts interact bar up")
+	hud.flash("电力已恢复")
+	_check(hud.get_hint_bar_alpha() > 0.95 and hud._hint_bar.visible,
+		"flash notification briefly reveals hint bar even after once fade-out")
+	hud._flash_t = 0.0
+	for _i in 30:
+		hud._step_control_hint(0.1)
+	_check(hud.get_hint_bar_alpha() < 0.05 and not hud._hint_bar.visible,
+		"hint bar fades back out smoothly after flash expires")
+	hud.set_control_hint_mode("off")
+	_check(hud.get_hint_bar_alpha() < 0.05 and not hud._hint_bar.visible,
+		"control hint bar hides immediately in off mode")
+	hud.set_control_hint_mode("always")
+	for _i in 30:
+		hud._step_control_hint(0.5)
+	_check(hud.get_hint_bar_alpha() > 0.95 and hud._hint_bar.visible,
+		"control hint bar stays permanently visible in always mode")
 	hud.queue_free()
 	await process_frame
 

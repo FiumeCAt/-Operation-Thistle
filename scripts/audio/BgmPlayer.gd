@@ -20,6 +20,8 @@ const STATE_GAIN_DB := {
 	"combat": -9.5,
 }
 const SILENT_DB := -54.0
+## 同状态切回时允许无缝续播上次曲目进度的记忆窗口（秒），避免探索↔战斗来回重头打断。
+const RESUME_WINDOW_SEC := 120.0
 
 var catalog: BgmCatalog = CATALOG_SCRIPT.new()
 var play_mode := "shuffle"
@@ -40,6 +42,8 @@ var _target_db := -12.0
 var _paused_for_mute := false
 var _paused_by_user := false
 var _paused_pos := 0.0
+var _state_resume: Dictionary = {}
+var _state_elapsed := 0.0
 
 
 func setup(samples_ref: SfxSamples, fallback_ambient: AudioStream = null) -> void:
@@ -65,6 +69,10 @@ func setup(samples_ref: SfxSamples, fallback_ambient: AudioStream = null) -> voi
 
 func current_state() -> String:
 	return _state
+
+
+func state_elapsed() -> float:
+	return _state_elapsed
 
 
 func get_current_track() -> Dictionary:
@@ -207,7 +215,21 @@ func set_context(context: Dictionary, fade_sec := 1.2, force_reselect := false) 
 	if clean == prev_state and not force_reselect:
 		_sync_mute_state()
 		return
+	# 切离探索/战斗前记忆当前曲目与播放进度，短期内回到该状态时平滑续播而不重头打断
+	if prev_state in ["explore", "combat"] and not _current_track.is_empty():
+		var prev_id := String(_current_track.get("id", ""))
+		var prev_pos := get_playback_position()
+		var prev_dur := get_track_duration()
+		if prev_dur > 4.0 and prev_pos < prev_dur - 3.0:
+			_state_resume[prev_state] = {
+				"id": prev_id,
+				"pos": maxf(prev_pos - 0.35, 0.0),
+				"msec": Time.get_ticks_msec(),
+			}
+		else:
+			_state_resume.erase(prev_state)
 	_state = clean
+	_state_elapsed = 0.0
 	_fade_dur = maxf(fade_sec, 0.05)
 
 	if clean == "none":
@@ -218,9 +240,25 @@ func set_context(context: Dictionary, fade_sec := 1.2, force_reselect := false) 
 		_current_track = {}
 		return
 
-	var cur_id := String(_current_track.get("id", ""))
-	var next_track := catalog.select_track(_context, play_mode, pinned_track_id, cur_id, 1)
-	_crossfade_to_track(next_track, fade_sec)
+	# 优先检查记忆窗口内是否可续播同状态上一首曲目
+	var resume_pos := 0.0
+	var next_track: Dictionary = {}
+	if not force_reselect and clean in ["explore", "combat"] and _state_resume.has(clean):
+		var mem: Dictionary = _state_resume[clean]
+		var age_sec := float(Time.get_ticks_msec() - int(mem.get("msec", 0))) / 1000.0
+		if age_sec <= RESUME_WINDOW_SEC:
+			var cand := catalog.track_by_id(String(mem.get("id", "")))
+			if not cand.is_empty():
+				var pools: Array = cand.get("pools", [])
+				var single_mismatch := (play_mode == "single" and not pinned_track_id.is_empty()
+					and clean != "combat" and String(cand.get("id", "")) != pinned_track_id)
+				if (pools.has(clean) or bool(cand.get("custom", false))) and not single_mismatch:
+					next_track = cand
+					resume_pos = float(mem.get("pos", 0.0))
+	if next_track.is_empty():
+		var cur_id := String(_current_track.get("id", ""))
+		next_track = catalog.select_track(_context, play_mode, pinned_track_id, cur_id, 1)
+	_crossfade_to_track(next_track, fade_sec, resume_pos)
 
 
 func play_track_by_id(track_id: String, fade_sec := 0.45) -> bool:
@@ -274,7 +312,7 @@ func _step_track(step: int, fade_sec: float) -> Dictionary:
 	return _current_track.duplicate(true)
 
 
-func _crossfade_to_track(track: Dictionary, fade_sec: float) -> void:
+func _crossfade_to_track(track: Dictionary, fade_sec: float, start_pos := 0.0) -> void:
 	_fade_dur = maxf(fade_sec, 0.05)
 	_target_db = float(STATE_GAIN_DB.get(_state, -12.0))
 	var pool_size := catalog.tracks_for_pool(_state, _context).size()
@@ -284,7 +322,7 @@ func _crossfade_to_track(track: Dictionary, fade_sec: float) -> void:
 		next_stream = _resolve_legacy_fallback(_state)
 	_current_track = track.duplicate(true) if not track.is_empty() else {
 		"id": "fallback:" + _state,
-		"title": "环境底噪 · Ambient",
+		"title": "环境底噪",
 		"pools": [_state],
 		"custom": false,
 	}
@@ -292,7 +330,9 @@ func _crossfade_to_track(track: Dictionary, fade_sec: float) -> void:
 	var outgoing := active_player()
 	var incoming := inactive_player()
 	_active_is_a = not _active_is_a
-	_paused_pos = 0.0
+	var dur := float(next_stream.get_length()) if next_stream != null else 0.0
+	var clamped_start := clampf(start_pos, 0.0, maxf(dur - 1.5, 0.0)) if dur > 2.0 else 0.0
+	_paused_pos = clamped_start
 	if _paused_by_user:
 		_paused_by_user = false
 		playback_state_changed.emit(false)
@@ -317,7 +357,7 @@ func _crossfade_to_track(track: Dictionary, fade_sec: float) -> void:
 	_paused_for_mute = false
 	incoming.volume_db = SILENT_DB
 	if next_stream != null:
-		incoming.play()
+		incoming.play(clamped_start)
 
 
 func _on_player_finished(is_a: bool) -> void:
@@ -334,8 +374,9 @@ func _on_player_finished(is_a: bool) -> void:
 			cur.play()
 		return
 	var next_t := catalog.select_track(_context, play_mode, pinned_track_id, cur_id, 1)
+	_state_resume.erase(_state)
 	if not next_t.is_empty():
-		_crossfade_to_track(next_t, 0.8)
+		_crossfade_to_track(next_t, 1.8, 0.0)
 
 
 func stop(fade_sec := 0.8) -> void:
@@ -384,24 +425,30 @@ func _sync_mute_state() -> void:
 func _process(delta: float) -> void:
 	if _track_a == null or _track_b == null:
 		return
+	if _state != "none" and not _paused_by_user:
+		_state_elapsed += delta
 	_sync_mute_state()
 	if _paused_for_mute or _fade_t >= 1.0:
 		return
 	_fade_t = minf(1.0, _fade_t + delta / maxf(_fade_dur, 0.05))
+	# 等功率交叉淡入淡出（Equal-Power sin/cos 曲线）：过渡中段无响度塌陷，衔接丝滑自然
 	var k := _fade_t * _fade_t * (3.0 - 2.0 * _fade_t)
 	var cur := active_player()
 	var prev := inactive_player()
 	if _state == "none":
 		if cur != null and cur.playing:
-			cur.volume_db = lerpf(_fade_from_db, SILENT_DB, k)
+			var out_g := cos(k * PI * 0.5)
+			cur.volume_db = maxf(SILENT_DB, _fade_from_db + linear_to_db(maxf(out_g, 0.001)))
 			if _fade_t >= 1.0:
 				cur.stop()
 		if prev != null and prev.playing:
 			prev.stop()
 		return
 	if cur != null and cur.playing:
-		cur.volume_db = lerpf(SILENT_DB, _target_db, k)
+		var in_g := sin(k * PI * 0.5)
+		cur.volume_db = maxf(SILENT_DB, _target_db + linear_to_db(maxf(in_g, 0.001)))
 	if prev != null and prev.playing:
-		prev.volume_db = lerpf(_fade_from_db, SILENT_DB, k)
+		var out_g := cos(k * PI * 0.5)
+		prev.volume_db = maxf(SILENT_DB, _fade_from_db + linear_to_db(maxf(out_g, 0.001)))
 		if _fade_t >= 1.0:
 			prev.stop()

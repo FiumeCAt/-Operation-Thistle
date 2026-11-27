@@ -1,0 +1,79 @@
+{
+  "bgm_menu": {
+    "title": "霓虹机库",
+    "pools": [
+      "menu"
+    ],
+    "weight": 1.0
+  },
+  "bgm_explore": {
+    "title": "暗区低潜",
+    "pools": [
+      "explore"
+    ],
+    "weight": 1.0
+  },
+  "bgm_combat": {
+    "title": "蓟花突击",
+    "pools": [
+      "combat"
+    ],
+    "weight": 1.0
+  },
+  "menu_silent_terminal": {
+    "title": "静默终端",
+    "pools": [
+      "menu"
+    ],
+    "weight": 1.0
+  },
+  "menu_rainy_outpost": {
+    "title": "雨夜哨站",
+    "pools": [
+      "menu"
+    ],
+    "weight": 1.0
+  },
+  "explore_cold_corridor": {
+    "title": "冷灰走廊",
+    "pools": [
+      "explore"
+    ],
+    "weight": 1.0
+  },
+  "explore_blackout_deck": {
+    "title": "断电层巡检",
+    "pools": [
+      "explore"
+    ],
+    "weight": 1.0
+  },
+  "explore_airduct_shadow": {
+    "title": "暗道潜行",
+    "pools": [
+      "explore"
+    ],
+    "weight": 1.0
+  },
+  "combat_breach_protocol": {
+    "title": "交火协议",
+    "pools": [
+      "combat"
+    ],
+    "weight": 1.0
+  },
+  "combat_iron_curtain": {
+    "title": "铁幕压制",
+    "pools": [
+      "combat"
+    ],
+    "weight": 1.0
+  },
+  "combat_zero_defense": {
+    "title": "零号防线",
+    "pools": [
+      "combat"
+    ],
+    "weight": 1.0
+  }
+}

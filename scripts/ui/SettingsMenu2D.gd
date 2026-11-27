@@ -55,6 +55,7 @@ var _debug_menu: DebugMenu2D
 var _radio_menu: RadioMenu2D
 var _bgm_mode_buttons: Dictionary = {}
 var _hud_hide_buttons: Dictionary = {}
+var _control_hint_buttons: Dictionary = {}
 var _save_timer: Timer
 
 
@@ -296,38 +297,48 @@ func _build_right_column() -> Control:
 	PixelUI.section_bar(rows, "数据显示", "HUD FORMAT", PixelUI.AMBER)
 	_sep(rows, PixelUI.AMBER)
 
-	PixelUI.label(rows, "武器射速显示", 19, PixelUI.DIM)
 	var fire_row := HBoxContainer.new()
-	fire_row.add_theme_constant_override("separation", 8)
+	fire_row.add_theme_constant_override("separation", 6)
 	rows.add_child(fire_row)
+	var fire_lbl := PixelUI.label(fire_row, "武器射速", 18, PixelUI.DIM)
+	fire_lbl.custom_minimum_size.x = 110
+	fire_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_interval_button = _option_button("秒/发 // INTERVAL")
+	_interval_button.add_theme_font_size_override("font_size", 15)
 	_interval_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_interval_button.pressed.connect(func() -> void: _set_fire_mode("interval"))
 	fire_row.add_child(_interval_button)
 	_rpm_button = _option_button("RPM // 发/分钟")
+	_rpm_button.add_theme_font_size_override("font_size", 15)
 	_rpm_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rpm_button.pressed.connect(func() -> void: _set_fire_mode("rpm"))
 	fire_row.add_child(_rpm_button)
 
-	PixelUI.label(rows, "护甲 / 穿深显示", 19, PixelUI.DIM)
 	var armor_disp_row := HBoxContainer.new()
-	armor_disp_row.add_theme_constant_override("separation", 8)
+	armor_disp_row.add_theme_constant_override("separation", 6)
 	rows.add_child(armor_disp_row)
+	var armor_lbl := PixelUI.label(armor_disp_row, "护甲 / 穿深", 18, PixelUI.DIM)
+	armor_lbl.custom_minimum_size.x = 110
+	armor_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for entry in [["value", "穿深值 // 46"], ["rha_mm", "RHA // 4.6mm"]]:
 		var mode := String(entry[0])
 		var button := _option_button(String(entry[1]))
+		button.add_theme_font_size_override("font_size", 15)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.pressed.connect(func() -> void: _set_armor_display(mode))
 		armor_disp_row.add_child(button)
 		_armor_display_buttons[mode] = button
 
-	PixelUI.label(rows, "弹药显示（局内 J 键切换）", 19, PixelUI.DIM)
 	var ammo_row := HBoxContainer.new()
-	ammo_row.add_theme_constant_override("separation", 8)
+	ammo_row.add_theme_constant_override("separation", 6)
 	rows.add_child(ammo_row)
+	var ammo_lbl := PixelUI.label(ammo_row, "弹药(J键)", 18, PixelUI.DIM)
+	ammo_lbl.custom_minimum_size.x = 110
+	ammo_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	for entry in [["both", "图文"], ["numeric", "数值"], ["graphic", "图形"]]:
 		var mode := String(entry[0])
 		var button := _option_button(String(entry[1]))
+		button.add_theme_font_size_override("font_size", 15)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.pressed.connect(func() -> void: _set_ammo_display(mode))
 		ammo_row.add_child(button)
@@ -347,6 +358,21 @@ func _build_right_column() -> Control:
 		hbtn.pressed.connect(func() -> void: _set_hud_auto_hide_mode(hmode))
 		hud_hide_row.add_child(hbtn)
 		_hud_hide_buttons[hmode] = hbtn
+
+	var hint_row := HBoxContainer.new()
+	hint_row.add_theme_constant_override("separation", 6)
+	rows.add_child(hint_row)
+	var hint_lbl := PixelUI.label(hint_row, "操作提示栏", 18, PixelUI.DIM)
+	hint_lbl.custom_minimum_size.x = 110
+	hint_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for entry in [["once", "开局淡出"], ["off", "关闭"], ["always", "常驻"]]:
+		var cmode := String(entry[0])
+		var cbtn := _option_button(String(entry[1]))
+		cbtn.add_theme_font_size_override("font_size", 15)
+		cbtn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cbtn.pressed.connect(func() -> void: _set_control_hint_mode(cmode))
+		hint_row.add_child(cbtn)
+		_control_hint_buttons[cmode] = cbtn
 
 	_add_pickup_merge_row(rows)
 
@@ -912,6 +938,7 @@ func _load_values() -> void:
 	var pickup_merge := 3.0
 	var bgm_mode := "shuffle"
 	var hud_hide := "auto"
+	var hint_mode := "once"
 	if p != null:
 		master = float(p.data.get("volume", 0.8))
 		sfx = float(p.data.get("sfx_volume", 0.8))
@@ -941,6 +968,7 @@ func _load_values() -> void:
 		pickup_merge = float(p.pickup_merge_window()) if p.has_method("pickup_merge_window") else 3.0
 		bgm_mode = String(p.bgm_play_mode()) if p.has_method("bgm_play_mode") else "shuffle"
 		hud_hide = String(p.hud_auto_hide_mode()) if p.has_method("hud_auto_hide_mode") else "auto"
+		hint_mode = String(p.control_hint_mode()) if p.has_method("control_hint_mode") else "once"
 	_set_slider("master", master * 100.0)
 	_set_slider("sfx", sfx * 100.0)
 	_set_slider("music", music * 100.0)
@@ -965,6 +993,7 @@ func _load_values() -> void:
 	_refresh_armor_display_buttons(armor_mode)
 	_refresh_ammo_buttons(ammo_mode)
 	_refresh_hud_auto_hide_buttons(hud_hide)
+	_refresh_control_hint_buttons(hint_mode)
 	_refresh_shake_buttons(shake)
 	_refresh_trail_buttons(bullet_trail)
 	_refresh_scope_blur_buttons(scope_blur)
@@ -1045,6 +1074,22 @@ func _refresh_hud_auto_hide_buttons(mode: String) -> void:
 	var names := {"auto": "自动隐藏", "vitals_pinned": "固定血甲", "pinned": "全部固定"}
 	for key in _hud_hide_buttons:
 		var btn: Button = _hud_hide_buttons[key]
+		btn.text = ("▶ " if key == mode else "") + String(names.get(key, key))
+		btn.add_theme_color_override(
+			"font_color", PixelUI.AMBER_BRIGHT if key == mode else PixelUI.TEXT)
+
+
+func _set_control_hint_mode(mode: String) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_control_hint_mode"):
+		p.set_control_hint_mode(mode)
+	_refresh_control_hint_buttons(mode)
+
+
+func _refresh_control_hint_buttons(mode: String) -> void:
+	var names := {"once": "开局淡出", "off": "关闭", "always": "常驻"}
+	for key in _control_hint_buttons:
+		var btn: Button = _control_hint_buttons[key]
 		btn.text = ("▶ " if key == mode else "") + String(names.get(key, key))
 		btn.add_theme_color_override(
 			"font_color", PixelUI.AMBER_BRIGHT if key == mode else PixelUI.TEXT)

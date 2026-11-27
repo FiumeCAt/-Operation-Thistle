@@ -77,6 +77,18 @@ static func set_hud_auto_hide_mode(data: Dictionary, mode: String) -> bool:
 	return true
 
 
+static func control_hint_mode(data: Dictionary) -> String:
+	var mode := String(data.get("control_hint_mode", "once"))
+	return mode if SAVE_STORE.CONTROL_HINT_MODES.has(mode) else "once"
+
+
+static func set_control_hint_mode(data: Dictionary, mode: String) -> bool:
+	if not SAVE_STORE.CONTROL_HINT_MODES.has(mode):
+		return false
+	data["control_hint_mode"] = mode
+	return true
+
+
 static func overhead_bar_preset(skin_id: String) -> Dictionary:
 	var key := skin_id if SAVE_STORE.OVERHEAD_BAR_PRESETS.has(skin_id) else "doll_v2"
 	var entry: Dictionary = SAVE_STORE.OVERHEAD_BAR_PRESETS[key]

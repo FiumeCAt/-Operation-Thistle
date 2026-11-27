@@ -165,7 +165,7 @@ func load_stream(track: Dictionary, loop_single := false) -> AudioStream:
 		var res := ResourceLoader.load(path)
 		if res is AudioStream:
 			stream = _configure_loop(res as AudioStream, loop_single, false)
-	else:
+	if stream == null:
 		var abs_path := ProjectSettings.globalize_path(path)
 		if FileAccess.file_exists(abs_path):
 			stream = _load_external_audio(abs_path, ext, loop_single)

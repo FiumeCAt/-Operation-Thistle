@@ -761,6 +761,14 @@ func set_hud_auto_hide_mode(mode: String) -> bool:
 		return false
 	return save_data()
 
+func control_hint_mode() -> String:
+	return SETTINGS_STORE.control_hint_mode(data)
+
+func set_control_hint_mode(mode: String) -> bool:
+	if not SETTINGS_STORE.set_control_hint_mode(data, mode):
+		return false
+	return save_data()
+
 func overhead_bar_preset(skin_id := "") -> Dictionary:
 	var sid := character_skin() if skin_id.is_empty() else skin_id
 	return SETTINGS_STORE.overhead_bar_preset(sid)

@@ -310,6 +310,83 @@ func _run() -> void:
 	var opened_dir: String = sfx.bgm_open_user_dir()
 	_check(opened_dir != "" and DirAccess.dir_exists_absolute(opened_dir),
 		"bgm_open_user_dir creates and returns valid custom BGM directory")
+
+	# 13) 内置原创多曲库（11 首：主菜单 3 / 探索 4 / 战斗 4，单曲 < 3 分钟）与探索↔战斗平滑续播记忆。
+	sfx.bgm_refresh_catalog()
+	var menu_pool: Array = sfx.bgm_tracks("menu")
+	var exp_pool: Array = sfx.bgm_tracks("explore")
+	var cbt_pool: Array = sfx.bgm_tracks("combat")
+	_check(menu_pool.size() >= 3 and exp_pool.size() >= 4 and cbt_pool.size() >= 4,
+		"built-in BGM library has >=3 menu (%d), >=4 explore (%d), >=4 combat (%d) tracks" % [
+			menu_pool.size(), exp_pool.size(), cbt_pool.size()])
+	var all_builtin_ok := true
+	var bad_tracks: Array[String] = []
+	for t in sfx.bgm_tracks(""):
+		if bool(t.get("custom", false)):
+			continue
+		var st_stream: AudioStream = sfx._bgm.catalog.load_stream(t, false)
+		var st_len := float(st_stream.get_length()) if st_stream != null else 0.0
+		if st_stream == null or st_len < 10.0 or st_len > 180.0:
+			all_builtin_ok = false
+			bad_tracks.append("%s(%.1fs)" % [String(t.get("id", "")), st_len])
+	_check(all_builtin_ok, "every built-in BGM loads cleanly with 10s..180s length (%s)" % ", ".join(bad_tracks))
+	# 续播记忆：探索 25s 切进战斗，短期切回探索应无缝续播同一首探索曲而非从头打断。
+	sfx.set_bgm_state("explore", 0.05)
+	await process_frame
+	var exp_track_id := String(sfx.bgm_current_track().get("id", ""))
+	sfx.bgm_seek(25.0)
+	await process_frame
+	sfx.set_bgm_state("combat", 0.05)
+	await process_frame
+	_check(sfx.bgm_state() == "combat", "BGM switches cleanly from explore to combat")
+	sfx.set_bgm_state("explore", 0.05)
+	await process_frame
+	var resumed_id := String(sfx.bgm_current_track().get("id", ""))
+	var resumed_pos := float(sfx.bgm_playback_position())
+	_check(resumed_id == exp_track_id and resumed_pos >= 23.0 and resumed_pos <= 27.0,
+		"returning from combat resumes previous explore track smoothly (%s @ %.1fs)" % [resumed_id, resumed_pos])
+
+	# Main2D 局内 BGM 迟滞防打断：单发试枪不切战斗；进入战斗后 5s 仍保持余温，超时才淡回探索。
+	var main_scene: PackedScene = load("res://scenes/core/Main2D.tscn")
+	var main := main_scene.instantiate()
+	root.add_child(main)
+	await process_frame
+	await process_frame
+	for e in main.enemies:
+		if is_instance_valid(e):
+			e.queue_free()
+	main.enemies.clear()
+	await process_frame
+	main._bgm_run_state = "explore"
+	main._bgm_combat_hold = 0.0
+	main._bgm_recent_shots = 0
+	main._bgm_shot_window_t = 0.0
+	main._bgm_state_stay_t = main.BGM_EXPLORE_MIN_STAY
+	sfx.set_bgm_state("explore", 0.05)
+	# 单发试枪：不应触发战斗曲
+	main._on_weapon_fired(main.doll.global_position, Vector2.RIGHT)
+	main._bgm_check_t = 0.0
+	main._update_bgm_state(0.1)
+	_check(main._bgm_run_state == "explore",
+		"single stray shot in explore does not interrupt explore BGM")
+	# 连续开火 >=2 发：进入战斗曲
+	main._on_weapon_fired(main.doll.global_position, Vector2.RIGHT)
+	main._bgm_check_t = 0.0
+	main._update_bgm_state(0.1)
+	_check(main._bgm_run_state == "combat",
+		"sustained firing transitions in-game BGM smoothly to combat")
+	# 交火刚结束 6 秒：必须仍在战斗余温内，不得立刻切回探索
+	main._bgm_check_t = 0.0
+	main._update_bgm_state(6.0)
+	_check(main._bgm_run_state == "combat",
+		"combat BGM holds through brief lulls (6s) without cutting back to explore")
+	# 超过 18s 余温 + 14s 驻留：平滑淡回探索
+	main._bgm_check_t = 0.0
+	main._update_bgm_state(15.0)
+	_check(main._bgm_run_state == "explore",
+		"combat BGM fades cleanly back to explore after exit hold expires")
+	main.queue_free()
+	await process_frame
 	sfx.stop_bgm(0.05)
 
 	print("\n=== impact audio: %s (%d ok / %d fail) ===" % ["PASS" if _fail == 0 else "FAIL", _pass, _fail])
