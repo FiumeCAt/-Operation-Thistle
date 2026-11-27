@@ -124,6 +124,8 @@ var _lost_t := 0.0
 var _knock := Vector2.ZERO
 var _wander := Vector2.ZERO
 var _wander_wait := 0.0
+var _wander_t := 0.0
+var _has_fled := false
 var _last_known := Vector2.ZERO
 var _dead := false
 var _hit_sfx_cd := 0.0
@@ -191,11 +193,11 @@ func _physics_process(delta: float) -> void:
 	if can_see and not perception.saw_player:
 		visual.show_alert_icon()
 	perception.saw_player = can_see
-	if not def.blind and can_see and state != "combat":
+	if not def.blind and can_see and state != "combat" and state != "flee":
 		_enter("combat")
 	match state:
 		"patrol":
-			_wander_step(delta, 0.35)
+			_wander_step(delta, 0.35, home, false)
 		"suspicious":
 			if can_see:
 				_enter("combat")
@@ -203,7 +205,7 @@ func _physics_process(delta: float) -> void:
 				_move_toward(_last_known, 0.7, delta, true)
 				if global_position.distance_to(_last_known) < 48.0:
 					_enter("search")
-				elif _state_t > 4.0:
+				elif _state_t > 6.5:
 					_enter("patrol")
 		"search":
 			if can_see:
@@ -211,7 +213,7 @@ func _physics_process(delta: float) -> void:
 			elif _state_t > SEARCH_TIME:
 				_enter("patrol")
 			else:
-				_wander_step(delta, 0.45)
+				_wander_step(delta, 0.45, _last_known, true)
 		"combat":
 			combat.do_combat(self, to_player, dist, can_see, delta)
 		"flee":
@@ -232,17 +234,30 @@ func _tick_impact(delta: float) -> void:
 		_knock = _knock.move_toward(Vector2.ZERO, 1900.0 * delta)
 
 
-func _wander_step(delta: float, speed_ratio: float) -> void:
+func _wander_step(delta: float, speed_ratio: float, anchor := Vector2.INF, use_nav := false) -> void:
 	if _wander_wait > 0.0:
 		_wander_wait = maxf(_wander_wait - delta, 0.0)
 		velocity = Vector2.ZERO
 		return
-	if global_position.distance_to(_wander) < 36.0:
-		var angle := randf() * TAU
-		_wander = home + Vector2.from_angle(angle) * randf_range(0.0, def.patrol_radius * TILE)
-		_wander_wait = randf_range(0.6, 1.6)
+	var base_anchor := home if anchor == Vector2.INF else anchor
+	_wander_t += delta
+	if global_position.distance_to(_wander) < 36.0 or _wander_t > 3.5:
+		_wander = _pick_walkable_wander(base_anchor)
+		_wander_t = 0.0
+		_wander_wait = randf_range(0.5, 1.4)
 		return
-	_move_toward(_wander, speed_ratio, delta)
+	_move_toward(_wander, speed_ratio, delta, use_nav)
+
+
+func _pick_walkable_wander(anchor: Vector2) -> Vector2:
+	var max_r := maxf(def.patrol_radius * TILE, TILE * 2.0)
+	var has_nav: bool = nav_level != null and nav_level.has_method("is_nav_walkable")
+	for _attempt in 8:
+		var angle := randf() * TAU
+		var cand := anchor + Vector2.from_angle(angle) * randf_range(TILE * 0.8, max_r)
+		if not has_nav or bool(nav_level.is_nav_walkable(cand)):
+			return cand
+	return anchor
 
 
 func _enter(new_state: String) -> void:
@@ -267,7 +282,7 @@ func _enter(new_state: String) -> void:
 		_wander = home
 
 
-## 视野内队友被击杀：记住玩家的最新位置并重新进入搜索/战斗。
+## 视野内队友被击杀：记住玩家的最新位置并重新进入搜索/战斗（不降级已在战斗/逃跑中的单位）。
 func alert_by_ally_death(clue_pos: Vector2) -> void:
 	if _dead:
 		return
@@ -275,6 +290,8 @@ func alert_by_ally_death(clue_pos: Vector2) -> void:
 		player = get_tree().get_first_node_in_group("player")
 	_last_known = player.global_position if (player != null and is_instance_valid(player)) else clue_pos
 	_lost_t = 0.0
+	if state == "combat" or state == "flee":
+		return
 	if player != null and is_instance_valid(player) \
 			and global_position.distance_to(player.global_position) < def.view_range * TILE \
 			and _line_of_sight():
@@ -283,32 +300,66 @@ func alert_by_ally_death(clue_pos: Vector2) -> void:
 	if state == "search":
 		_state_t = 0.0
 		_wander = _last_known
+		_wander_t = 0.0
 	else:
 		_enter("search")
 
 
-## 枪声：听到后去声源处查看（巡逻 / 搜索状态才会被吸引）。
+## 声响感知：综合声源传播半径与单位自身听觉灵敏度（def.hearing），盲眼声呐单位可直接借听觉进战并续期追击。
 func hear_noise(pos: Vector2, radius_m: float) -> void:
-	if _dead or state == "combat":
+	if _dead or state == "flee":
 		return
-	if global_position.distance_to(pos) > radius_m * TILE:
+	var eff_radius_m := maxf(radius_m, def.hearing * 0.75) if def.blind else maxf(radius_m, minf(def.hearing, radius_m * 1.25))
+	var dist := global_position.distance_to(pos)
+	if dist > eff_radius_m * TILE:
 		return
 	_last_known = pos
-	if state != "suspicious":
+	if state == "combat":
+		if def.blind:
+			_lost_t = 0.0
+		return
+	if def.blind and dist <= maxf(def.hearing, radius_m) * TILE * 0.65:
+		_enter("combat")
+		return
+	if state == "suspicious":
+		_state_t = 0.0
+	else:
 		_enter("suspicious")
 
 
 func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO,
 		is_flesh_ammo: bool = false, is_weakspot: bool = false,
 		weapon_weakspot_mul: float = 1.0) -> float:
+	if is_weakspot:
+		return take_damage_batch(0.0, 0, amount, 1, ap, impulse, is_flesh_ammo, weapon_weakspot_mul)
+	return take_damage_batch(amount, 1, 0.0, 0, ap, impulse, is_flesh_ammo, weapon_weakspot_mul)
+
+
+## 原子化合批受击入口：单次结算躯干+弱点全部弹丸（按单弹丸计过穿/保底，合并伤害供歌利亚 200% 秒爆与弱点音效优先）。
+func take_damage_batch(body_amount: float, body_pellets: int,
+		ws_amount: float, ws_pellets: int,
+		ap: float = 0.0, impulse: Vector2 = Vector2.ZERO,
+		is_flesh_ammo: bool = false, weapon_weakspot_mul: float = 1.0) -> float:
 	if _dead:
 		return 0.0
 	var f_mul := def.flesh_mul if is_flesh_ammo else 1.0
-	var hit_ws := is_weakspot and def.weakspot_enabled
-	var dmg: float = DAMAGE_MODEL.resolve_enemy_weakspot_damage(
-		amount, ap, def.armor, def.blunt_floor, f_mul,
-		def.weakspot_armor_mul, def.weakspot_damage_mul, weapon_weakspot_mul
-	) if hit_ws else DAMAGE_MODEL.resolve_enemy_damage(amount, ap, def.armor, def.blunt_floor, f_mul)
+	var dmg := 0.0
+	if body_amount > 0.0:
+		var bn := maxi(1, body_pellets)
+		dmg += DAMAGE_MODEL.resolve_enemy_damage(
+			body_amount / float(bn), ap, def.armor, def.blunt_floor, f_mul) * float(bn)
+	var hit_ws := ws_amount > 0.0 and def.weakspot_enabled
+	if ws_amount > 0.0:
+		var wn := maxi(1, ws_pellets)
+		if hit_ws:
+			dmg += DAMAGE_MODEL.resolve_enemy_weakspot_damage(
+				ws_amount / float(wn), ap, def.armor, def.blunt_floor, f_mul,
+				def.weakspot_armor_mul, def.weakspot_damage_mul, weapon_weakspot_mul) * float(wn)
+		else:
+			dmg += DAMAGE_MODEL.resolve_enemy_damage(
+				ws_amount / float(wn), ap, def.armor, def.blunt_floor, f_mul) * float(wn)
+	if dmg <= 0.0:
+		return 0.0
 	hp -= dmg
 	_hit_flash = 0.16 if hit_ws else 0.14
 	visual.hit_flash_weakspot = hit_ws
@@ -328,6 +379,11 @@ func take_damage(amount: float, ap: float = 0.0, impulse: Vector2 = Vector2.ZERO
 				if def.armor > 0.0:
 					armor_state = "pierce" if DAMAGE_MODEL.is_penetrated(ap, def.armor) else "ricochet"
 				sfx.play_hit(hit_material(), hit_weight(), -11.0, armor_state)
+	if player != null and is_instance_valid(player):
+		_last_known = player.global_position
+		var to_attacker: Vector2 = player.global_position - global_position
+		if to_attacker.length_squared() > 4.0:
+			perception.view_dir = to_attacker.normalized()
 	_enter("combat")
 	if def.is_self_destruct_unit():
 		combat.on_self_destruct_damaged(self, dmg)

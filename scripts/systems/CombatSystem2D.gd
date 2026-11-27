@@ -153,28 +153,40 @@ func get_safe_shot_origin(muzzle_override: Vector2 = Vector2.INF) -> Vector2:
 	var query := PhysicsRayQueryParameters2D.create(center, muzzle, 1)
 	query.hit_from_inside = true
 	var hit := _owner.get_world_2d().direct_space_state.intersect_ray(query)
-	if hit.is_empty():
-		return muzzle
-	var dir := to_muzzle.normalized()
-	var point: Vector2 = hit["position"]
-	var safe := point - dir * 1.5
-	if (safe - center).dot(dir) <= 0.0:
-		# 玩家贴在北墙下方时，胸口参考点 (0, -34) 可能落在北墙碰撞体内；
-		# 改从必定位于可行走地面的脚底圆心 (0, -6) 向枪口投影，把起射点退回墙面外侧。
-		var foot := _doll.global_position + Vector2(0, -6)
-		var from_foot := muzzle - foot
-		if from_foot.length_squared() >= 4.0:
-			var fq := PhysicsRayQueryParameters2D.create(foot, muzzle, 1)
-			fq.hit_from_inside = true
-			var fhit := _owner.get_world_2d().direct_space_state.intersect_ray(fq)
-			if fhit.is_empty():
-				return muzzle
-			var fdir := from_foot.normalized()
-			var fsafe: Vector2 = fhit["position"] - fdir * 1.5
-			if (fsafe - foot).dot(fdir) > 0.0:
-				return fsafe
-			return foot
-		return muzzle
+	var safe := muzzle
+	if not hit.is_empty():
+		var dir := to_muzzle.normalized()
+		var point: Vector2 = hit["position"]
+		safe = point - dir * 1.5
+		if (safe - center).dot(dir) <= 0.0:
+			# 玩家贴在北墙下方时，胸口参考点 (0, -34) 可能落在北墙碰撞体内；
+			# 改从必定位于可行走地面的脚底圆心 (0, -6) 向枪口投影，把起射点退回墙面外侧。
+			var foot := _doll.global_position + Vector2(0, -6)
+			var from_foot := muzzle - foot
+			if from_foot.length_squared() >= 4.0:
+				var fq := PhysicsRayQueryParameters2D.create(foot, muzzle, 1)
+				fq.hit_from_inside = true
+				var fhit := _owner.get_world_2d().direct_space_state.intersect_ray(fq)
+				if fhit.is_empty():
+					safe = muzzle
+				else:
+					var fdir := from_foot.normalized()
+					var fsafe: Vector2 = fhit["position"] - fdir * 1.5
+					safe = fsafe if (fsafe - foot).dot(fdir) > 0.0 else foot
+			else:
+				safe = muzzle
+	# 贴脸近战防穿模：若长枪枪口已伸到紧贴玩家的敌人背后，把起射点退回敌人身前/胸口，避免近距子弹从敌人身后飞空。
+	var to_safe := safe - center
+	if to_safe.length_squared() >= 4.0:
+		var ex: Array[RID] = [_doll.get_rid()]
+		var eq := PhysicsRayQueryParameters2D.create(center, safe, 2, ex)
+		eq.hit_from_inside = true
+		eq.collide_with_areas = true
+		var ehit := _owner.get_world_2d().direct_space_state.intersect_ray(eq)
+		if not ehit.is_empty():
+			var edir := to_safe.normalized()
+			var esafe: Vector2 = ehit["position"] - edir * 2.0
+			safe = esafe if (esafe - center).dot(edir) > 0.0 else center
 	return safe
 
 
@@ -492,15 +504,18 @@ func on_bullet_hit_enemy(bullet, target, point: Vector2, dir: Vector2) -> void:
 		if bucket.is_empty():
 			bucket = {
 				"damage": 0.0, "ws_damage": 0.0,
+				"count": 0, "ws_count": 0,
 				"point": point, "ws_point": point, "dir": dir, "weakspot": false,
 			}
 			ctx["buckets"][target] = bucket
 		if is_ws:
 			bucket["ws_damage"] = float(bucket["ws_damage"]) + float(bullet.damage)
+			bucket["ws_count"] = int(bucket["ws_count"]) + 1
 			bucket["ws_point"] = point
 			bucket["weakspot"] = true
 		else:
 			bucket["damage"] = float(bucket["damage"]) + float(bullet.damage)
+			bucket["count"] = int(bucket["count"]) + 1
 		_schedule_shot_flush(ctx)
 		return
 	apply_hit_batch(ctx, target, float(bullet.damage), point, dir, is_ws)
@@ -514,7 +529,7 @@ func _schedule_shot_flush(ctx: Dictionary) -> void:
 		flush_shot_buckets.bind(ctx))
 
 
-## 窗口到点或弹丸全部结束时，把同一目标累计的弹丸伤害一次性结算。
+## 窗口到点或弹丸全部结束时，把同一目标累计的弹丸伤害一次性原子结算（保留单弹丸过穿/保底与弱点音效优先）。
 func flush_shot_buckets(ctx: Dictionary) -> void:
 	ctx["flush_scheduled"] = false
 	var buckets: Dictionary = ctx.get("buckets", {})
@@ -526,12 +541,14 @@ func flush_shot_buckets(ctx: Dictionary) -> void:
 		if is_instance_valid(target):
 			var body_dmg := float(bucket.get("damage", 0.0))
 			var ws_dmg := float(bucket.get("ws_damage", 0.0))
+			var body_n := maxi(1, int(bucket.get("count", 1))) if body_dmg > 0.0 else 0
+			var ws_n := maxi(1, int(bucket.get("ws_count", 1))) if ws_dmg > 0.0 else 0
 			if ws_dmg > 0.0 and body_dmg > 0.0:
-				apply_hit_batch(ctx, target, body_dmg, bucket["ws_point"], bucket["dir"], true, ws_dmg)
+				apply_hit_batch(ctx, target, body_dmg, bucket["ws_point"], bucket["dir"], true, ws_dmg, body_n, ws_n)
 			elif ws_dmg > 0.0:
-				apply_hit_batch(ctx, target, ws_dmg, bucket["ws_point"], bucket["dir"], true)
+				apply_hit_batch(ctx, target, ws_dmg, bucket["ws_point"], bucket["dir"], true, -1.0, 0, ws_n)
 			else:
-				apply_hit_batch(ctx, target, body_dmg, bucket["point"], bucket["dir"], false)
+				apply_hit_batch(ctx, target, body_dmg, bucket["point"], bucket["dir"], false, -1.0, body_n, 0)
 
 
 func on_bullet_finished(bullet) -> void:
@@ -543,7 +560,8 @@ func on_bullet_finished(bullet) -> void:
 
 func apply_hit_batch(ctx: Dictionary, target, amount: float,
 		point: Vector2, dir: Vector2, is_weakspot: bool = false,
-		weakspot_amount: float = -1.0) -> void:
+		weakspot_amount: float = -1.0, body_pellets: int = 1,
+		ws_pellets: int = 1) -> void:
 	if not _is_active():
 		return
 	var before := float(target.hp)
@@ -555,14 +573,23 @@ func apply_hit_batch(ctx: Dictionary, target, amount: float,
 	var dealt := 0.0
 	if target is Enemy2D:
 		if weakspot_amount > 0.0:
-			if amount > 0.0:
-				dealt += target.take_damage(amount, ap, impulse * 0.5, is_flesh, false, ws_mul)
-			dealt += target.take_damage(weakspot_amount, ap, impulse * 0.5, is_flesh, true, ws_mul)
+			dealt = target.take_damage_batch(
+				amount, maxi(1, body_pellets) if amount > 0.0 else 0,
+				weakspot_amount, maxi(1, ws_pellets),
+				ap, impulse, is_flesh, ws_mul)
+		elif any_ws:
+			dealt = target.take_damage_batch(
+				0.0, 0, amount, maxi(1, ws_pellets),
+				ap, impulse, is_flesh, ws_mul)
 		else:
-			dealt = target.take_damage(amount, ap, impulse, is_flesh, any_ws, ws_mul)
+			dealt = target.take_damage_batch(
+				amount, maxi(1, body_pellets), 0.0, 0,
+				ap, impulse, is_flesh, ws_mul)
 	else:
 		var total_in := amount + (weakspot_amount if weakspot_amount > 0.0 else 0.0)
 		dealt = target.take_damage(total_in, ap, impulse)
+	if dealt <= 0.0:
+		return
 	last_hit_weakspot = any_ws
 	damage_dealt += dealt
 	var killed := before > 0.0 and float(target.hp) <= 0.0

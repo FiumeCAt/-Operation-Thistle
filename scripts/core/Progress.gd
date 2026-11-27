@@ -694,6 +694,24 @@ func set_player_self_light(enabled: bool) -> bool:
 	SETTINGS_STORE.set_player_self_light(data, enabled)
 	return save_data()
 
+
+func bgm_play_mode() -> String:
+	return SETTINGS_STORE.bgm_play_mode(data)
+
+
+func set_bgm_play_mode(mode: String) -> bool:
+	SETTINGS_STORE.set_bgm_play_mode(data, mode)
+	return save_data()
+
+
+func bgm_pinned_track() -> String:
+	return SETTINGS_STORE.bgm_pinned_track(data)
+
+
+func set_bgm_pinned_track(track_id: String) -> bool:
+	SETTINGS_STORE.set_bgm_pinned_track(data, track_id)
+	return save_data()
+
 func reticle_style(sight_id: String, fallback: String) -> String:
 	return SETTINGS_STORE.reticle_style(data, sight_id, fallback)
 

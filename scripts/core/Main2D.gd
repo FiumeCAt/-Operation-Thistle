@@ -355,15 +355,13 @@ func _ready() -> void:
 		and String(progress.map_id()) == "goliath_arena"
 	_apply_visual_override()
 	_apply_talents()
-	# 分层视野：先建立光照与迷雾，再刷敌人，首帧就按视野决定可见性。
+	# 分层视野：直接传入视野天赋避免 setup + set_vision_talents 二次烘焙光锥贴图。
+	var vr_lv := int(progress.talent_2d_level(&"vision_range")) if (progress != null and progress.has_method("talent_2d_level")) else 0
+	var va_lv := int(progress.talent_2d_level(&"vision_angle")) if (progress != null and progress.has_method("talent_2d_level")) else 0
 	vision = VISION_FOG.new()
 	vision.name = "VisionFog2D"
 	$World2D.add_child(vision)
-	vision.setup(doll, level, canvas_modulate, _ambient_color, vision_config)
-	if progress != null and progress.has_method("talent_2d_level"):
-		vision.set_vision_talents(
-			int(progress.talent_2d_level(&"vision_range")),
-			int(progress.talent_2d_level(&"vision_angle")))
+	vision.setup(doll, level, canvas_modulate, _ambient_color, vision_config, vr_lv, va_lv)
 	laser_sight = LASER_SIGHT.new()
 	laser_sight.name = "LaserSight2D"
 	fx_layer.add_child(laser_sight)
@@ -391,8 +389,12 @@ func _ready() -> void:
 		_spawn_enemies()
 		hud.set_hint(HINT_DEFAULT)
 	var bgm_sfx := get_node_or_null("/root/Sfx")
-	if bgm_sfx != null and bgm_sfx.has_method("set_bgm_state"):
-		bgm_sfx.set_bgm_state("combat" if waves_mode else "explore", 1.2)
+	if bgm_sfx != null:
+		var init_ctx := _build_bgm_context("combat" if waves_mode else "explore")
+		if bgm_sfx.has_method("set_bgm_context"):
+			bgm_sfx.set_bgm_context(init_ctx, 1.2)
+		elif bgm_sfx.has_method("set_bgm_state"):
+			bgm_sfx.set_bgm_state("combat" if waves_mode else "explore", 1.2)
 	if debug_visual_mode:
 		_apply_debug_visual_mode()
 	else:
@@ -1084,6 +1086,18 @@ func _on_weapon_fired(muzzle: Vector2, dir: Vector2) -> void:
 	combat_system.on_weapon_fired(muzzle, dir)
 
 
+func _build_bgm_context(state: String) -> Dictionary:
+	var extracting := interaction_system != null and (interaction_system.near_exit or interaction_system.near_switch_exit)
+	return {
+		"state": state,
+		"region": "goliath_arena" if goliath_map else "facility",
+		"wave": wave_system.wave_index if (waves_mode and wave_system != null) else 0,
+		"is_boss": false,
+		"is_extracting": extracting,
+		"tags": ["waves"] if waves_mode else ["raid"],
+	}
+
+
 func _update_bgm_state(delta: float) -> void:
 	if _bgm_combat_hold > 0.0:
 		_bgm_combat_hold = maxf(_bgm_combat_hold - delta, 0.0)
@@ -1100,10 +1114,12 @@ func _update_bgm_state(delta: float) -> void:
 			if is_instance_valid(enemy) and not enemy._dead and String(enemy.state) == "combat":
 				in_combat = true
 				break
-	if in_combat:
-		sfx.set_bgm_state("combat", 0.9)
+	var target_state := "combat" if in_combat else "explore"
+	var fade := 0.9 if in_combat else 2.2
+	if sfx.has_method("set_bgm_context"):
+		sfx.set_bgm_context(_build_bgm_context(target_state), fade)
 	else:
-		sfx.set_bgm_state("explore", 2.2)
+		sfx.set_bgm_state(target_state, fade)
 
 
 func spawn_player_bullet(origin: Vector2, direction: Vector2, speed_px_s: float,
@@ -1130,8 +1146,9 @@ func _player_bullet_finished(bullet) -> void:
 
 
 func _apply_hit_batch(ctx: Dictionary, target, amount: float,
-		point: Vector2, dir: Vector2) -> void:
-	combat_system.apply_hit_batch(ctx, target, amount, point, dir)
+		point: Vector2, dir: Vector2, is_weakspot: bool = false,
+		weakspot_amount: float = -1.0) -> void:
+	combat_system.apply_hit_batch(ctx, target, amount, point, dir, is_weakspot, weakspot_amount)
 
 
 ## --- 打击反馈 / 特效 / 音效（委托至 FeedbackSystem2D）-------------------------

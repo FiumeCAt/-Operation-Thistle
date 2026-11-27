@@ -168,7 +168,7 @@ func _run() -> void:
 	var menu = load("res://scenes/ui/StartMenu2D.tscn").instantiate()
 	root.add_child(menu)
 	await process_frame
-	_check(menu.talents_button != null and menu.talents_button.text.contains("TALENTS"),
+	_check(menu.talents_button != null and menu.talents_button.text.contains("天赋树"),
 		"start menu has talents button")
 	_check(menu.talents != null and not menu.talents.visible, "talent tree hidden at start")
 

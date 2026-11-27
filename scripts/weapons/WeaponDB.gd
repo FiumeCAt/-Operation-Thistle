@@ -355,8 +355,20 @@ static func ammo_table() -> Dictionary:
 	return out
 
 
-## 单条按需构建弹药实例（避免热路径为了查 1 种弹药重建全部 30 个 AmmoData）。
+static var _ammo_cache: Dictionary = {}
+static var _ammo_cache_sig := ""
+
+
+## 单条按需构建并缓存弹药实例（消除准心/HUD 每帧 120–300 次 AmmoData.new() 临时分配）。
 static func get_ammo(id: StringName) -> AmmoData:
+	var spread_mul := base_spread_mul()
+	var diff_cost_on := differential_reserve_cost_enabled()
+	var sig := "%.4f|%d" % [spread_mul, int(diff_cost_on)]
+	if sig != _ammo_cache_sig:
+		_ammo_cache.clear()
+		_ammo_cache_sig = sig
+	if _ammo_cache.has(id):
+		return _ammo_cache[id] as AmmoData
 	var table: Dictionary = GameData.table("ammo").get("data", {})
 	var key := String(id)
 	var use_id := id
@@ -366,7 +378,9 @@ static func get_ammo(id: StringName) -> AmmoData:
 		rec = table.get("buckshot", {})
 		if rec.is_empty():
 			return null
-	return _build_ammo(use_id, rec, base_spread_mul(), differential_reserve_cost_enabled())
+	var built := _build_ammo(use_id, rec, spread_mul, diff_cost_on)
+	_ammo_cache[id] = built
+	return built
 
 
 ## 返回指定口径可携带的 3 档弹药 ID（肉伤 / 常规 / 穿甲），按 AMMO_ORDER 排序。

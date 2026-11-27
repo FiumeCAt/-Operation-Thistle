@@ -222,6 +222,79 @@ func _run() -> void:
 	await process_frame
 	_check(sfx._bgm != null and sfx._bgm.current_state() == "explore",
 		"BGM restores current state cleanly when unmuted")
+
+	# 12) Phase 2 战术电台：多曲目录、随机防连播/顺序/单曲、条件选曲扩展接口与 user://bgm/ 自定义曲目加载。
+	var cat := BgmCatalog.new()
+	cat._scanned = true
+	var mock_tracks: Array[Dictionary] = [
+		{"id": "t_a", "title": "Track A", "pools": ["menu", "explore"], "weight": 1.0, "conditions": {}},
+		{"id": "t_b", "title": "Track B", "pools": ["menu", "explore"], "weight": 1.0, "conditions": {}},
+		{"id": "t_boss", "title": "Boss Theme", "pools": ["combat"], "weight": 2.0, "conditions": {"is_boss": true}},
+		{"id": "t_cbt", "title": "Combat Std", "pools": ["combat"], "weight": 1.0, "conditions": {}},
+	]
+	cat._tracks = mock_tracks
+	for mt in mock_tracks:
+		cat._by_id[String(mt["id"])] = mt
+	var anti_repeat_ok := true
+	for _i in 12:
+		var pick := cat.select_track({"state": "menu"}, "shuffle", "", "t_a", 1)
+		if String(pick.get("id", "")) == "t_a":
+			anti_repeat_ok = false
+	_check(anti_repeat_ok, "BgmCatalog shuffle mode avoids repeating the immediately preceding track")
+	var seq_pick := cat.select_track({"state": "menu"}, "sequential", "", "t_a", 1)
+	_check(String(seq_pick.get("id", "")) == "t_b", "BgmCatalog sequential mode advances to the next track")
+	var pin_pick := cat.select_track({"state": "menu"}, "single", "t_a", "t_b", 1)
+	_check(String(pin_pick.get("id", "")) == "t_a", "BgmCatalog single mode locks onto the pinned track")
+	var boss_pick := cat.select_track({"state": "combat", "is_boss": true}, "sequential", "", "", 1)
+	var std_cbt_pick := cat.select_track({"state": "combat", "is_boss": false}, "sequential", "", "", 1)
+	_check(String(boss_pick.get("id", "")) == "t_boss" and String(std_cbt_pick.get("id", "")) == "t_cbt",
+		"BgmCatalog conditional hook filters boss tracks only when is_boss=true")
+	# 验证 user://bgm/ 自定义 WAV 扫描与播放回退
+	var custom_dir := "user://bgm_test_verify"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(custom_dir))
+	var wav_path := custom_dir + "/My Custom Track.wav"
+	var f := FileAccess.open(wav_path, FileAccess.WRITE)
+	if f != null:
+		# 最小合法 16-bit mono 8kHz PCM WAV (44B header + 160B data)
+		var data_len := 160
+		f.store_buffer("RIFF".to_ascii_buffer())
+		f.store_32(36 + data_len)
+		f.store_buffer("WAVE".to_ascii_buffer())
+		f.store_buffer("fmt ".to_ascii_buffer())
+		f.store_32(16)
+		f.store_16(1)
+		f.store_16(1)
+		f.store_32(8000)
+		f.store_32(16000)
+		f.store_16(2)
+		f.store_16(16)
+		f.store_buffer("data".to_ascii_buffer())
+		f.store_32(data_len)
+		var pcm := PackedByteArray()
+		pcm.resize(data_len)
+		f.store_buffer(pcm)
+		f.close()
+	var custom_cat := BgmCatalog.new()
+	custom_cat.scan_directory_for_test(custom_dir, true)
+	var custom_track: Dictionary = custom_cat.track_by_id("custom:My Custom Track")
+	var custom_stream: AudioStream = custom_cat.load_stream(custom_track)
+	_check(not custom_track.is_empty() and String(custom_track.get("title", "")) == "My Custom Track"
+		and custom_stream is AudioStreamWAV,
+		"BgmCatalog scans and loads external .wav tracks from custom user directory")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(wav_path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(custom_dir))
+	# Sfx 电台接口 + Progress 持久化
+	sfx.set_bgm_pinned_track("builtin:bgm_menu")
+	sfx.set_bgm_play_mode("single")
+	p.set_bgm_pinned_track("builtin:bgm_menu")
+	p.set_bgm_play_mode("single")
+	_check(p.bgm_play_mode() == "single" and p.bgm_pinned_track() == "builtin:bgm_menu"
+		and sfx.bgm_play_mode() == "single" and sfx.bgm_pinned_track() == "builtin:bgm_menu",
+		"Sfx tactical radio mode and pinned track persist to Progress")
+	sfx.set_bgm_play_mode("shuffle")
+	sfx.set_bgm_pinned_track("")
+	p.set_bgm_play_mode("shuffle")
+	p.set_bgm_pinned_track("")
 	sfx.stop_bgm(0.05)
 
 	print("\n=== impact audio: %s (%d ok / %d fail) ===" % ["PASS" if _fail == 0 else "FAIL", _pass, _fail])

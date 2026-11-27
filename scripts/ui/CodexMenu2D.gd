@@ -11,7 +11,8 @@ const ICON_ROOT := "res://assets/art/ui/icons/"
 const PAGE_ENEMY := "enemy"
 const PAGE_ITEM := "item"
 const DAMAGE_MODEL := preload("res://scripts/combat/DamageModel.gd")
-## 数值网格最多显示 14 项（2 列 × 7 行）；歌利亚的爆炸参数也在此范围内。
+const ENEMY_DEF := preload("res://scripts/actors/enemy/EnemyDef.gd")
+## 数值网格最多显示 14 项（2 列 × 7 行）；歌利亚的爆炸参数与弱点参数均在此范围内。
 const MAX_STATS := 14
 
 ## 敌人档案正文：世界观与战术提示，避免图鉴只剩干巴巴的数值。
@@ -415,6 +416,12 @@ func _enemy_fields(id: StringName) -> Array:
 	fields.append(["攻击间隔", "—" if cooldown >= 100.0 else "%.2f s" % cooldown])
 	fields.append(["行为模式", String(BEHAVIOR_NAMES.get(String(st.get("behavior", "")), "常规"))])
 	fields.append(["进阶掉落", "%.1f%%" % (float(st.get("advanced_drop", 0.0)) * 100.0)])
+	var edef: EnemyDef = ENEMY_DEF.from_dict(id, st)
+	if edef.weakspot_enabled:
+		fields.append(["弱点部位", "%s ×%.1f/%d%%甲" % [
+			edef.weakspot_label, edef.weakspot_damage_mul, int(round(edef.weakspot_armor_mul * 100.0))]])
+	else:
+		fields.append(["弱点部位", "无"])
 	if bool(st.get("death_explode", false)):
 		fields.append(["爆炸半径", "%.0f m" % float(st.get("explode_radius", 0.0))])
 		fields.append(["爆炸伤害", "%d" % int(round(float(st.get("explode_damage", 0.0))))])
@@ -446,10 +453,12 @@ func _weapon_fields(w: WeaponData) -> Array:
 		if ammo.pellets > 1:
 			fields.append(["弹药", "%s ×%d" % [ammo.display_name, ammo.pellets]])
 			fields.append(["单发总伤害", "%d × %.1f = %.1f" % [
-				ammo.pellets, ammo.damage, float(ammo.damage) * float(ammo.pellets)]])
+				ammo.pellets, ammo.damage * w.damage_mul, float(ammo.damage) * w.damage_mul * float(ammo.pellets)]])
 		else:
 			fields.append(["弹药", ammo.display_name])
-			fields.append(["单发总伤害", "%.1f" % ammo.damage])
+			fields.append(["单发总伤害", "%.1f" % (ammo.damage * w.damage_mul)])
+	var ws_pct := int(round((w.weakspot_mul - 1.0) * 100.0))
+	fields.append(["弱点加成", ("%+d%%" % ws_pct) if ws_pct != 0 else "0%"])
 	return fields
 
 

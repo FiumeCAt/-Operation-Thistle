@@ -75,6 +75,9 @@ var _feed_items: Array[Dictionary] = []
 var _flash_t := 0.0
 var _hp_tier := -1
 var _armor_broken := false
+var _bgm_toast: PanelContainer
+var _bgm_toast_label: Label
+var _bgm_toast_t := 0.0
 
 
 func setup(run: Node2D) -> void:
@@ -95,6 +98,7 @@ func _ready() -> void:
 	_build_pickup_feed()
 	_build_weapon_panel()
 	_build_minimap()
+	_build_bgm_toast()
 	_build_result_panel()
 	var progress := get_node_or_null("/root/Progress")
 	if progress != null:
@@ -174,6 +178,57 @@ func get_pickup_merge_window() -> float:
 func _build_minimap() -> void:
 	_minimap = Minimap2D.new()
 	_root.add_child(_minimap)
+
+
+## 局内 BGM 切歌提示角标（位于左上操作提示栏下方，切歌/进出战斗时淡入展示 3.5s）。
+func _build_bgm_toast() -> void:
+	_bgm_toast = PanelContainer.new()
+	_bgm_toast.name = "BgmToast"
+	_bgm_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bgm_toast.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_bgm_toast.offset_left = 18
+	_bgm_toast.offset_top = 60
+	_bgm_toast.offset_right = 400
+	_bgm_toast.offset_bottom = 92
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(0.04, 0.06, 0.09, 0.86)
+	st.border_color = Color(PixelUI.CYAN, 0.72)
+	st.set_border_width_all(1)
+	st.content_margin_left = 12
+	st.content_margin_right = 12
+	st.content_margin_top = 4
+	st.content_margin_bottom = 4
+	_bgm_toast.add_theme_stylebox_override("panel", st)
+	_bgm_toast_label = PixelUI.label(_bgm_toast, "", 16, PixelUI.CYAN)
+	_bgm_toast.visible = false
+	_root.add_child(_bgm_toast)
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx != null and sfx.has_signal("bgm_track_changed"):
+		sfx.bgm_track_changed.connect(_on_bgm_track_changed)
+		var cur_t := String(sfx.bgm_current_title()) if sfx.has_method("bgm_current_title") else ""
+		if not cur_t.is_empty():
+			show_bgm_toast(cur_t)
+
+
+func _exit_tree() -> void:
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx != null and sfx.has_signal("bgm_track_changed") and sfx.bgm_track_changed.is_connected(_on_bgm_track_changed):
+		sfx.bgm_track_changed.disconnect(_on_bgm_track_changed)
+
+
+func _on_bgm_track_changed(info: Dictionary) -> void:
+	var title := String(info.get("title", ""))
+	if not title.is_empty():
+		show_bgm_toast(title)
+
+
+func show_bgm_toast(title: String) -> void:
+	if _bgm_toast == null or _bgm_toast_label == null:
+		return
+	_bgm_toast_label.text = "♪ 正在播放：%s" % title
+	_bgm_toast.modulate.a = 1.0
+	_bgm_toast.visible = true
+	_bgm_toast_t = 3.5
 
 
 ## 左下：生成式金属板 + 两行信息（生命/资源、目标），不再放头像。
@@ -975,6 +1030,11 @@ func _process(delta: float) -> void:
 		if float(item["t"]) <= 0.0:
 			line.queue_free()
 			expired.append(item)
+	if _bgm_toast_t > 0.0 and _bgm_toast != null:
+		_bgm_toast_t = maxf(_bgm_toast_t - delta, 0.0)
+		_bgm_toast.modulate.a = clampf(_bgm_toast_t / 0.75, 0.0, 1.0)
+		if _bgm_toast_t <= 0.0:
+			_bgm_toast.visible = false
 	for item in expired:
 		_feed_items.erase(item)
 

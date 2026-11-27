@@ -7,6 +7,90 @@ class_name SfxSynth
 const SR := 44100
 const SEED := 20261025
 
+const BASE_KEYS: Array[String] = [
+	"shotgun", "pistol", "smg", "rifle", "sniper", "pump", "load", "empty",
+	"hit", "break", "step", "switch", "crate_open", "pickup", "ui", "ui_hover",
+	"ui_click", "ambient", "turret_lock", "turret_shot", "charge_up", "ram",
+	"stab", "fuse", "fuse_long", "boom", "metal_hit", "hit_low", "hit_mid",
+	"hit_air", "enemy_death", "enemy_alert", "shotgun_sup", "pistol_sup",
+	"smg_sup", "rifle_sup", "sniper_sup", "fire_select", "weakspot_hit",
+	"armor_pierce", "dodge",
+]
+
+const EXT_KEYS: Array[String] = [
+	"reload_mag", "reload_shell", "reload_cylinder", "bolt_cycle", "ammo_switch",
+	"ads_in", "ads_out", "player_armor_block", "player_armor_break",
+	"player_hurt_hp", "ground_dust", "mod_install", "upgrade", "pickup_rare",
+	"pickup_ammo", "wave_start", "wave_clear", "extract_success", "mission_fail",
+]
+
+
+## 按需单条合成（用于 Sfx 启动零卡顿懒加载）：每条使用固定确定性种子，避免冷启动一次性合成 59 条波形。
+static func build_one(kind: String) -> AudioStreamWAV:
+	var synth := SfxSynth.new()
+	synth._rng.seed = SEED ^ int(kind.hash())
+	match kind:
+		"shotgun": return synth._build_shotgun()
+		"pistol": return synth._build_pistol()
+		"smg": return synth._build_smg()
+		"rifle": return synth._build_rifle()
+		"sniper": return synth._build_sniper()
+		"pump": return synth._build_pump()
+		"load", "reload_shell": return synth._build_load()
+		"empty": return synth._build_empty()
+		"hit": return synth._build_hit()
+		"break": return synth._build_break()
+		"step": return synth._build_step()
+		"switch": return synth._build_switch()
+		"crate_open": return synth._build_crate_open()
+		"pickup": return synth._build_pickup()
+		"ui": return synth._build_ui()
+		"ui_hover": return synth._build_ui_hover()
+		"ui_click": return synth._build_ui_click()
+		"ambient": return synth._build_ambient()
+		"turret_lock": return synth._build_turret_lock()
+		"turret_shot": return synth._build_turret_shot()
+		"charge_up": return synth._build_charge_up()
+		"ram": return synth._build_ram()
+		"stab": return synth._build_stab()
+		"fuse": return synth._build_fuse()
+		"fuse_long": return synth._build_fuse_long()
+		"boom": return synth._build_boom()
+		"metal_hit": return synth._build_metal_hit()
+		"hit_low": return synth._build_hit_low()
+		"hit_mid": return synth._build_hit_mid()
+		"hit_air": return synth._build_hit_air()
+		"enemy_death": return synth._build_enemy_death()
+		"enemy_alert": return synth._build_enemy_alert()
+		"shotgun_sup": return synth._build_shotgun_sup()
+		"pistol_sup": return synth._build_pistol_sup()
+		"smg_sup": return synth._build_smg_sup()
+		"rifle_sup": return synth._build_rifle_sup()
+		"sniper_sup": return synth._build_sniper_sup()
+		"fire_select": return synth._build_fire_select()
+		"weakspot_hit": return synth._build_weakspot_hit()
+		"armor_pierce": return synth._build_armor_pierce()
+		"dodge": return synth._build_dodge()
+		"reload_mag": return synth._build_reload_mag()
+		"reload_cylinder": return synth._build_reload_cylinder()
+		"bolt_cycle": return synth._build_bolt_cycle()
+		"ammo_switch": return synth._build_ammo_switch()
+		"ads_in": return synth._build_ads(true)
+		"ads_out": return synth._build_ads(false)
+		"player_armor_block": return synth._build_player_armor_block()
+		"player_armor_break": return synth._build_player_armor_break()
+		"player_hurt_hp": return synth._build_player_hurt_hp()
+		"ground_dust": return synth._build_ground_dust()
+		"mod_install": return synth._build_mod_install()
+		"upgrade": return synth._build_upgrade()
+		"pickup_rare": return synth._build_pickup_rare()
+		"pickup_ammo": return synth._build_pickup_ammo()
+		"wave_start": return synth._build_wave_cue(true)
+		"wave_clear": return synth._build_wave_cue(false)
+		"extract_success": return synth._build_extract_cue(true)
+		"mission_fail": return synth._build_extract_cue(false)
+		_: return null
+
 
 static func build_all() -> Dictionary:
 	var synth := SfxSynth.new()

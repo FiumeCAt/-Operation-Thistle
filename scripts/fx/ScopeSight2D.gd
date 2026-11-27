@@ -24,6 +24,8 @@ var _cam: Camera2D
 var _lens: TextureRect
 var _lens_mat: ShaderMaterial
 var _overlay: Control
+var _progress_cache: Node = null
+var _overlay_dirty := false
 var _fade := 0.0
 var _lens_scale := 1.0
 var _lens_visible := false
@@ -89,7 +91,9 @@ func _process(delta: float) -> void:
 	_reticle = String(rig.sight_reticle)
 	_magnification = maxf(float(rig.sight_magnification), 1.0)
 	_has_scope = bool(rig.has_scope_sight)
-	var progress := get_node_or_null("/root/Progress")
+	if _progress_cache == null:
+		_progress_cache = get_node_or_null("/root/Progress")
+	var progress := _progress_cache
 	if progress != null and progress.has_method("reticle_color"):
 		_reticle_color = progress.reticle_color()
 	if progress != null:
@@ -139,7 +143,12 @@ func _process(delta: float) -> void:
 			_lens_mat.set_shader_parameter("motion", Vector2.ZERO)
 			_lens_mat.set_shader_parameter("alpha", 0.0)
 			_lens_mat.set_shader_parameter("iris", 0.0)
-	_overlay.queue_redraw()
+	if _lens_visible or _mini_active:
+		_overlay.queue_redraw()
+		_overlay_dirty = true
+	elif _overlay_dirty:
+		_overlay.queue_redraw()
+		_overlay_dirty = false
 
 
 ## 高倍镜联动：玩家视角缩放越小，镜内实际放大按同比例降低。
@@ -207,6 +216,7 @@ func _hide_all() -> void:
 		_sub.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	if _overlay != null:
 		_overlay.queue_redraw()
+		_overlay_dirty = false
 
 
 static func _get_mask_shader() -> Shader:

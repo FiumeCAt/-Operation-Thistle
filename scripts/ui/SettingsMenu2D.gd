@@ -52,6 +52,8 @@ var _zoom_slider: HSlider
 var _zoom_value: Label
 var _back_button: Button
 var _debug_menu: DebugMenu2D
+var _radio_menu: RadioMenu2D
+var _bgm_mode_buttons: Dictionary = {}
 var _save_timer: Timer
 
 
@@ -171,6 +173,7 @@ func _build_left_column() -> Control:
 	_add_volume_row(rows, "主音量", "master")
 	_add_volume_row(rows, "音效", "sfx")
 	_add_volume_row(rows, "背景音乐", "music")
+	_add_radio_row(rows)
 
 	_sep(rows, PixelUI.AMBER)
 	PixelUI.section_bar(rows, "打击感", "IMPACT", PixelUI.AMBER)
@@ -891,6 +894,7 @@ func _load_values() -> void:
 	var ammo_exact := false
 	var show_fps := false
 	var pickup_merge := 3.0
+	var bgm_mode := "shuffle"
 	if p != null:
 		master = float(p.data.get("volume", 0.8))
 		sfx = float(p.data.get("sfx_volume", 0.8))
@@ -918,6 +922,7 @@ func _load_values() -> void:
 		ammo_exact = bool(p.ammo_exact_rounds()) if p.has_method("ammo_exact_rounds") else false
 		show_fps = bool(p.show_fps()) if p.has_method("show_fps") else false
 		pickup_merge = float(p.pickup_merge_window()) if p.has_method("pickup_merge_window") else 3.0
+		bgm_mode = String(p.bgm_play_mode()) if p.has_method("bgm_play_mode") else "shuffle"
 	_set_slider("master", master * 100.0)
 	_set_slider("sfx", sfx * 100.0)
 	_set_slider("music", music * 100.0)
@@ -946,6 +951,7 @@ func _load_values() -> void:
 	_refresh_scope_blur_buttons(scope_blur)
 	_refresh_scope_distortion_buttons(scope_distortion)
 	_refresh_self_light_buttons(self_light)
+	_refresh_bgm_mode_buttons(bgm_mode)
 	_refresh_hitstop_buttons(hitstop)
 	_refresh_sample_buttons(sample_impacts)
 	_refresh_hit_fx_buttons(hit_fx_level)
@@ -1126,6 +1132,57 @@ func _refresh_self_light_buttons(enabled: bool) -> void:
 	_refresh_toggle_buttons(_self_light_buttons, enabled)
 
 
+func _add_radio_row(parent: Node) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	parent.add_child(row)
+	var lbl := PixelUI.label(row, "战术电台", PixelUI.FS_BODY, PixelUI.TEXT)
+	lbl.custom_minimum_size.x = 112
+	for item in [["shuffle", "随机"], ["sequential", "顺序"], ["single", "单曲"]]:
+		var btn := PixelUI.button(String(item[1]), 30)
+		btn.add_theme_font_size_override("font_size", 15)
+		btn.custom_minimum_size.x = 76
+		btn.pressed.connect(_set_bgm_play_mode.bind(String(item[0])))
+		row.add_child(btn)
+		_bgm_mode_buttons[String(item[0])] = btn
+	var open_btn := PixelUI.button("打开电台", 30)
+	open_btn.add_theme_font_size_override("font_size", 15)
+	open_btn.custom_minimum_size.x = 96
+	open_btn.pressed.connect(_open_radio)
+	row.add_child(open_btn)
+
+
+func _set_bgm_play_mode(mode: String) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_bgm_play_mode"):
+		p.set_bgm_play_mode(mode)
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx != null and sfx.has_method("set_bgm_play_mode"):
+		sfx.set_bgm_play_mode(mode)
+	_refresh_bgm_mode_buttons(mode)
+
+
+func _refresh_bgm_mode_buttons(mode: String) -> void:
+	var names := {"shuffle": "随机", "sequential": "顺序", "single": "单曲"}
+	for key in _bgm_mode_buttons:
+		var btn: Button = _bgm_mode_buttons[key]
+		var active := String(key) == mode
+		btn.text = ("▶ " if active else "  ") + String(names.get(String(key), "随机"))
+		btn.add_theme_color_override("font_color", PixelUI.CYAN if active else PixelUI.TEXT)
+
+
+func _open_radio() -> void:
+	if _radio_menu == null:
+		_radio_menu = RadioMenu2D.new()
+		_radio_menu.name = "RadioMenu2D"
+		_radio_menu.closed.connect(func() -> void:
+			var p := get_node_or_null("/root/Progress")
+			if p != null and p.has_method("bgm_play_mode"):
+				_refresh_bgm_mode_buttons(String(p.bgm_play_mode())))
+		add_child(_radio_menu)
+	_radio_menu.open()
+
+
 func _refresh_toggle_buttons(buttons: Dictionary, enabled: bool) -> void:
 	for key in buttons:
 		var button: Button = buttons[key]
@@ -1177,6 +1234,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not visible:
 		return
 	if _debug_menu != null and _debug_menu.visible:
+		return
+	if _radio_menu != null and _radio_menu.visible:
 		return
 	if event.is_action_pressed("ui_cancel"):
 		close_menu()

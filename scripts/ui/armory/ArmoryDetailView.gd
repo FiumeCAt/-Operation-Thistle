@@ -331,6 +331,7 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 		_set_plain_stat("弹丸数", "-")
 		_set_plain_stat("穿甲", "-")
 		_set_plain_stat("伤害", "-")
+		_set_plain_stat("弱点加成", "-")
 		_set_plain_stat("每秒 DPS", "-")
 	else:
 		var ammo_text: String = ammo.display_name
@@ -352,6 +353,12 @@ func refresh(selected: StringName, primary: StringName, secondary: StringName,
 			"%d × %.1f = %.1f" % [ammo.pellets, damage, float(stats["damage"])],
 			"%d × %.1f = %.1f" % [ammo.pellets, base_damage, base_damage * pellets],
 			(damage - base_damage) * pellets, true, 1)
+		var ws_mul := float(stats.get("weapon_weakspot_mul", base.weakspot_mul))
+		var ws_pct := int(round((ws_mul - 1.0) * 100.0))
+		var ws_str := ("%+d%%" % ws_pct) if ws_pct != 0 else "0%"
+		_set_plain_stat("弱点加成", ws_str)
+		detail_values["弱点加成"].add_theme_color_override("font_color",
+			PixelUI.GOLD if ws_pct > 0 else (PixelUI.DANGER if ws_pct < 0 else PixelUI.DIM))
 		var base_dps: float = float(stats["base_dps"])
 		var actual_dps: float = float(stats["dps"])
 		set_stat("每秒 DPS", "%.0f /s" % actual_dps, "%.0f /s" % base_dps,

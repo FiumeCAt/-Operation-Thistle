@@ -122,13 +122,15 @@ func _run() -> void:
 			break
 	_check(saw_charge, "哨兵一型发现玩家后进入冲锋")
 
-	# 自爆伤害敌人（直接触发，避免时序抖动）
+	# 自爆伤害敌人（在已清理的开阔大厅内测试，避免随机落入墙体被实墙阻隔）
 	var victim := Enemy2D.new()
-	victim.setup(&"sentry_type1", arena + Vector2(0, 900), 1)
+	victim.setup(&"sentry_type1", arena + Vector2(160, 120), 1)
 	_main.sort_layer.add_child(victim)
+	victim.set_physics_process(false)
 	var bomber := Enemy2D.new()
-	bomber.setup(&"goliath", arena + Vector2(40, 900), 1)
+	bomber.setup(&"goliath", arena + Vector2(200, 120), 1)
 	_main.sort_layer.add_child(bomber)
+	bomber.set_physics_process(false)
 	await process_frame
 	var before := victim.hp
 	bomber._explode_damage()
@@ -138,10 +140,11 @@ func _run() -> void:
 
 	# 自爆优先于死亡：普通致命伤害（< 200% 血量上限）把血量压到 1 点并点燃引信，单位仍然存活。
 	var bystander := Enemy2D.new()
-	bystander.setup(&"sentry_type1", arena + Vector2(0, 1200), 1)
+	bystander.setup(&"sentry_type1", arena + Vector2(160, -120), 1)
 	_main.sort_layer.add_child(bystander)
+	bystander.set_physics_process(false)
 	var killed := Enemy2D.new()
-	killed.setup(&"goliath", arena + Vector2(40, 1200), 1)
+	killed.setup(&"goliath", arena + Vector2(200, -120), 1)
 	_main.sort_layer.add_child(killed)
 	await process_frame
 	var bystander_hp := bystander.hp
@@ -169,11 +172,13 @@ func _run() -> void:
 
 	# 坐地前承受 >= 200% 血量上限伤害：不坐地不倒计时，直接瞬间自爆。
 	var instant_victim := Enemy2D.new()
-	instant_victim.setup(&"sentry_type1", arena + Vector2(0, 1500), 1)
+	instant_victim.setup(&"sentry_type1", arena + Vector2(-160, 120), 1)
 	_main.sort_layer.add_child(instant_victim)
+	instant_victim.set_physics_process(false)
 	var instant_bomber := Enemy2D.new()
-	instant_bomber.setup(&"goliath", arena + Vector2(40, 1500), 1)
+	instant_bomber.setup(&"goliath", arena + Vector2(-200, 120), 1)
 	_main.sort_layer.add_child(instant_bomber)
+	instant_bomber.set_physics_process(false)
 	await process_frame
 	var instant_victim_hp := instant_victim.hp
 	instant_bomber.take_damage(instant_bomber.hp_max * 2.0, instant_bomber.def.armor)

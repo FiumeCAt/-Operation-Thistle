@@ -506,7 +506,7 @@ func _build_viewport_and_rig() -> void:
 	viewport.transparent_bg = true
 	viewport.msaa_2d = Viewport.MSAA_DISABLED
 	viewport.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
-	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_PARENT_VISIBLE
 	viewport.disable_3d = true
 	add_child(viewport)
 

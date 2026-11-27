@@ -1,4 +1,6 @@
 extends Node
+
+signal bgm_track_changed(track_info: Dictionary)
 ## 全局音效与状态化 BGM 协调外壳（Autoload `/root/Sfx`，Phase 6B 重构）：
 ## - 100% 保留既有对外 API 与字段契约（play_2d / play_hit / play_wall_impact / play_player_hurt /
 ##   play_weakspot_hit / play_ground_impact / play_dodge / start_ambient 等）；
@@ -72,20 +74,43 @@ var _last_hover_ms := 0
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	BUS_SERVICE.ensure_layout()
-	streams = SYNTH.build_all()
-	_ext_streams = SYNTH.build_extended(streams)
+	# 按需懒合成：仅预登记键名（0.01ms，保持 streams.has(kind) 兼容），首次回退播放时才合成单条波形，消除冷启动 560ms 卡顿。
+	for k in SYNTH.BASE_KEYS:
+		streams[k] = null
+	for k in SYNTH.EXT_KEYS:
+		_ext_streams[k] = null
 	_bgm = BGM_PLAYER.new()
 	_bgm.name = "BgmPlayer"
 	add_child(_bgm)
-	_bgm.setup(_samples, streams.get("ambient"))
+	_bgm.setup(_samples, null)
+	_bgm.track_changed.connect(func(info: Dictionary) -> void: bgm_track_changed.emit(info))
 	call_deferred("apply_saved_volumes")
 
 
-func get_stream(kind: String) -> AudioStream:
+func _ensure_synth_stream(kind: String) -> AudioStream:
 	if streams.has(kind):
-		return streams[kind]
+		var cached = streams[kind]
+		if cached is AudioStream:
+			return cached as AudioStream
+		var built := SYNTH.build_one(kind)
+		if built != null:
+			streams[kind] = built
+		return built
 	if _ext_streams.has(kind):
-		return _ext_streams[kind]
+		var ext_cached = _ext_streams[kind]
+		if ext_cached is AudioStream:
+			return ext_cached as AudioStream
+		var ext_built := SYNTH.build_one(kind)
+		if ext_built != null:
+			_ext_streams[kind] = ext_built
+		return ext_built
+	return null
+
+
+func get_stream(kind: String) -> AudioStream:
+	var syn := _ensure_synth_stream(kind)
+	if syn != null:
+		return syn
 	return _samples.pick_sfx(kind)
 
 
@@ -102,8 +127,14 @@ func apply_music_volume(music: float) -> void:
 
 
 func apply_saved_volumes() -> void:
-	BUS_SERVICE.apply_saved_volumes(get_node_or_null("/root/Progress"))
+	var p := get_node_or_null("/root/Progress")
+	BUS_SERVICE.apply_saved_volumes(p)
 	if _bgm != null:
+		if p != null:
+			if p.has_method("bgm_play_mode"):
+				_bgm.set_play_mode(String(p.bgm_play_mode()))
+			if p.has_method("bgm_pinned_track"):
+				_bgm.set_pinned_track(String(p.bgm_pinned_track()))
 		_bgm.on_volume_changed()
 
 
@@ -125,11 +156,7 @@ func _resolve_sfx_stream(kind: String) -> AudioStream:
 	var ext_sample := _samples.pick_sfx(kind)
 	if ext_sample != null:
 		return ext_sample
-	if streams.has(kind):
-		return streams[kind]
-	if _ext_streams.has(kind):
-		return _ext_streams[kind]
-	return null
+	return _ensure_synth_stream(kind)
 
 
 ## 解析 18 把武器的开火逻辑 ID（含一体消音武器 VSS 与加装消音器分流）。
@@ -152,7 +179,9 @@ func play_weapon_fire(weapon_id: StringName, fallback_sfx_kind := "rifle",
 	var pitch := randf_range(0.97, 1.03)
 	if stream == null:
 		var fb_key := fallback_sfx_kind + "_sup" if is_sup else fallback_sfx_kind
-		stream = streams.get(fb_key, streams.get(fallback_sfx_kind))
+		stream = _ensure_synth_stream(fb_key)
+		if stream == null:
+			stream = _ensure_synth_stream(fallback_sfx_kind)
 	if stream == null:
 		return false
 	var caliber_trim := float(WEAPON_GAIN_DB.get(weapon_id, 0.0))
@@ -237,7 +266,8 @@ func play_stream(stream: AudioStream, volume_db := 0.0, pitch := 1.0, bus: Strin
 	_active_voices.append(p)
 	p.play()
 	var pid := p.get_instance_id()
-	var t := get_tree().create_timer(maxf(stream.get_length(), 0.05) + 0.20)
+	# ignore_time_scale=true：防止顿帧（Engine.time_scale=0.12）时清理定时器变慢 8 倍导致已播完声道占坑驱逐活音。
+	var t := get_tree().create_timer(maxf(stream.get_length(), 0.05) + 0.20, true, false, true)
 	t.timeout.connect(func() -> void:
 		var inst := instance_from_id(pid)
 		if inst is AudioStreamPlayer:
@@ -367,7 +397,7 @@ func _play_sample_hit(material: String, weight: float, volume_db: float, armor_s
 		return true
 	play_stream(sample, volume_db + 0.5 + (w - 1.0) * 2.0 + db_jit, randf_range(0.91, 1.09), IMPACTS_BUS)
 	# 仅作极轻的低频重量托底（-7.5 dB），避免像之前 +1.0 dB 盖过真实命中纹理导致发闷。
-	play_stream(streams.get("hit_low"), volume_db - 7.5 + (w - 1.0) * 2.5, randf_range(0.92, 1.04), IMPACTS_BUS)
+	play_stream(_ensure_synth_stream("hit_low"), volume_db - 7.5 + (w - 1.0) * 2.5, randf_range(0.92, 1.04), IMPACTS_BUS)
 	if armor_state == "pierce":
 		play_2d("armor_pierce", volume_db - 1.5, randf_range(0.94, 1.06))
 	elif armor_state == "ricochet" or (material == "metal" and randf() < 0.30):
@@ -380,18 +410,18 @@ func _play_sample_hit(material: String, weight: float, volume_db: float, armor_s
 
 func _play_hit_procedural(material: String, weight: float, volume_db: float, armor_state := "") -> void:
 	var w := clampf(weight, 0.6, 1.8)
-	play_stream(streams.get("hit_low"), volume_db + 2.0 + (w - 1.0) * 3.0, randf_range(0.92, 1.04), IMPACTS_BUS)
+	play_stream(_ensure_synth_stream("hit_low"), volume_db + 2.0 + (w - 1.0) * 3.0, randf_range(0.92, 1.04), IMPACTS_BUS)
 	if material == "metal":
-		play_stream(streams.get("metal_hit"), volume_db + 1.0, randf_range(0.92, 1.12), IMPACTS_BUS)
-		play_stream(streams.get("hit_air"), volume_db + 6.0, randf_range(1.02, 1.22), IMPACTS_BUS)
+		play_stream(_ensure_synth_stream("metal_hit"), volume_db + 1.0, randf_range(0.92, 1.12), IMPACTS_BUS)
+		play_stream(_ensure_synth_stream("hit_air"), volume_db + 6.0, randf_range(1.02, 1.22), IMPACTS_BUS)
 	else:
-		play_stream(streams.get("hit_mid"), volume_db + 1.0, randf_range(0.82, 0.96), IMPACTS_BUS)
-		play_stream(streams.get("hit_air"), volume_db + 8.0, randf_range(0.9, 1.05), IMPACTS_BUS)
+		play_stream(_ensure_synth_stream("hit_mid"), volume_db + 1.0, randf_range(0.82, 0.96), IMPACTS_BUS)
+		play_stream(_ensure_synth_stream("hit_air"), volume_db + 8.0, randf_range(0.9, 1.05), IMPACTS_BUS)
 	if armor_state == "pierce":
 		play_2d("armor_pierce", volume_db - 2.0, randf_range(0.96, 1.05))
 
 
-## ---- 状态化双轨 Crossfade BGM 控制 ----
+## ---- 状态化双轨 Crossfade BGM 与战术电台控制 ----
 
 func set_bgm_state(state: String, fade_sec := 1.2) -> void:
 	if _bgm != null:
@@ -399,8 +429,64 @@ func set_bgm_state(state: String, fade_sec := 1.2) -> void:
 		_ambient_player = _bgm.active_player()
 
 
+func set_bgm_context(context: Dictionary, fade_sec := 1.2, force_reselect := false) -> void:
+	if _bgm != null:
+		_bgm.set_context(context, fade_sec, force_reselect)
+		_ambient_player = _bgm.active_player()
+
+
 func bgm_state() -> String:
 	return _bgm.current_state() if _bgm != null else "none"
+
+
+func bgm_play_mode() -> String:
+	return _bgm.play_mode if _bgm != null else "shuffle"
+
+
+func set_bgm_play_mode(mode: String) -> void:
+	if _bgm != null:
+		_bgm.set_play_mode(mode)
+
+
+func bgm_pinned_track() -> String:
+	return _bgm.pinned_track_id if _bgm != null else ""
+
+
+func set_bgm_pinned_track(track_id: String) -> void:
+	if _bgm != null:
+		_bgm.set_pinned_track(track_id)
+
+
+func bgm_current_track() -> Dictionary:
+	return _bgm.get_current_track() if _bgm != null else {}
+
+
+func bgm_current_title() -> String:
+	return _bgm.get_current_title() if _bgm != null else ""
+
+
+func bgm_tracks(pool := "") -> Array[Dictionary]:
+	return _bgm.get_tracks(pool) if _bgm != null else []
+
+
+func bgm_refresh_catalog() -> Array[Dictionary]:
+	return _bgm.refresh_catalog() if _bgm != null else []
+
+
+func bgm_next_track(fade_sec := 0.45) -> Dictionary:
+	return _bgm.next_track(fade_sec) if _bgm != null else {}
+
+
+func bgm_prev_track(fade_sec := 0.45) -> Dictionary:
+	return _bgm.prev_track(fade_sec) if _bgm != null else {}
+
+
+func bgm_play_track(track_id: String, fade_sec := 0.45) -> bool:
+	return _bgm.play_track_by_id(track_id, fade_sec) if _bgm != null else false
+
+
+func bgm_user_dir() -> String:
+	return _bgm.catalog.ensure_user_dir() if _bgm != null else ProjectSettings.globalize_path("user://bgm/")
 
 
 func stop_bgm(fade_sec := 0.8) -> void:
@@ -417,7 +503,7 @@ func start_ambient() -> void:
 	if _ambient_player != null:
 		return
 	_ambient_player = AudioStreamPlayer.new()
-	_ambient_player.stream = streams["ambient"]
+	_ambient_player.stream = _ensure_synth_stream("ambient")
 	_ambient_player.volume_db = -24.0
 	_ambient_player.bus = MUSIC_BUS
 	add_child(_ambient_player)

@@ -28,6 +28,9 @@ var alert_t := 0.0
 
 var anim_override := ""
 var anim_override_t := 0.0
+var _ws_pos_initialized := false
+var _last_ws_facing_left := false
+var _last_bar_ratio := -1.0
 var bob := 0.0
 var hit_flash := 0.0
 var hit_flash_weakspot := false
@@ -215,7 +218,10 @@ func update_visual(host: CharacterBody2D, def: EnemyDef, player: Node2D,
 	anim_override_t = maxf(anim_override_t - delta, 0.0)
 	var facing_left: bool = player != null and player.global_position.x < host.global_position.x
 	if weakspot_area != null and is_instance_valid(weakspot_area):
-		weakspot_area.position = def.weakspot_local_offset(sprite_h, facing_left)
+		if not _ws_pos_initialized or (def.weakspot_flip_x and facing_left != _last_ws_facing_left):
+			weakspot_area.position = def.weakspot_local_offset(sprite_h, facing_left)
+			_ws_pos_initialized = true
+			_last_ws_facing_left = facing_left
 	if anim != null:
 		anim.flip_h = facing_left
 		if explode_t >= 0.0:
@@ -257,12 +263,14 @@ func update_visual(host: CharacterBody2D, def: EnemyDef, player: Node2D,
 	bar_fill.visible = show_bar
 	if show_bar:
 		var ratio := clampf(hp / hp_max, 0.0, 1.0)
-		var left := -22.0
-		var right := left + 44.0 * ratio
-		bar_fill.polygon = PackedVector2Array([
-			Vector2(left, -sprite_h - 11), Vector2(right, -sprite_h - 11),
-			Vector2(right, -sprite_h - 7), Vector2(left, -sprite_h - 7),
-		])
+		if absf(ratio - _last_bar_ratio) > 0.002:
+			_last_bar_ratio = ratio
+			var left := -22.0
+			var right := left + 44.0 * ratio
+			bar_fill.polygon = PackedVector2Array([
+				Vector2(left, -sprite_h - 11), Vector2(right, -sprite_h - 11),
+				Vector2(right, -sprite_h - 7), Vector2(left, -sprite_h - 7),
+			])
 
 
 func _set_anim(anim_name: String) -> void:

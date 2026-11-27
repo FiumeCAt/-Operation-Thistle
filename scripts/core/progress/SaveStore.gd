@@ -27,12 +27,13 @@ const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
 const MUZZLE_FLASH_MODES := ["full", "partial", "off"]
 const HEARING_DISPLAY_MODES := ["both", "ripple", "ring"]
 const CHARACTER_SKIN_IDS := ["doll_v2", "doll_thistle", "mannequin"]
+const BGM_PLAY_MODES := ["shuffle", "sequential", "single"]
 const EXPORT_FORMAT := "operation_thistle_save"
 const EXPORT_VERSION := 1
 ## 本地偏好设置键集合：重置游戏进度（默认保留设置）或导入存档（可选不覆盖本地偏好）时保留这些键。
 const PREFERENCE_KEYS := [
 	"ammo_display", "fire_rate_display", "armor_display",
-	"volume", "sfx_volume", "music_volume",
+	"volume", "sfx_volume", "music_volume", "bgm_play_mode", "bgm_pinned_track",
 	"screen_shake", "bullet_trail_enabled", "hitstop_enabled", "shake_scale",
 	"sample_impacts", "hit_fx_level", "muzzle_flash_mode",
 	"hearing_display_mode",
@@ -92,6 +93,8 @@ static func defaults() -> Dictionary:
 		"volume": 0.8,
 		"sfx_volume": 0.8,
 		"music_volume": 0.8,
+		"bgm_play_mode": "shuffle",
+		"bgm_pinned_track": "",
 		"screen_shake": true,
 		"bullet_trail_enabled": true,
 		"hitstop_enabled": false,

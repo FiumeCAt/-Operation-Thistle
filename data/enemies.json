@@ -48,8 +48,8 @@
 		"flip_x": false,
 		"radius": 11.0,
 		"tolerance": 1.18,
-		"armor_mul": 0.4,
-		"damage_mul": 1.8
+		"armor_mul": 0.5,
+		"damage_mul": 2.0
 	  }
 	},
 	"rusher": {
@@ -80,8 +80,8 @@
 		"flip_x": false,
 		"radius": 11.0,
 		"tolerance": 1.18,
-		"armor_mul": 0.4,
-		"damage_mul": 1.8
+		"armor_mul": 0.5,
+		"damage_mul": 2.0
 	  }
 	},
 	"heavy": {
@@ -114,8 +114,8 @@
 		"flip_x": false,
 		"radius": 12.0,
 		"tolerance": 1.18,
-		"armor_mul": 0.45,
-		"damage_mul": 1.7
+		"armor_mul": 0.5,
+		"damage_mul": 2.0
 	  }
 	},
 	"hunter": {
@@ -149,7 +149,7 @@
 		"radius": 11.0,
 		"tolerance": 1.18,
 		"armor_mul": 0.5,
-		"damage_mul": 1.65
+		"damage_mul": 1.5
 	  }
 	},
 	"mobile_turret": {
@@ -188,7 +188,7 @@
 		"radius": 13.0,
 		"tolerance": 1.18,
 		"armor_mul": 0.5,
-		"damage_mul": 1.65
+		"damage_mul": 1.5
 	  }
 	},
 	"sentry_type1": {
@@ -226,7 +226,7 @@
 		"radius": 12.0,
 		"tolerance": 1.18,
 		"armor_mul": 0.5,
-		"damage_mul": 1.6
+		"damage_mul": 1.5
 	  }
 	},
 	"hunter_type1": {
@@ -261,7 +261,7 @@
 		"radius": 15.0,
 		"tolerance": 1.18,
 		"armor_mul": 0.5,
-		"damage_mul": 1.65
+		"damage_mul": 1.5
 	  }
 	},
 	"goliath": {
@@ -299,8 +299,8 @@
 		"flip_x": false,
 		"radius": 12.0,
 		"tolerance": 1.18,
-		"armor_mul": 0.45,
-		"damage_mul": 1.75
+		"armor_mul": 0.5,
+		"damage_mul": 1.5
 	  }
 	}
   },
@@ -318,7 +318,7 @@
 		"radius": 12.0,
 		"tolerance": 1.18,
 		"armor_mul": 0.5,
-		"damage_mul": 1.6
+		"damage_mul": 1.5
 	  }
 	},
 	"human": {
@@ -333,8 +333,8 @@
 		"flip_x": false,
 		"radius": 11.0,
 		"tolerance": 1.18,
-		"armor_mul": 0.4,
-		"damage_mul": 1.8
+		"armor_mul": 0.5,
+		"damage_mul": 2.0
 	  }
 	},
 	"mutant": {
@@ -349,8 +349,8 @@
 		"flip_x": false,
 		"radius": 13.0,
 		"tolerance": 1.18,
-		"armor_mul": 0.0,
-		"damage_mul": 1.75
+		"armor_mul": 0.5,
+		"damage_mul": 2.0
 	  }
 	}
   }

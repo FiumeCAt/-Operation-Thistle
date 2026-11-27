@@ -47,7 +47,8 @@ func on_state_entered(host, new_state: String, old_state: String) -> void:
 
 func clear_laser(host) -> void:
 	laser_on = false
-	turret_lock_t = 0.0
+	# 丢视时必须重置完整 0.75s 激光锁定读条，严禁清零导致重新看见瞬间零预警瞬射。
+	turret_lock_t = 0.75
 	turret_locked = false
 	host.queue_redraw()
 
@@ -78,11 +79,12 @@ func _do_standard(host, to_target: Vector2, dist: float, can_see: bool, delta: f
 		try_attack(host, dist)
 	else:
 		var desired := range_px * 0.75
-		# 浪潮永久追踪：看不见玩家时不保持交战距离，持续朝玩家方向压过去。
-		if host.always_hunt and not can_see:
+		# 看不见玩家时一律主动绕障压进至最后已知位置，不再隔墙原地左右横移 7 秒。
+		if not can_see:
 			desired = 0.0
-		if dist > desired * 1.2:
-			host._move(host._chase_dir(host.player.global_position), speed_px, delta)
+		var chase_target: Vector2 = host.player.global_position if (can_see or host.always_hunt) else host._last_known
+		if dist > desired * 1.2 or not can_see:
+			host._move(host._chase_dir(chase_target), speed_px, delta)
 		elif dist < desired * 0.65:
 			host._move(-dir, speed_px, delta)
 		elif def.strafe:
@@ -93,7 +95,8 @@ func _do_standard(host, to_target: Vector2, dist: float, can_see: bool, delta: f
 			try_attack(host, dist)
 
 	_update_sight_memory(host, can_see, delta)
-	if host.hp <= host.hp_max * 0.25 and def.flees:
+	if host.hp <= host.hp_max * 0.25 and def.flees and not host._has_fled:
+		host._has_fled = true
 		host._enter("flee")
 
 
@@ -123,7 +126,14 @@ func _do_charger(host, to_target: Vector2, dist: float, can_see: bool, delta: fl
 		host.velocity = charge_dir * def.charge_speed * TILE
 		host.move_and_slide()
 		host._play_anim_override("attack", 0.2)
-		if dist < range_px * 1.5:
+		# 撞到实心墙体立即中止冲锋，避免顶墙隔墙造成冲撞伤害。
+		for ci in host.get_slide_collision_count():
+			var col = host.get_slide_collision(ci).get_collider()
+			if col is CollisionObject2D and (col.collision_layer & 1) != 0:
+				charge_t = 0.0
+				charge_cd = def.charge_cooldown
+				return
+		if dist < range_px * 1.25 and host._line_of_sight():
 			charge_t = 0.0
 			charge_cd = def.charge_cooldown
 			attack_cd = def.cooldown
@@ -166,17 +176,26 @@ func _do_suicide(host, _to_target: Vector2, dist: float, can_see: bool, delta: f
 	_update_sight_memory(host, can_see, delta)
 
 
-## 移动哨卫炮：发现后先用红色激光锁定，锁定和开火期间原地不动；只有丢失目标才恢复搜索/巡逻。
+## 移动哨卫炮：在射程外或浪潮丢视时主动推进；进入射程后原地红激光锁定 0.75s 并双发开火。
 func _do_turret(host, _to_target: Vector2, dist: float, can_see: bool, delta: float) -> void:
-	host.velocity = Vector2.ZERO
 	if not can_see:
 		clear_laser(host)
+		if host.always_hunt:
+			host._move(host._chase_dir(host.player.global_position), host.def.speed * TILE, delta)
+			return
+		host.velocity = Vector2.ZERO
 		host._lost_t += delta
-		if host._lost_t > LOST_SIGHT and not host.always_hunt:
+		if host._lost_t > LOST_SIGHT:
 			host._enter("search")
 		return
 	host._lost_t = 0.0
 	host._last_known = host.player.global_position
+	var max_fire_dist: float = host.def.attack_range * TILE * 1.18
+	if dist > max_fire_dist:
+		clear_laser(host)
+		host._move(host._chase_dir(host.player.global_position), host.def.speed * TILE, delta)
+		return
+	host.velocity = Vector2.ZERO
 	if not turret_locked:
 		turret_lock_t = maxf(turret_lock_t - delta, 0.0)
 		laser_on = true
@@ -234,6 +253,17 @@ func try_attack(host, dist: float) -> void:
 				fire_round(host)
 
 
+static func _wall_ray_clear(host, from: Vector2, to: Vector2) -> bool:
+	if host == null or not host.is_inside_tree():
+		return true
+	var w2d: World2D = host.get_world_2d()
+	if w2d == null or w2d.direct_space_state == null:
+		return true
+	var q := PhysicsRayQueryParameters2D.create(from, to, 1)
+	q.hit_from_inside = true
+	return w2d.direct_space_state.intersect_ray(q).is_empty()
+
+
 ## 远程攻击表现：枪口闪光后发射可见子弹，命中时在玩家身上溅火花。
 func fire_round(host) -> void:
 	if host.player == null or not is_instance_valid(host.player):
@@ -241,7 +271,13 @@ func fire_round(host) -> void:
 	if host._anim != null:
 		host._sfx("turret_shot", -6.0, randf_range(0.93, 1.03))
 	var muzzle: Vector2 = host.global_position + Vector2(0, -host._sprite_h * 0.55)
+	var foot: Vector2 = host.global_position + Vector2(0, -8.0)
+	if not _wall_ray_clear(host, foot, muzzle):
+		muzzle = foot
 	var target: Vector2 = host.player.global_position + Vector2(0, -46)
+	var player_foot: Vector2 = host.player.global_position + Vector2(0, -8.0)
+	if not _wall_ray_clear(host, player_foot, target):
+		target = player_foot
 	var dir := (target - muzzle).normalized()
 	var parent: Node = host.get_parent()
 	if parent != null:
@@ -378,18 +414,21 @@ func explode_damage(host) -> void:
 	var shake_amt := calc_explosion_shake(dist_to_player, radius_px)
 	if shake_amt > 0.01:
 		host._shake(shake_amt)
+	var blast_origin: Vector2 = host.global_position + Vector2(0, -8.0)
 	if host.player != null and is_instance_valid(host.player) \
-			and host.player.global_position.distance_to(host.global_position) <= radius_px:
+			and host.player.global_position.distance_to(host.global_position) <= radius_px \
+			and _wall_ray_clear(host, blast_origin, host.player.global_position + Vector2(0, -8.0)):
 		host.player.take_damage(dmg, 45.0)
 	var friendly_mul: float = host.friendly_explosion_mul()
 	# 竞技场内友军爆炸按目标护甲等穿结算，不做余穿放大也不减伤，确保 50% 就是实打实的半伤，
-	# 满血歌利亚不会因为一次连锁立刻被带走。
+	# 满血歌利亚不会因为一次连锁立刻被带走；实心墙体/关门正常阻隔爆炸冲击波。
 	for other in host.get_tree().get_nodes_in_group("enemies"):
 		if other == host or not other.has_method("take_damage") or other.get("def") == null:
 			continue
 		if float(other.hp) <= 0.0:
 			continue
-		if other.global_position.distance_to(host.global_position) <= radius_px:
+		if other.global_position.distance_to(host.global_position) <= radius_px \
+				and _wall_ray_clear(host, blast_origin, other.global_position + Vector2(0, -8.0)):
 			var other_armor: float = other.def.armor
 			var friendly_ap: float = other_armor if friendly_mul <= 0.5 else 60.0
 			other.take_damage(dmg * friendly_mul, friendly_ap)

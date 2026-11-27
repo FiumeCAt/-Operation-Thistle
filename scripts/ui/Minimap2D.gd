@@ -194,6 +194,8 @@ func _rebuild_clip_geometry(s: Vector2) -> void:
 
 
 func _process(delta: float) -> void:
+	if not is_visible_in_tree():
+		return
 	_tick += delta
 	if _tick >= 0.08:
 		_tick = 0.0

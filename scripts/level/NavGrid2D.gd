@@ -115,8 +115,16 @@ func smooth_path(points: PackedVector2Array) -> PackedVector2Array:
 
 
 func line_clear(a: Vector2, b: Vector2) -> bool:
-	var steps := maxi(1, int(ceil(a.distance_to(b) / 20.0)))
+	var dist := a.distance_to(b)
+	if dist < 1.0:
+		return is_walkable(a)
+	var perp := ((b - a) / dist).orthogonal() * 14.0
+	var steps := maxi(1, int(ceil(dist / 20.0)))
 	for i in steps + 1:
-		if not is_walkable(a.lerp(b, float(i) / float(steps))):
+		var pt := a.lerp(b, float(i) / float(steps))
+		if not is_walkable(pt):
 			return false
+		if i > 0 and i < steps:
+			if not is_walkable(pt + perp) or not is_walkable(pt - perp):
+				return false
 	return true

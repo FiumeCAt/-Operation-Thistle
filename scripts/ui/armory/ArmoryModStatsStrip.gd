@@ -20,7 +20,7 @@ const STAT_DEFS: Array = [
 	["mag", "弹匣"], ["rate", "射速"], ["load", "换弹"], ["range", "射程"],
 	["speed", "弹速"], ["spread", "散布"], ["sound", "枪声"], ["damage", "伤害"],
 	["dps", "每秒DPS"], ["ap", "穿甲"], ["mode", "模式"], ["slots", "槽位"],
-	["recoil", "后坐"], ["vision", "视野"], ["ads", "瞄准"],
+	["recoil", "后坐"], ["vision", "视野"], ["ads", "瞄准"], ["weakspot", "弱点"],
 ]
 
 var stats_panel: PanelContainer
@@ -244,6 +244,14 @@ func refresh_stats(weapon_id: StringName, current_installed: Dictionary,
 		(float(pre["vision"]) - float(cur["vision"])) * 100.0, true, 0)
 	_set_stat("ads", "%.2fs" % float(pre["ads_time"]),
 		float(pre["ads_time"]) - float(cur["ads_time"]), false, 2)
+	var pre_ws_pct := int(round((float(pre.get("weapon_weakspot_mul", 1.0)) - 1.0) * 100.0))
+	var cur_ws_pct := int(round((float(cur.get("weapon_weakspot_mul", 1.0)) - 1.0) * 100.0))
+	var ws_text := ("%+d%%" % pre_ws_pct) if pre_ws_pct != 0 else "0%"
+	_set_stat("weakspot", ws_text, float(pre_ws_pct - cur_ws_pct), true, 0)
+	var ws_lbl: Label = stat_values.get("weakspot")
+	if ws_lbl != null:
+		ws_lbl.add_theme_color_override("font_color",
+			PixelUI.GOLD if pre_ws_pct > 0 else (PixelUI.DANGER if pre_ws_pct < 0 else PixelUI.DIM))
 
 
 func _set_stat(key: String, text: String, delta: float,

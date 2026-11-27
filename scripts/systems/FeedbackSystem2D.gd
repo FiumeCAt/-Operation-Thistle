@@ -31,6 +31,7 @@ var hurt_flash_rect: ColorRect
 var muzzle_fx: PixelFx2D
 var muzzle_flash: Node2D
 var _muzzle_stop_ms := 0
+var _hurt_tween: Tween = null
 
 var _owner: Node2D
 var _fx_layer: Node2D
@@ -171,8 +172,10 @@ func flash_hurt(hp_damage: int) -> void:
 	var alpha := calc_hurt_flash_alpha(hp_damage)
 	var fc := _cfg_color(&"hurt_flash_color", Color(0.72, 0.04, 0.04, 1.0))
 	hurt_flash_rect.color = Color(fc.r, fc.g, fc.b, alpha)
-	var tw := hurt_flash_rect.create_tween()
-	tw.tween_property(hurt_flash_rect, "color:a", 0.0, maxf(_cfg_float(&"hurt_flash_fade_sec", 0.34), 0.05))
+	if _hurt_tween != null and is_instance_valid(_hurt_tween):
+		_hurt_tween.kill()
+	_hurt_tween = hurt_flash_rect.create_tween()
+	_hurt_tween.tween_property(hurt_flash_rect, "color:a", 0.0, maxf(_cfg_float(&"hurt_flash_fade_sec", 0.34), 0.05))
 
 
 ## 玩家受击完整反馈：护甲/生命分开飘字，真正掉血时红屏 + 抖屏，并刷新 HUD 护甲条。
@@ -205,16 +208,17 @@ func warm_muzzle_fx() -> void:
 		muzzle_flash.name = "MuzzleFlash2D"
 		_fx_layer.add_child(muzzle_flash)
 	muzzle_flash.set_flash_mode(muzzle_flash_mode)
-	var fx := PixelFx2D.new()
-	fx.effect = "projectiles/muzzle-pistol"
-	fx.mode = PixelFx2D.Mode.BAKED
-	fx.autoplay = false
-	fx.free_when_done = false
-	fx.z_index = 60
-	fx.modulate.a = 0.0
-	_fx_layer.add_child(fx)
-	fx.global_position = Vector2.ZERO
-	muzzle_fx = fx
+	if muzzle_fx == null or not is_instance_valid(muzzle_fx):
+		var fx := PixelFx2D.new()
+		fx.effect = "projectiles/muzzle-pistol"
+		fx.mode = PixelFx2D.Mode.BAKED
+		fx.autoplay = false
+		fx.free_when_done = false
+		fx.z_index = 60
+		fx.modulate.a = 0.0
+		_fx_layer.add_child(fx)
+		fx.global_position = Vector2.ZERO
+		muzzle_fx = fx
 
 
 func play_muzzle_fx(pos: Vector2, angle: float, intensity := 1.0, suppressed := false) -> void:
@@ -286,14 +290,15 @@ func warm_damage_fonts() -> void:
 	var row := HBoxContainer.new()
 	row.modulate.a = 0.0
 	layer.add_child(row)
-	for size in [15, 17, 19, 21, 23]:
-		var label := Label.new()
-		label.text = "-0123456789"
-		label.add_theme_font_override("font", PixelUI.FONT)
-		label.add_theme_font_size_override("font_size", size)
-		label.add_theme_color_override("font_outline_color", Color(0.01, 0.01, 0.02, 0.95))
-		label.add_theme_constant_override("outline_size", 4)
-		row.add_child(label)
+	for size in [15, 17, 19, 21, 23, 25]:
+		for outline_w in ([4, 5] if size >= 23 else [4]):
+			var label := Label.new()
+			label.text = "-0123456789!"
+			label.add_theme_font_override("font", PixelUI.FONT)
+			label.add_theme_font_size_override("font_size", size)
+			label.add_theme_color_override("font_outline_color", Color(0.01, 0.01, 0.02, 0.95))
+			label.add_theme_constant_override("outline_size", outline_w)
+			row.add_child(label)
 	await _owner.get_tree().process_frame
 	if is_instance_valid(layer):
 		layer.queue_free()

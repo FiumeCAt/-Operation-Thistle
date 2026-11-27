@@ -44,8 +44,8 @@ const SELF_ENERGY := 0.18
 const SELF_RADIUS_METERS := 1.1
 const LIGHT_COLOR := Color(1.0, 0.97, 0.92)
 const DARK_COLOR := Color(0.72, 0.82, 1.0)
-## 光照贴图分辨率：512 配合线性过滤 + 半浮点格式 + 宽角度羽化，彻底消除 40 米视野锥边缘阶梯锯齿。
-const TEX_SIZE := 512
+## 光照贴图分辨率：256 配合线性过滤 + 半浮点格式 + 宽角度羽化，兼顾零色带平滑与 4× 更快进图烘焙。
+const TEX_SIZE := 256
 ## 敌人可见性刷新间隔：50ms 一次，避免每帧遍历与视线采样。
 const ENEMY_REFRESH := 0.05
 ## 视线采样步长：精细 16px 采样，避免墙角与狭缝漏检或误判。
@@ -97,11 +97,13 @@ func _cfg_color(prop: StringName, fallback: Color) -> Color:
 
 func setup(player_node: Node2D, level_node, modulate_node: CanvasModulate,
 		ambient_override := Color(-1.0, -1.0, -1.0, 1.0),
-		cfg: Resource = null) -> void:
+		cfg: Resource = null, initial_range_lv := 0, initial_angle_lv := 0) -> void:
 	player = player_node
 	level = level_node
 	canvas_modulate = modulate_node
 	lighting_config = cfg
+	vision_range_level = maxi(0, initial_range_lv)
+	vision_angle_level = maxi(0, initial_angle_lv)
 	if ambient_override.r >= 0.0:
 		ambient_color = ambient_override
 	elif modulate_node != null and not modulate_node.color.is_equal_approx(Color.WHITE):
@@ -127,12 +129,15 @@ func setup(player_node: Node2D, level_node, modulate_node: CanvasModulate,
 
 ## 配置「远距侦察 / 广角视野」天赋等级：距离倍率与半角完全解耦，光照贴图按实际半角重建无拉伸畸变。
 func set_vision_talents(range_lv: int, angle_lv: int) -> void:
-	vision_range_level = maxi(0, range_lv)
-	vision_angle_level = maxi(0, angle_lv)
+	var new_range := maxi(0, range_lv)
+	var new_angle := maxi(0, angle_lv)
+	var angle_changed := new_angle != vision_angle_level
+	vision_range_level = new_range
+	vision_angle_level = new_angle
 	_active_clear_half_deg = clear_half_deg()
 	_active_total_half_deg = total_half_deg()
 	var half_px := TEX_SIZE * 0.5
-	if _clear_light != null:
+	if _clear_light != null and (angle_changed or _clear_light.texture == null):
 		_clear_light.texture = _cone_texture(_ring_dim_cached, _active_clear_half_deg, _active_total_half_deg)
 		_clear_light.scale = Vector2.ONE
 	if _dark_light != null:

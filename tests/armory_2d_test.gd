@@ -35,12 +35,12 @@ func _run() -> void:
 	var menu = load("res://scenes/ui/StartMenu2D.tscn").instantiate()
 	root.add_child(menu)
 	await process_frame
-	_check(menu.armory_button != null and menu.armory_button.text.contains("ARSENAL"),
+	_check(menu.armory_button != null and menu.armory_button.text.contains("武备库"),
 		"start menu has arsenal button")
 	_check(menu.armory != null and not menu.armory.visible, "arsenal hidden at start")
 
 	# 设置入口：射速单位切换写入存档，并影响武器数据页。
-	_check(menu.settings_button != null and menu.settings_button.text.contains("SETTINGS"),
+	_check(menu.settings_button != null and menu.settings_button.text.contains("设置"),
 		"start menu has a settings button")
 	menu._open_settings()
 	await process_frame
@@ -139,6 +139,10 @@ func _run() -> void:
 		"ammo row shows the ammo type only")
 	_check(menu.armory._detail_values["伤害"].text == "8 × 12.5 = 100.0",
 		"damage row shows the full calculation with M870 inherent 1.25x bonus")
+	_check(menu.armory._detail_values.has("弱点加成")
+		and menu.armory._detail_values["弱点加成"].text == "+15%"
+		and menu.armory._detail_tips["弱点加成"].contains("5% 步进"),
+		"detail panel displays M870 weakspot bonus (+15%) and tooltip")
 	_check(menu.armory._detail_values["穿甲"].text.contains("T0")
 		and menu.armory._detail_deltas["穿甲"].text == "(+6)",
 		"AP row displays tier and weapon inherent ap_bonus (+6)")
@@ -216,8 +220,11 @@ func _run() -> void:
 	_check(menu.armory._mod_stat_values.has("recoil")
 		and menu.armory._mod_stat_values.has("vision")
 		and menu.armory._mod_stat_values.has("ads")
-		and menu.armory._mod_stat_values.has("speed"),
-		"mod stats panel exposes recoil, vision, aim speed and bullet speed")
+		and menu.armory._mod_stat_values.has("speed")
+		and menu.armory._mod_stat_values.has("weakspot"),
+		"mod stats panel exposes recoil, vision, aim speed, bullet speed, and weakspot bonus")
+	_check(menu.armory._mod_stat_values["weakspot"].text == "+15%",
+		"mod stats panel shows M870 weakspot bonus (+15%)")
 	_check(menu.armory._mod_stat_values["speed"].text == "400 m/s",
 		"mod stats panel shows the weapon's bullet speed")
 	_check(menu.armory._mod_gun_tex != null and not menu.armory._mod_gun_anchors.is_empty(),

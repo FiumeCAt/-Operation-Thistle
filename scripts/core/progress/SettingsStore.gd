@@ -282,6 +282,23 @@ static func set_player_self_light(data: Dictionary, enabled: bool) -> void:
 	data["player_self_light"] = enabled
 
 
+static func bgm_play_mode(data: Dictionary) -> String:
+	var mode := String(data.get("bgm_play_mode", "shuffle"))
+	return mode if SAVE_STORE.BGM_PLAY_MODES.has(mode) else "shuffle"
+
+
+static func set_bgm_play_mode(data: Dictionary, mode: String) -> void:
+	data["bgm_play_mode"] = mode if SAVE_STORE.BGM_PLAY_MODES.has(mode) else "shuffle"
+
+
+static func bgm_pinned_track(data: Dictionary) -> String:
+	return String(data.get("bgm_pinned_track", ""))
+
+
+static func set_bgm_pinned_track(data: Dictionary, track_id: String) -> void:
+	data["bgm_pinned_track"] = track_id.strip_edges()
+
+
 static func reticle_style(data: Dictionary, sight_id: String, fallback: String) -> String:
 	var styles: Dictionary = data.get("reticle_styles", {})
 	return String(styles.get(sight_id, fallback))

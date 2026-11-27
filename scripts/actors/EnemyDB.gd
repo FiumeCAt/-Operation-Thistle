@@ -62,7 +62,7 @@ static func archetype_profile(archetype: StringName) -> Dictionary:
 					"part": "optical_core", "label": "光学核心",
 					"offset_x": 0.0, "offset_y_ratio": 0.62, "flip_x": false,
 					"radius": 12.0, "tolerance": 1.18,
-					"armor_mul": 0.50, "damage_mul": 1.60,
+					"armor_mul": 0.50, "damage_mul": 1.50,
 				},
 			}
 		&"mutant":
@@ -72,7 +72,7 @@ static func archetype_profile(archetype: StringName) -> Dictionary:
 					"part": "exposed_core", "label": "暴露瘤核",
 					"offset_x": 0.0, "offset_y_ratio": 0.56, "flip_x": false,
 					"radius": 13.0, "tolerance": 1.18,
-					"armor_mul": 0.00, "damage_mul": 1.75,
+					"armor_mul": 0.50, "damage_mul": 2.00,
 				},
 			}
 		_:
@@ -82,6 +82,6 @@ static func archetype_profile(archetype: StringName) -> Dictionary:
 					"part": "head", "label": "头部",
 					"offset_x": 0.0, "offset_y_ratio": 0.80, "flip_x": false,
 					"radius": 11.0, "tolerance": 1.18,
-					"armor_mul": 0.40, "damage_mul": 1.80,
+					"armor_mul": 0.50, "damage_mul": 2.00,
 				},
 			}

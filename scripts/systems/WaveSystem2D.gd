@@ -164,10 +164,15 @@ func begin_wave(index: int) -> void:
 	spawn_batch = clampi(int(ceil(float(count) / 25.0)), 1, 4)
 	var points := spawn_points()
 	spawn_queue.clear()
+	var can_check_nav := _level != null and _level.has_method("is_nav_walkable")
 	for i in count:
+		var base_pos := points[i % points.size()]
+		var cand := base_pos + Vector2(randf_range(-20, 20), randf_range(-20, 20))
+		if can_check_nav and not bool(_level.is_nav_walkable(cand)):
+			cand = base_pos
 		spawn_queue.append({
 			"kind": enemy_kind(wave_index),
-			"pos": points[i % points.size()] + Vector2(randf_range(-20, 20), randf_range(-20, 20)),
+			"pos": cand,
 			"stat_mul": stat_mul,
 		})
 	spawn_t = 0.0

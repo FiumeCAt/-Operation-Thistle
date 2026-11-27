@@ -36,7 +36,15 @@ func _run() -> void:
 	_check(is_equal_approx(float(akm_bare["range"]), 40.0), "AKM bare range == 40.0m")
 	_check(is_equal_approx(float(akm_bare["speed"]), 715.0), "AKM bare bullet_speed == 715 m/s")
 	_check(bool(akm_bare["auto"]), "AKM bare default_auto_fire == true")
-	_check(is_equal_approx(float(akm_bare["damage"]), 38.0 * 1.04), "AKM bare damage includes 1.04x inherent bonus (39.52)")
+	_check(is_equal_approx(float(akm_bare["damage"]), 38.0 * 1.05), "AKM bare damage includes 1.05x inherent bonus (39.90)")
+	var all_five_pct := true
+	for wid in WeaponDB.WEAPON_ORDER:
+		var wd: WeaponData = WeaponDB.get_weapon(wid)
+		var dm_steps := wd.damage_mul * 20.0
+		var ws_steps := wd.weakspot_mul * 20.0
+		if absf(dm_steps - round(dm_steps)) > 0.001 or absf(ws_steps - round(ws_steps)) > 0.001:
+			all_five_pct = false
+	_check(all_five_pct, "all 18 weapons align damage_mul and weakspot_mul to exact 5% steps")
 	_check(is_equal_approx(float(akm_bare["ap"]), 84.0 + 2.0), "AKM bare AP includes +2 inherent bonus (86)")
 	_check(is_equal_approx(float(akm_bare["spread"]), 0.058), "AKM bare hip spread == 0.058 rad")
 

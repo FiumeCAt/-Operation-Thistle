@@ -38,6 +38,8 @@ var trail_line: Line2D = null
 var trail_glow: Line2D = null
 var trail_enabled := true
 var _finished := false
+var _sweep_query: PhysicsRayQueryParameters2D = null
+var _exclude_rids: Array[RID] = []
 
 
 ## 无耦合构造接口：通过显式配置字典创建弹丸，由宿主订阅 enemy_hit / wall_hit / finished 信号。
@@ -135,41 +137,29 @@ func _physics_process(delta: float) -> void:
 	var from := global_position
 	var next := from + dir * step_len
 
-	# 关键：必须查线段而不是只查终点。5.56 每帧可飞 250px，只查终点会穿墙/穿人。
-	var exclude: Array[RID] = []
-	if player_rid.is_valid():
-		exclude.append(player_rid)
+	# 关键：必须查线段而不是只查终点。单次宽扫合并层 1|2|4（墙/躯干/弱点），空飞期射线开销直接砍半 50%，并复用 Query 对象零临时分配。
+	if _sweep_query == null:
+		_exclude_rids.clear()
+		if player_rid.is_valid():
+			_exclude_rids.append(player_rid)
+		_sweep_query = PhysicsRayQueryParameters2D.new()
+		_sweep_query.collision_mask = 1 | 2 | WEAKSPOT_LAYER
+		_sweep_query.exclude = _exclude_rids
+		_sweep_query.hit_from_inside = true
+		_sweep_query.collide_with_areas = true
+	_sweep_query.from = from
+	_sweep_query.to = next
 	var space := get_world_2d().direct_space_state
-	var query := PhysicsRayQueryParameters2D.create(from, next, 1 | 2, exclude)
-	query.hit_from_inside = true
-	query.collide_with_areas = true
-	var hit := space.intersect_ray(query)
-
-	var ws_query := PhysicsRayQueryParameters2D.create(from, next, WEAKSPOT_LAYER, exclude)
-	ws_query.hit_from_inside = true
-	ws_query.collide_with_areas = true
-	var ws_hit := space.intersect_ray(ws_query)
-
-	if not ws_hit.is_empty():
-		var ws_target = _extract_target(ws_hit)
-		var ws_dist_sq := from.distance_squared_to(ws_hit["position"])
-		var blocked_by_closer := false
-		if not hit.is_empty():
-			var body_target = _extract_target(hit)
-			var body_dist_sq := from.distance_squared_to(hit["position"])
-			if body_target == null or not body_target.has_method("take_damage"):
-				# 墙体在弱点之前：交给 _resolve_hit 统一走墙体/2.5D 墙前重叠加弱点判定。
-				if body_dist_sq < ws_dist_sq - 1.0:
-					blocked_by_closer = true
-			elif body_target != ws_target and body_dist_sq < ws_dist_sq - 1.0:
-				# 前方另有更近的敌人挡住射线：不能穿透前排去打后排弱点。
-				blocked_by_closer = true
-		if not blocked_by_closer and ws_target != null and ws_target.has_method("take_damage"):
-			_resolve_enemy_hit(ws_target, ws_hit["position"], dir, true)
-			return
+	var hit := space.intersect_ray(_sweep_query)
 
 	if not hit.is_empty():
-		_resolve_hit(hit, from, dir, exclude)
+		var col = hit.get("collider")
+		if col is CollisionObject2D and (col.collision_layer & WEAKSPOT_LAYER) != 0:
+			var ws_target = _extract_target(hit)
+			if ws_target != null and ws_target.has_method("take_damage"):
+				_resolve_enemy_hit(ws_target, hit["position"], dir, true)
+				return
+		_resolve_hit(hit, from, dir, _exclude_rids)
 		return
 
 	global_position = next
@@ -192,16 +182,32 @@ static func _extract_target(hit: Dictionary):
 	return collider
 
 
+## 沿躯干命中点向前探测目标自身弱点：受层 1 墙体截断（防穿墙打弱点），遇到其他敌人的弱点重叠时排除重试（防敌群吞弱点）。
 func _find_target_weakspot_along(from_pos: Vector2, to_pos: Vector2, target, exclude: Array[RID]) -> Dictionary:
-	var ws_q := PhysicsRayQueryParameters2D.create(from_pos, to_pos, WEAKSPOT_LAYER, exclude)
+	var space := get_world_2d().direct_space_state
+	var local_ex: Array[RID] = exclude.duplicate()
+	var ws_q := PhysicsRayQueryParameters2D.new()
+	ws_q.from = from_pos
+	ws_q.to = to_pos
+	ws_q.collision_mask = 1 | WEAKSPOT_LAYER
 	ws_q.hit_from_inside = true
 	ws_q.collide_with_areas = true
-	var ws_hit := get_world_2d().direct_space_state.intersect_ray(ws_q)
-	if ws_hit.is_empty():
-		return {}
-	if _extract_target(ws_hit) != target:
-		return {}
-	return ws_hit
+	for _attempt in 3:
+		ws_q.exclude = local_ex
+		var ws_hit := space.intersect_ray(ws_q)
+		if ws_hit.is_empty():
+			return {}
+		var col = ws_hit.get("collider")
+		if col is CollisionObject2D and (col.collision_layer & 1) != 0 and (col.collision_layer & WEAKSPOT_LAYER) == 0:
+			return {}
+		if _extract_target(ws_hit) == target:
+			return ws_hit
+		var hit_rid = ws_hit.get("rid", RID())
+		if hit_rid is RID and (hit_rid as RID).is_valid() and not local_ex.has(hit_rid):
+			local_ex.append(hit_rid)
+		else:
+			return {}
+	return {}
 
 
 func _query_wall_between(from_pos: Vector2, to_pos: Vector2) -> Dictionary:
@@ -244,9 +250,9 @@ func _resolve_hit(hit: Dictionary, from_pos: Vector2, dir: Vector2, exclude: Arr
 	var target = _extract_target(hit)
 
 	if target != null and target.has_method("take_damage"):
-		# 射线优先弱点结算：即便先碰到外层躯干 Hitbox 边缘，只要弹道继续穿过同一目标的弱点区，即优先按弱点结算。
+		# 射线优先弱点结算：仅从躯干命中点向前探测 WEAKSPOT_PENETRATE_DEPTH（不重扫已扫过的空飞段）。
 		var probe_end := point + dir * WEAKSPOT_PENETRATE_DEPTH
-		var ws_hit := _find_target_weakspot_along(from_pos, probe_end, target, exclude)
+		var ws_hit := _find_target_weakspot_along(point, probe_end, target, exclude)
 		if not ws_hit.is_empty():
 			_resolve_enemy_hit(target, ws_hit["position"], dir, true)
 			return

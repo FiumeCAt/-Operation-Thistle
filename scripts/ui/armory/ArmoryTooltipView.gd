@@ -7,7 +7,7 @@ const TIP_WIDTH := 520.0
 
 const STAT_KEYS: Array[String] = [
 	"口径", "弹匣容量", "供弹方式", "换弹时间", "射速", "射程", "子弹速度", "散布",
-	"枪声范围", "弹药", "弹丸数", "穿甲", "伤害", "每秒 DPS",
+	"枪声范围", "弹药", "弹丸数", "穿甲", "伤害", "弱点加成", "每秒 DPS",
 	"后坐抑制", "垂直后坐", "水平后坐", "视野倍率", "瞄准速度",
 ]
 
@@ -193,6 +193,15 @@ func refresh_tooltips(selected: StringName, installed: Dictionary, reload_talent
 			if absf(ap_bonus) >= 0.05:
 				text += "\n构成：弹药基础 %d + 武器固有 %+d" % [int(round(base_ap)), int(round(ap_bonus))]
 			text += "\n高于目标护甲时击穿（有甲余穿加伤封顶 +2.4）；低于护甲按比例结算钝伤"
+			tips[key] = text
+			continue
+		if key == "弱点加成":
+			var w_ws := float(stats.get("weapon_weakspot_mul", 1.0))
+			var pct := int(round((w_ws - 1.0) * 100.0))
+			var pct_str := ("%+d%%" % pct) if pct != 0 else "0%"
+			text += "\n武器固有弱点倍率：×%.2f（%s，5%% 步进）" % [w_ws, pct_str]
+			text += "\n命中敌人弱点部位时，与敌人自身弱点倍率（机械 ×1.5 / 人类与变异 ×2.0）叠乘结算"
+			text += "\n弱点有效护甲统一按正常护甲的 50%% 计算"
 			tips[key] = text
 			continue
 		var effect_key := String(STAT_EFFECT.get(key, ""))

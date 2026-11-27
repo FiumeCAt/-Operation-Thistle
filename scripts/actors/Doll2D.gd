@@ -226,6 +226,9 @@ func _enable_rig_v2() -> void:
 func set_skin(new_skin_id: String) -> bool:
 	var ok := RIG_V2.skin_exists(new_skin_id)
 	var target := RIG_V2.sanitize_skin_id(new_skin_id) if ok else RIG_V2.DEFAULT_SKIN
+	if skin_id == target and (rig_v2 == null or rig_v2.skin_id == target) \
+			and (weapon_rig == null or weapon_rig.skin_id == target):
+		return ok
 	skin_id = target
 	if rig_v2 != null:
 		ok = rig_v2.set_skin(new_skin_id)
@@ -280,6 +283,13 @@ func _on_footstep_planted(local_offset: Vector2, is_running: bool) -> void:
 	var dust_parent: Node = fx_layer if (fx_layer != null and is_instance_valid(fx_layer)) else get_parent()
 	if dust_parent != null and dust_parent.is_inside_tree():
 		Shot2D.footstep_dust(dust_parent, global_position + local_offset, is_running)
+	# 脚步声响广播（奔跑 5.5m / 缓步 2.5m），供听觉与盲眼声呐单位感知。
+	var tree := get_tree()
+	if tree != null:
+		var step_radius := 5.5 if is_running else 2.5
+		for en in tree.get_nodes_in_group("enemies"):
+			if is_instance_valid(en) and en.has_method("hear_noise"):
+				en.hear_noise(global_position, step_radius)
 
 func _cfg_float(prop: StringName, fallback: float) -> float:
 	if config != null and prop in config:

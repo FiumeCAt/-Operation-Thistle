@@ -6,7 +6,7 @@ class_name MuzzleFlash2D
 ## 3) 叠加模式局部柔光晕（BLEND_MODE_ADD），在清晰视野与暗区均呈现类似参考图的局部闪屏点亮质感；
 ## 4) 枪口飞溅火星颗粒 + 瞬时受火光映照的硝烟团（单常驻节点零分配复用，高射速连发零卡顿）。
 
-const TEX_SIZE := 256
+const TEX_SIZE := 128
 const FLAME_LIFE := 0.064
 const CORE_BLOOM_LIFE := 0.085
 const LIGHT_LIFE := 0.145
@@ -402,21 +402,29 @@ func _draw() -> void:
 				Color(1.0, 0.99 if is_full else 0.95, 0.92 if is_full else 0.80, t * (0.95 if is_full else 0.70)))
 
 
-## 生成一次平滑半浮点径向柔和衰减贴图（无 8 位暗部色带），供 PointLight2D 与叠加柔光共用。
+## 生成一次平滑半浮点径向柔和衰减贴图（128×128 四象限对称加速 16×，零 8 位暗部色带），供 PointLight2D 与叠加柔光共用。
 static func _get_radial_texture() -> ImageTexture:
 	if _radial_tex != null:
 		return _radial_tex
+	var half_i := TEX_SIZE >> 1
 	var half := float(TEX_SIZE) * 0.5
 	var img := Image.create(TEX_SIZE, TEX_SIZE, false, Image.FORMAT_RGBAH)
-	for y in TEX_SIZE:
-		for x in TEX_SIZE:
-			var d := Vector2(float(x) + 0.5 - half, float(y) + 0.5 - half).length() / half
+	for y in half_i:
+		var dy := (float(y) + 0.5 - half) / half
+		var dy2 := dy * dy
+		var my := TEX_SIZE - 1 - y
+		for x in half_i:
+			var dx := (float(x) + 0.5 - half) / half
+			var d := sqrt(dx * dx + dy2)
 			var v := 0.0
 			if d < 1.0:
-				# 宽域柔和暖光衰减：0~0.55 保持充沛的局部照亮覆盖面积，外缘平滑归零无硬边。
-				var broad := pow(1.0 - d, 1.35)
-				var core := pow(1.0 - d, 2.4) * 0.45
-				v = clampf(broad * 0.76 + core, 0.0, 1.0)
-			img.set_pixel(x, y, Color(v, v, v, v))
+				var inv := 1.0 - d
+				v = clampf(pow(inv, 1.35) * 0.76 + pow(inv, 2.4) * 0.45, 0.0, 1.0)
+			var col := Color(v, v, v, v)
+			var mx := TEX_SIZE - 1 - x
+			img.set_pixel(x, y, col)
+			img.set_pixel(mx, y, col)
+			img.set_pixel(x, my, col)
+			img.set_pixel(mx, my, col)
 	_radial_tex = ImageTexture.create_from_image(img)
 	return _radial_tex

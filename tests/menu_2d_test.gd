@@ -30,9 +30,11 @@ func _run() -> void:
 	await process_frame
 	_check(menu.start_button != null and menu.start_button.text.contains("开始"), "start menu has start button")
 	_check(menu.character_button != null and menu.character_button.text.contains("角色"), "start menu has character button")
-	_check(menu.talents_button != null and menu.talents_button.text.contains("TALENTS"), "start menu has talents button")
-	_check(menu.stash_button != null and menu.stash_button.text.contains("STASH"), "start menu has stash button")
+	_check(menu.talents_button != null and menu.talents_button.text.contains("天赋树"), "start menu has talents button")
+	_check(menu.stash_button != null and menu.stash_button.text.contains("仓库"), "start menu has stash button")
 	_check(menu.quit_button != null and menu.quit_button.text.contains("退出"), "start menu has quit button")
+	_check(menu.radio_button != null and menu.radio_track_label != null and menu.radio_menu != null,
+		"start menu exposes tactical radio entry, current BGM track label, and RadioMenu2D")
 	_check(menu.start_button.has_meta(&"ui_sfx"), "buttons carry ui sfx hooks")
 	var sfx = root.get_node_or_null("Sfx")
 	_check(sfx != null and sfx.get_stream("ui_hover") != null and sfx.get_stream("ui_click") != null,
@@ -84,6 +86,18 @@ func _run() -> void:
 	if p != null:
 		p.set_character_skin("doll_v2")
 		menu._refresh_dossier()
+
+	# 战术电台：主菜单快捷入口、当前曲名、模式切换持久化与 ESC 关闭
+	menu._open_radio()
+	await process_frame
+	_check(menu.radio_menu.visible and menu.radio_menu.now_playing_label.text != "",
+		"radio menu opens from main menu and displays active track")
+	menu.radio_menu.select_mode("sequential")
+	_check(p == null or p.bgm_play_mode() == "sequential",
+		"radio menu persists sequential play mode to Progress")
+	menu.radio_menu.select_mode("shuffle")
+	menu._unhandled_input(esc)
+	_check(not menu.radio_menu.visible, "ESC closes the radio menu")
 
 	_check(menu.deployment != null and not menu.deployment.visible, "deployment menu exists")
 	_check(menu._bg_textures.size() == 3, "start menu loads all three tactical background slides")

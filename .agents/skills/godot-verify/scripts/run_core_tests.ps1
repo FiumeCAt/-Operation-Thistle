@@ -329,11 +329,11 @@ for ($i = 0; $i -lt $targetTests.Count; $i++) {
 $results | Format-Table Test, Status, OK, Fail, Errors, Seconds -AutoSize
 
 $totalTests = $results.Count
-$passCount = ($results | Where-Object { $_.Status -eq "PASS" }).Count
-$passStarCount = ($results | Where-Object { $_.Status -eq "PASS*" }).Count
-$failStatusCount = ($results | Where-Object { $_.Status -eq "FAIL" }).Count
-$unknownCount = ($results | Where-Object { $_.Status -eq "UNKNOWN" }).Count
-$timeoutCount = ($results | Where-Object { $_.Status -eq "TIMEOUT" }).Count
+$passCount = @($results | Where-Object { $_.Status -eq "PASS" }).Count
+$passStarCount = @($results | Where-Object { $_.Status -eq "PASS*" }).Count
+$failStatusCount = @($results | Where-Object { $_.Status -eq "FAIL" }).Count
+$unknownCount = @($results | Where-Object { $_.Status -eq "UNKNOWN" }).Count
+$timeoutCount = @($results | Where-Object { $_.Status -eq "TIMEOUT" }).Count
 $sumOk = ($results | Measure-Object -Property OK -Sum).Sum
 $sumFail = ($results | Measure-Object -Property Fail -Sum).Sum
 $sumErrors = ($results | Measure-Object -Property Errors -Sum).Sum
@@ -348,7 +348,7 @@ Write-Host ("TIMING: Wall={0}s (Import={1}s + Tests={2}s) | SumTestCpu={3}s | Pa
 Write-Host "Logs saved to: $logDir"
 
 # Strict quality gate: ONLY clean PASS (0 fail, 0 script errors, exit code 0) succeeds
-$bad = ($results | Where-Object { $_.Status -ne "PASS" }).Count
+$bad = @($results | Where-Object { $_.Status -ne "PASS" }).Count
 if ($bad -gt 0) {
     Write-Host "FAILED / NON-CLEAN TESTS:"
     $results | Where-Object { $_.Status -ne "PASS" } | Format-Table Test, Status, OK, Fail, Errors, ExitCode, Seconds -AutoSize

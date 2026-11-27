@@ -9,6 +9,7 @@ class_name StartMenu2D
 const MAIN_SCENE := "res://scenes/core/Main2D.tscn"
 const SAVE_SLOTS_MENU := preload("res://scripts/ui/SaveSlotsMenu2D.gd")
 const CHARACTER_MENU := preload("res://scripts/ui/CharacterMenu2D.gd")
+const RADIO_MENU := preload("res://scripts/ui/RadioMenu2D.gd")
 const COMBAT_FX_WARMUP := preload("res://scripts/fx/CombatFxWarmup.gd")
 const HIT_FX := preload("res://scripts/fx/HitFX2D.gd")
 
@@ -34,6 +35,9 @@ var saves_button: Button
 var settings_button: Button
 var codex_button: Button
 var quit_button: Button
+var radio_button: Button
+var radio_next_button: Button
+var radio_track_label: Label
 var character_menu: CharacterMenu2D
 var talents: TalentTree2D
 var armory: ArmoryMenu2D
@@ -42,6 +46,7 @@ var save_slots
 var deployment: DeploymentMenu2D
 var settings_menu: SettingsMenu2D
 var codex: CodexMenu2D
+var radio_menu: RadioMenu2D
 
 ## 主题切换控件（供单测与实机切换）
 var theme_buttons: Dictionary = {}
@@ -90,7 +95,11 @@ func _ready() -> void:
 	PixelUI.apply_theme(self)
 	var sfx := get_node_or_null("/root/Sfx")
 	if sfx != null:
-		if sfx.has_method("set_bgm_state"):
+		if sfx.has_signal("bgm_track_changed") and not sfx.bgm_track_changed.is_connected(_on_bgm_track_changed):
+			sfx.bgm_track_changed.connect(_on_bgm_track_changed)
+		if sfx.has_method("set_bgm_context"):
+			sfx.set_bgm_context({"state": "menu", "region": "base"}, 0.9)
+		elif sfx.has_method("set_bgm_state"):
 			sfx.set_bgm_state("menu", 0.9)
 		else:
 			sfx.start_ambient()
@@ -98,6 +107,7 @@ func _ready() -> void:
 	_build()
 	_apply_menu_theme()
 	_refresh_dossier()
+	_refresh_radio_bar()
 	if DisplayServer.get_name() != "headless":
 		var warmup := COMBAT_FX_WARMUP.new()
 		warmup.name = "CombatFxWarmup"
@@ -285,7 +295,18 @@ func _build() -> void:
 	codex.name = "CodexMenu2D"
 	codex.closed.connect(_on_sub_closed)
 	add_child(codex)
+
+	radio_menu = RADIO_MENU.new()
+	radio_menu.name = "RadioMenu2D"
+	radio_menu.closed.connect(_on_sub_closed)
+	add_child(radio_menu)
 	start_button.grab_focus()
+
+
+func _exit_tree() -> void:
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx != null and sfx.has_signal("bgm_track_changed") and sfx.bgm_track_changed.is_connected(_on_bgm_track_changed):
+		sfx.bgm_track_changed.disconnect(_on_bgm_track_changed)
 
 
 func _build_background_layer() -> void:
@@ -325,132 +346,130 @@ func _build_background_layer() -> void:
 	add_child(_backdrop_overlay)
 
 
-## 左侧紧凑半透明导航栏：留出中央约 42% 画面呼吸感，完整展示 K-17 场景氛围。
+## 左侧紧凑半透明导航栏：纯简体中文、大字号易读、充分利用底部空间，中央大面积留白透出 K-17 场景氛围。
 func _build_nav_sidebar() -> void:
 	_nav_bg_panel = PanelContainer.new()
 	_nav_bg_panel.name = "NavSidebar"
 	_nav_bg_panel.set_anchors_preset(Control.PRESET_LEFT_WIDE)
 	_nav_bg_panel.offset_left = 44
-	_nav_bg_panel.offset_right = 492
-	_nav_bg_panel.offset_top = 28
-	_nav_bg_panel.offset_bottom = -74
+	_nav_bg_panel.offset_right = 504
+	_nav_bg_panel.offset_top = 24
+	_nav_bg_panel.offset_bottom = -68
 	add_child(_nav_bg_panel)
 
 	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 7)
+	rows.add_theme_constant_override("separation", 11)
 	_nav_bg_panel.add_child(rows)
 
 	var tag := PixelUI.emphasize(
-		PixelUI.label(rows, "OPERATION THISTLE // K-17", 18, PixelUI.theme_accent()), 2, 1)
+		PixelUI.label(rows, "K-17 设施战术终端", 19, PixelUI.theme_accent()), 2, 1)
 	_themed_accent_labels.append(tag)
-	var title := PixelUI.emphasize(PixelUI.label(rows, "蓟花行动", 60, PixelUI.theme_text()), 5, 3)
+	var title := PixelUI.emphasize(PixelUI.label(rows, "蓟花行动", 66, PixelUI.theme_text()), 5, 3)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	var english := PixelUI.emphasize(
-		PixelUI.label(rows, "D O L L   P R O T O C O L", 24, PixelUI.theme_accent_bright()), 3, 2)
-	english.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_themed_bright_labels.append(english)
 
 	var div1 := HSeparator.new()
 	rows.add_child(div1)
 	_themed_dividers.append(div1)
 
-	var subtitle := PixelUI.label(rows, "2D 俯视像素战术撤离 // 下潜 · 搜刮 · 撤离", 16, PixelUI.theme_dim())
+	var subtitle := PixelUI.label(rows, "2D 俯视像素战术撤离 · 下潜 · 搜刮 · 撤离", 17, PixelUI.theme_dim())
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 	# --- 行动部署 ---
-	var deploy_hdr := PixelUI.label(rows, "行动部署 // DEPLOY", 16, PixelUI.theme_accent())
+	var deploy_hdr := PixelUI.label(rows, "行动部署", 20, PixelUI.theme_accent())
 	_themed_accent_labels.append(deploy_hdr)
 
 	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 8)
+	actions.add_theme_constant_override("separation", 10)
 	rows.add_child(actions)
 
-	start_button = PixelUI.primary_button("开始行动", 56)
+	start_button = PixelUI.primary_button("开始行动", 68)
+	start_button.add_theme_font_size_override("font_size", 26)
 	start_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	start_button.pressed.connect(_start)
 	actions.add_child(start_button)
 
-	waves_button = PixelUI.button("浪潮生存", 56)
-	waves_button.custom_minimum_size.x = 148
+	waves_button = PixelUI.button("浪潮生存", 68)
+	waves_button.add_theme_font_size_override("font_size", 23)
+	waves_button.custom_minimum_size.x = 160
 	waves_button.pressed.connect(_start_waves)
 	actions.add_child(waves_button)
 	_themed_buttons.append(waves_button)
 
-	# --- 战前整备（2×2 紧凑布局：角色 / 武备库 / 天赋树 / 仓库）---
-	var prep_hdr := PixelUI.label(rows, "战前整备 // PREP", 16, PixelUI.theme_accent())
+	# --- 战前整备（2×2 清晰布局：角色 / 武备库 / 天赋树 / 仓库）---
+	var prep_hdr := PixelUI.label(rows, "战前整备", 20, PixelUI.theme_accent())
 	_themed_accent_labels.append(prep_hdr)
 
 	var prep_row1 := HBoxContainer.new()
-	prep_row1.add_theme_constant_override("separation", 8)
+	prep_row1.add_theme_constant_override("separation", 10)
 	rows.add_child(prep_row1)
 
-	character_button = PixelUI.button("角色 // OPERATOR", 46)
-	character_button.add_theme_font_size_override("font_size", 16)
+	character_button = PixelUI.button("角色", 58)
+	character_button.add_theme_font_size_override("font_size", 23)
 	character_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	character_button.pressed.connect(_open_character)
 	prep_row1.add_child(character_button)
 	_themed_buttons.append(character_button)
 
-	armory_button = PixelUI.button("武备库 // ARSENAL", 46)
-	armory_button.add_theme_font_size_override("font_size", 16)
+	armory_button = PixelUI.button("武备库", 58)
+	armory_button.add_theme_font_size_override("font_size", 23)
 	armory_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	armory_button.pressed.connect(_open_armory)
 	prep_row1.add_child(armory_button)
 	_themed_buttons.append(armory_button)
 
 	var prep_row2 := HBoxContainer.new()
-	prep_row2.add_theme_constant_override("separation", 8)
+	prep_row2.add_theme_constant_override("separation", 10)
 	rows.add_child(prep_row2)
 
-	talents_button = PixelUI.button("天赋树 // TALENTS", 46)
-	talents_button.add_theme_font_size_override("font_size", 16)
+	talents_button = PixelUI.button("天赋树", 58)
+	talents_button.add_theme_font_size_override("font_size", 23)
 	talents_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	talents_button.pressed.connect(_open_talents)
 	prep_row2.add_child(talents_button)
 	_themed_buttons.append(talents_button)
 
-	stash_button = PixelUI.button("仓库 // STASH", 46)
-	stash_button.add_theme_font_size_override("font_size", 16)
+	stash_button = PixelUI.button("仓库", 58)
+	stash_button.add_theme_font_size_override("font_size", 23)
 	stash_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stash_button.pressed.connect(_open_stash)
 	prep_row2.add_child(stash_button)
 	_themed_buttons.append(stash_button)
 
-	# --- 次级功能行（存档 · 图鉴 · 设置 · 退出）---
-	var sys_hdr := PixelUI.label(rows, "系统与档案 // SYSTEM", 16, PixelUI.theme_dim())
+	# --- 系统与档案（存档 · 图鉴 · 设置 · 退出）---
+	var sys_hdr := PixelUI.label(rows, "系统与档案", 20, PixelUI.theme_dim())
 	sys_hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 	var util_row1 := HBoxContainer.new()
-	util_row1.add_theme_constant_override("separation", 8)
+	util_row1.add_theme_constant_override("separation", 10)
 	rows.add_child(util_row1)
 
-	saves_button = PixelUI.button("存档 // SLOTS", 40)
-	saves_button.add_theme_font_size_override("font_size", 16)
+	saves_button = PixelUI.button("存档", 52)
+	saves_button.add_theme_font_size_override("font_size", 21)
 	saves_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	saves_button.pressed.connect(_open_saves)
 	util_row1.add_child(saves_button)
 	_themed_buttons.append(saves_button)
 
-	codex_button = PixelUI.button("图鉴 // CODEX", 40)
-	codex_button.add_theme_font_size_override("font_size", 16)
+	codex_button = PixelUI.button("图鉴", 52)
+	codex_button.add_theme_font_size_override("font_size", 21)
 	codex_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	codex_button.pressed.connect(_open_codex)
 	util_row1.add_child(codex_button)
 	_themed_buttons.append(codex_button)
 
 	var util_row2 := HBoxContainer.new()
-	util_row2.add_theme_constant_override("separation", 8)
+	util_row2.add_theme_constant_override("separation", 10)
 	rows.add_child(util_row2)
 
-	settings_button = PixelUI.button("设置 // SETTINGS", 40)
-	settings_button.add_theme_font_size_override("font_size", 16)
+	settings_button = PixelUI.button("设置", 52)
+	settings_button.add_theme_font_size_override("font_size", 21)
 	settings_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	settings_button.pressed.connect(_open_settings)
 	util_row2.add_child(settings_button)
 	_themed_buttons.append(settings_button)
 
-	quit_button = PixelUI.button("退出游戏", 40)
-	quit_button.add_theme_font_size_override("font_size", 16)
+	quit_button = PixelUI.button("退出游戏", 52)
+	quit_button.add_theme_font_size_override("font_size", 21)
 	quit_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	quit_button.pressed.connect(_quit_game)
 	util_row2.add_child(quit_button)
@@ -464,8 +483,51 @@ func _build_nav_sidebar() -> void:
 	rows.add_child(div2)
 	_themed_dividers.append(div2)
 
+	# --- 战术电台快捷条（实时显示当前曲名 + 快捷切歌 + 打开电台）---
+	_build_radio_bar(rows)
+
 	# --- 主题配色切换条（4 套预设 + 自定义调色盘）---
 	_build_theme_switcher(rows)
+
+
+func _build_radio_bar(parent: Node) -> void:
+	var box := VBoxContainer.new()
+	box.name = "RadioDock"
+	box.add_theme_constant_override("separation", 5)
+	parent.add_child(box)
+
+	var hdr := PixelUI.label(box, "战术电台", 17, PixelUI.theme_accent())
+	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_themed_accent_labels.append(hdr)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	box.add_child(row)
+
+	radio_track_label = PixelUI.label(row, "♪ 读取曲库中…", 17, PixelUI.theme_text())
+	radio_track_label.name = "RadioTrackLabel"
+	radio_track_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	radio_track_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	radio_track_label.clip_text = true
+	radio_track_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+
+	radio_next_button = PixelUI.button("切歌", 38)
+	radio_next_button.name = "RadioNextButton"
+	radio_next_button.custom_minimum_size.x = 64
+	radio_next_button.add_theme_font_size_override("font_size", 16)
+	radio_next_button.tooltip_text = "切换下一首背景音乐"
+	radio_next_button.pressed.connect(_on_radio_quick_next)
+	row.add_child(radio_next_button)
+	_themed_buttons.append(radio_next_button)
+
+	radio_button = PixelUI.button("♪ 电台", 38)
+	radio_button.name = "RadioButton"
+	radio_button.custom_minimum_size.x = 88
+	radio_button.add_theme_font_size_override("font_size", 16)
+	radio_button.tooltip_text = "打开战术电台面板"
+	radio_button.pressed.connect(_open_radio)
+	row.add_child(radio_button)
+	_themed_buttons.append(radio_button)
 
 
 func _build_theme_switcher(parent: Node) -> void:
@@ -473,7 +535,7 @@ func _build_theme_switcher(parent: Node) -> void:
 	box.add_theme_constant_override("separation", 6)
 	parent.add_child(box)
 
-	var hdr := PixelUI.label(box, "界面主题 // THEME", 16, PixelUI.theme_dim())
+	var hdr := PixelUI.label(box, "界面主题", 17, PixelUI.theme_dim())
 	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 	var row := HBoxContainer.new()
@@ -481,8 +543,8 @@ func _build_theme_switcher(parent: Node) -> void:
 	box.add_child(row)
 
 	for id in ["amber", "terminal", "cyan", "mono"]:
-		var btn := PixelUI.button(PixelUI.theme_name(id), 32)
-		btn.add_theme_font_size_override("font_size", 15)
+		var btn := PixelUI.button(PixelUI.theme_name(id), 38)
+		btn.add_theme_font_size_override("font_size", 17)
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.pressed.connect(_select_theme_preset.bind(id))
 		row.add_child(btn)
@@ -490,7 +552,7 @@ func _build_theme_switcher(parent: Node) -> void:
 
 	theme_picker = ColorPickerButton.new()
 	theme_picker.name = "CustomThemePicker"
-	theme_picker.custom_minimum_size = Vector2(46, 32)
+	theme_picker.custom_minimum_size = Vector2(48, 38)
 	theme_picker.focus_mode = Control.FOCUS_NONE
 	theme_picker.edit_alpha = false
 	theme_picker.tooltip_text = "自定义主题配色"
@@ -523,7 +585,7 @@ func _build_right_cards() -> void:
 	dossier.add_child(d_rows)
 
 	var d_title := PixelUI.emphasize(
-		PixelUI.label(d_rows, "DOLL-01 // 作战档案", 22, PixelUI.theme_accent()), 2, 1)
+		PixelUI.label(d_rows, "作战档案", 24, PixelUI.theme_accent()), 2, 1)
 	_themed_accent_labels.append(d_title)
 	_stats["dossier_title"] = d_title
 
@@ -534,13 +596,13 @@ func _build_right_cards() -> void:
 	var op_line := HBoxContainer.new()
 	op_line.add_theme_constant_override("separation", 8)
 	d_rows.add_child(op_line)
-	PixelUI.label(op_line, "出击人形", 15, PixelUI.theme_dim())
-	var op_val := PixelUI.emphasize(PixelUI.label(op_line, "灰蓝猫耳", 16, PixelUI.theme_accent_bright()), 2, 1)
+	PixelUI.label(op_line, "出击人形", 17, PixelUI.theme_dim())
+	var op_val := PixelUI.emphasize(PixelUI.label(op_line, "灰蓝猫耳", 18, PixelUI.theme_accent_bright()), 2, 1)
 	op_val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_themed_bright_labels.append(op_val)
 	_stats["operator"] = op_val
 
-	# 信用点 + 技能等级（第一行），XP + 天赋进度（第二行），宽度充裕永不溢出
+	# 信用点 + 技能等级（第一行），经验 + 天赋进度（第二行），宽度充裕永不溢出
 	var top_metrics := HBoxContainer.new()
 	top_metrics.add_theme_constant_override("separation", 12)
 	d_rows.add_child(top_metrics)
@@ -550,13 +612,13 @@ func _build_right_cards() -> void:
 	var sub_metrics := HBoxContainer.new()
 	sub_metrics.add_theme_constant_override("separation", 12)
 	d_rows.add_child(sub_metrics)
-	_compact_stat_expand(sub_metrics, "经验 XP", "xp")
+	_compact_stat_expand(sub_metrics, "经验", "xp")
 	_compact_stat(sub_metrics, "天赋", "talents")
 
 	_resource_row(d_rows, "基础", ResourceDB.BASIC)
 	_resource_row(d_rows, "进阶", ResourceDB.ADVANCED)
 
-	var obj_line := PixelUI.label(d_rows, "目标：潜入 K-17 搜刮撤离 · 供电 +20%", 15, PixelUI.theme_dim())
+	var obj_line := PixelUI.label(d_rows, "目标：潜入 K-17 搜刮撤离 · 供电 +20%", 16, PixelUI.theme_dim())
 	obj_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 	# 2. 当前主/副武器携行预览卡
@@ -570,7 +632,7 @@ func _build_right_cards() -> void:
 	loadout_panel.add_child(l_rows)
 
 	var l_title := PixelUI.emphasize(
-		PixelUI.label(l_rows, "当前携行 // LOADOUT", 20, PixelUI.theme_accent()), 2, 1)
+		PixelUI.label(l_rows, "当前携行", 22, PixelUI.theme_accent()), 2, 1)
 	_themed_accent_labels.append(l_title)
 
 	var l_div := HSeparator.new()
@@ -593,10 +655,12 @@ func _build_right_cards() -> void:
 	var c_rows := VBoxContainer.new()
 	c_rows.add_theme_constant_override("separation", 4)
 	ctrl_panel.add_child(c_rows)
-	var c_hdr := PixelUI.label(c_rows, "快捷操作 // CONTROLS", 16, PixelUI.theme_accent())
+	var c_hdr := PixelUI.label(c_rows, "快捷操作", 18, PixelUI.theme_accent())
 	_themed_accent_labels.append(c_hdr)
-	PixelUI.label(c_rows, "WASD 移动 · SPACE 翻滚 · 左键开火 · 右键瞄准 · R 换弹", 14, PixelUI.theme_text())
-	PixelUI.label(c_rows, "1-2 切枪 · E 交互 · TAB 背包 · M 地图 · Alt+滚轮", 14, PixelUI.theme_dim())
+	var c_line1 := PixelUI.label(c_rows, "WASD 移动 · 空格翻滚 · 左键开火 · 右键瞄准 · R 换弹", 14, PixelUI.theme_text())
+	c_line1.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var c_line2 := PixelUI.label(c_rows, "1-2 切枪 · E 交互 · TAB 背包 · M 地图 · Alt+滚轮", 14, PixelUI.theme_dim())
+	c_line2.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 
 func _credit_badge(parent: Node) -> void:
@@ -711,7 +775,7 @@ func _build_footer() -> void:
 	bar.add_theme_constant_override("separation", 12)
 	add_child(bar)
 
-	var hint := PixelUI.label(bar, "ENTER 部署 · ESC 退出", 16, PixelUI.theme_dim())
+	var hint := PixelUI.label(bar, "回车 部署 · ESC 退出", 17, PixelUI.theme_dim())
 	hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 	var sep := PixelUI.label(bar, "|", 16, Color(PixelUI.DIM, 0.5))
@@ -796,7 +860,10 @@ func _apply_menu_theme() -> void:
 			div.add_theme_color_override("color", Color(acc, 0.65))
 
 	if start_button != null:
+		var start_fs := start_button.get_theme_font_size("font_size")
 		PixelUI.style_primary_button(start_button)
+		if start_fs > 0:
+			start_button.add_theme_font_size_override("font_size", start_fs)
 
 	for btn in _themed_buttons:
 		if is_instance_valid(btn):
@@ -864,10 +931,11 @@ func _refresh_dossier() -> void:
 	_stats["talents"].text = "%d/%d" % [total, max_total]
 	var cur_skin := String(p.character_skin()) if p.has_method("character_skin") else "doll_v2"
 	if _stats.has("dossier_title"):
-		(_stats["dossier_title"] as Label).text = "%s // 作战档案" % CHARACTER_MENU.operator_code(cur_skin)
+		(_stats["dossier_title"] as Label).text = "%s · 作战档案" % CHARACTER_MENU.operator_code(cur_skin)
 	if _stats.has("operator"):
 		(_stats["operator"] as Label).text = CHARACTER_MENU.operator_short_label(cur_skin)
 	_refresh_loadout_preview(p)
+	_refresh_radio_bar()
 
 
 func _refresh_loadout_preview(p: Node) -> void:
@@ -956,6 +1024,36 @@ func _open_codex() -> void:
 	codex.open()
 
 
+func _open_radio() -> void:
+	if _closing or radio_menu == null:
+		return
+	radio_menu.open()
+
+
+func _on_radio_quick_next() -> void:
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx != null and sfx.has_method("bgm_next_track"):
+		sfx.bgm_next_track()
+	_refresh_radio_bar()
+
+
+func _on_bgm_track_changed(_track: Dictionary) -> void:
+	_refresh_radio_bar()
+
+
+func _refresh_radio_bar() -> void:
+	if radio_track_label == null:
+		return
+	var sfx := get_node_or_null("/root/Sfx")
+	var title := "静音 / 暂无曲目"
+	if sfx != null and sfx.has_method("bgm_current_track"):
+		var cur: Dictionary = sfx.bgm_current_track()
+		var t := String(cur.get("title", ""))
+		if t != "":
+			title = t
+	radio_track_label.text = "♪ %s" % title
+
+
 func _on_slot_loaded(_slot: int) -> void:
 	var p := get_node_or_null("/root/Progress")
 	if p != null and p.has_method("ui_theme"):
@@ -1024,7 +1122,7 @@ func _show_loading_overlay() -> void:
 	_loading_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	_loading_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_loading_overlay)
-	var title := PixelUI.label(_loading_overlay, "部署中 // DEPLOYING", 34, PixelUI.theme_accent())
+	var title := PixelUI.label(_loading_overlay, "正在部署…", 34, PixelUI.theme_accent())
 	title.set_anchors_preset(Control.PRESET_CENTER)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1062,6 +1160,11 @@ func _wait_main_scene() -> PackedScene:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _closing or not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if radio_menu != null and radio_menu.visible:
+		if event.keycode == KEY_ESCAPE:
+			radio_menu.close_menu()
+			get_viewport().set_input_as_handled()
 		return
 	if character_menu != null and character_menu.visible:
 		if event.keycode == KEY_ESCAPE:

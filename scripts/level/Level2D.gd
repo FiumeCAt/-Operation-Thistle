@@ -121,8 +121,9 @@ func _ready() -> void:
 		var built_exits := BUILDER.build_exits(sort_layer, exits, switch_exit_position, exit_radius)
 		switch_exit_node = built_exits["switch_exit_node"]
 		_switch_label = built_exits["switch_label"]
-		# 所有家具与容器摆完后，再合成最终寻路网格。
+		# 所有家具与容器摆完后，再合成最终寻路网格，并将落在家具/障碍内的刷怪点吸附至最近可走格。
 		_build_nav_grid(_nav_passable)
+		_sanitize_enemy_spawns()
 
 
 func map_size() -> Vector2:
@@ -312,6 +313,19 @@ func set_power_on(value: bool) -> void:
 
 func _build_nav_grid(passable: Dictionary) -> void:
 	nav_grid.build(_nav_w, _nav_h, passable)
+
+
+## 刷怪点净空校准：确保所有房间/巡逻敌人出生点均位于可行走格内，绝不卡进床/货架/发电机等随机家具。
+func _sanitize_enemy_spawns() -> void:
+	if not nav_grid.ready:
+		return
+	for i in enemy_spawns.size():
+		var pos := enemy_spawns[i]
+		if nav_grid.is_walkable(pos):
+			continue
+		var safe_cell := nav_grid.nearest_walkable_cell(nav_grid.world_to_cell(pos), 5)
+		if safe_cell.x >= 0:
+			enemy_spawns[i] = (Vector2(safe_cell) + Vector2(0.5, 0.5)) * TILE
 
 
 func _mark_nav_obstacle(pos: Vector2, size: Vector2) -> void:

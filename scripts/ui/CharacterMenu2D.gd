@@ -382,6 +382,15 @@ func _build_preview_scene(vp: SubViewport) -> void:
 	stage.name = "Stage"
 	vp.add_child(stage)
 
+
+func _ensure_preview_doll() -> void:
+	if preview_doll != null and is_instance_valid(preview_doll):
+		return
+	if _preview_vp == null:
+		return
+	var stage := _preview_vp.get_node_or_null("Stage") as Node2D
+	if stage == null:
+		return
 	var doll_scene := load("res://scenes/actors/Doll2D.tscn") as PackedScene
 	if doll_scene != null:
 		preview_doll = doll_scene.instantiate() as Doll2D
@@ -393,6 +402,7 @@ func _build_preview_scene(vp: SubViewport) -> void:
 
 
 func open() -> void:
+	_ensure_preview_doll()
 	var p := get_node_or_null("/root/Progress")
 	var saved := String(p.character_skin()) if (p != null and p.has_method("character_skin")) else "doll_v2"
 	selected_skin_id = saved if _is_formal_operator(saved) else "doll_v2"

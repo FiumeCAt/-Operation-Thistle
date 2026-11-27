@@ -29,7 +29,7 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 
-	_check(menu.codex_button != null and menu.codex_button.text.contains("CODEX"),
+	_check(menu.codex_button != null and menu.codex_button.text.contains("图鉴"),
 		"start menu has codex button")
 	_check(menu.codex != null and not menu.codex.visible, "codex hidden at start")
 
@@ -63,9 +63,9 @@ func _run() -> void:
 		if row["cell"].visible:
 			visible_stats += 1
 			stat_names.append(row["name"].text)
-	_check(visible_stats == 13, "goliath shows thirteen detail stats")
-	_check(stat_names.has("爆炸半径") and stat_names.has("爆炸伤害") and stat_names.has("引爆延迟"),
-		"goliath explosion stats listed")
+	_check(visible_stats == 14, "goliath shows fourteen detail stats including weakspot")
+	_check(stat_names.has("弱点部位") and stat_names.has("爆炸半径") and stat_names.has("爆炸伤害") and stat_names.has("引爆延迟"),
+		"goliath weakspot and explosion stats listed")
 	_check(codex._next_button.disabled, "last enemy disables next button")
 	_check(codex._page_label.text.contains("08 / 08"), "enemy page counter ends at 8 / 8")
 
@@ -74,6 +74,11 @@ func _run() -> void:
 	await process_frame
 	_check(codex._tab_item.text.begins_with("▶"), "item tab marked active")
 	_check(codex._detail_title.text.contains("M870"), "first item is M870")
+	var m870_ws_val := ""
+	for row in codex._stat_rows:
+		if row["cell"].visible and row["name"].text == "弱点加成":
+			m870_ws_val = row["value"].text
+	_check(m870_ws_val == "+15%", "codex weapon detail displays weakspot bonus (+15% for M870)")
 	_check(codex._portrait.texture != null, "weapon portrait texture loaded")
 	_check(codex._page_label.text.contains("01 / 55"), "item page counter starts at 1 / 55")
 	_check(codex._note_label.text.length() > 12, "weapon archive note has text")

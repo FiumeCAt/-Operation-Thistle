@@ -76,9 +76,16 @@ func _run() -> void:
 		and goliath.weakspot_part == "detonator_core" and turret.weakspot_part == "barrel_core",
 		"each enemy configures its own anatomical weakspot part rather than hardcoding head")
 	_check(mutant_mock.weakspot_enabled and mutant_mock.weakspot_part == "exposed_core"
-		and is_equal_approx(mutant_mock.weakspot_armor_mul, 0.0)
-		and is_equal_approx(mutant_mock.weakspot_damage_mul, 1.75),
-		"mutant archetype inherits exposed_core weakspot with 0.0x armor and 1.75x damage")
+		and is_equal_approx(mutant_mock.weakspot_armor_mul, 0.50)
+		and is_equal_approx(mutant_mock.weakspot_damage_mul, 2.00),
+		"mutant archetype inherits exposed_core weakspot with 0.50x armor and 2.00x damage")
+	_check(is_equal_approx(rifle.weakspot_damage_mul, 2.0) and is_equal_approx(rifle.weakspot_armor_mul, 0.5)
+		and is_equal_approx(heavy.weakspot_damage_mul, 2.0) and is_equal_approx(heavy.weakspot_armor_mul, 0.5)
+		and is_equal_approx(hunter.weakspot_damage_mul, 1.5) and is_equal_approx(hunter.weakspot_armor_mul, 0.5)
+		and is_equal_approx(ht1.weakspot_damage_mul, 1.5) and is_equal_approx(ht1.weakspot_armor_mul, 0.5)
+		and is_equal_approx(goliath.weakspot_damage_mul, 1.5) and is_equal_approx(goliath.weakspot_armor_mul, 0.5)
+		and is_equal_approx(turret.weakspot_damage_mul, 1.5) and is_equal_approx(turret.weakspot_armor_mul, 0.5),
+		"data-driven weakspot baseline sets mech=1.5x, human/mutant=2.0x, armor_mul=0.50 across all enemies")
 	_check(not no_ws_mock.weakspot_enabled, "weakspot: null cleanly disables weakspot on a unit")
 	_check(rifle.weakspot_tolerance >= 1.15 and rifle.weakspot_tolerance <= 1.20
 		and rifle.effective_weakspot_radius() > rifle.weakspot_radius * 1.15,
