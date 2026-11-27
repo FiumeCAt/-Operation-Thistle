@@ -29,6 +29,7 @@ func _run() -> void:
 	root.add_child(menu)
 	await process_frame
 	_check(menu.start_button != null and menu.start_button.text.contains("开始"), "start menu has start button")
+	_check(menu.character_button != null and menu.character_button.text.contains("角色"), "start menu has character button")
 	_check(menu.talents_button != null and menu.talents_button.text.contains("TALENTS"), "start menu has talents button")
 	_check(menu.stash_button != null and menu.stash_button.text.contains("STASH"), "start menu has stash button")
 	_check(menu.quit_button != null and menu.quit_button.text.contains("退出"), "start menu has quit button")
@@ -61,6 +62,28 @@ func _run() -> void:
 	esc.pressed = true
 	menu._unhandled_input(esc)
 	_check(not menu.stash.visible, "ESC closes the stash")
+
+	# 角色界面：实时展示两套正式角色并支持在主菜单切换保存
+	menu._open_character()
+	await process_frame
+	_check(menu.character_menu != null and menu.character_menu.visible and menu.character_menu.preview_doll != null,
+		"character menu opens from main menu with live Doll2D preview")
+	var sw_ok: bool = bool(menu.character_menu.select_character("doll_thistle"))
+	await process_frame
+	_check(sw_ok and menu.character_menu.selected_skin_id == "doll_thistle"
+		and menu.character_menu.preview_doll.get_skin() == "doll_thistle"
+		and (p == null or p.character_skin() == "doll_thistle")
+		and menu._stats["operator"].text.contains("蓟花白裙"),
+		"character menu switches active operator to doll_thistle, persists to Progress, and updates dossier")
+	menu.character_menu.set_preview_direction(2)
+	menu.character_menu.set_preview_pose(&"run")
+	_check(menu.character_menu.preview_dir == 2 and menu.character_menu.preview_pose == &"run",
+		"character menu updates preview direction and pose cleanly")
+	menu._unhandled_input(esc)
+	_check(not menu.character_menu.visible, "ESC closes the character menu")
+	if p != null:
+		p.set_character_skin("doll_v2")
+		menu._refresh_dossier()
 
 	_check(menu.deployment != null and not menu.deployment.visible, "deployment menu exists")
 	_check(menu._bg_textures.size() == 3, "start menu loads all three tactical background slides")

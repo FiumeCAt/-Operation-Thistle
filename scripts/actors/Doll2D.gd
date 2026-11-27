@@ -411,6 +411,46 @@ func _update_head_tilt(delta: float) -> void:
 func _update_weapon_anchor() -> void:
 	if _weapon_mount == null:
 		return
+	if rig_v2 != null and rig_v2.visible:
+		var stowed_mode := weapon_rig == null or weapon_rig.is_holstered()
+		var dir_v2 := rig_v2.upper_direction if stowed_mode else rig_v2.lower_direction
+		# Modular Doll Rig v2 专用背后斜挂定位：正面与侧面严格置于躯干后层(z=-1)，
+		# 侧面收紧至背部贴身斜角，绝不浮在胸前或斜穿腹部；背面置前(z=1)自然斜挎。
+		match dir_v2:
+			0:
+				_weapon_mount.position = Vector2(2.0, -82.0)
+				_weapon_mount.z_index = -1
+			1:
+				_weapon_mount.position = Vector2(-2.0, -82.0)
+				_weapon_mount.z_index = 1
+			2:
+				# 朝左(-X)，后背在 +X 侧
+				_weapon_mount.position = Vector2(11.0, -82.0)
+				_weapon_mount.z_index = -1
+			_:
+				# 朝右(+X)，后背在 -X 侧
+				_weapon_mount.position = Vector2(-11.0, -82.0)
+				_weapon_mount.z_index = -1
+		if _weapon_sprite != null:
+			_weapon_sprite.visible = not is_dodging()
+			match dir_v2:
+				0:
+					_weapon_sprite.rotation = -0.96
+					_weapon_sprite.flip_h = false
+					_weapon_sprite.flip_v = false
+				1:
+					_weapon_sprite.rotation = -0.96
+					_weapon_sprite.flip_h = false
+					_weapon_sprite.flip_v = false
+				2:
+					_weapon_sprite.rotation = -1.32
+					_weapon_sprite.flip_h = false
+					_weapon_sprite.flip_v = false
+				_:
+					_weapon_sprite.rotation = 1.32
+					_weapon_sprite.flip_h = true
+					_weapon_sprite.flip_v = false
+		return
 	var anchor: Vector2 = WEAPON_ANCHOR.get(direction, Vector2(0.0, -0.58))
 	_weapon_mount.position = anchor * WORLD_BODY
 	# 正面视角时武器在身体后面，背面/侧面视角时压在身体上层
@@ -473,7 +513,8 @@ func _show_stowed_weapon() -> void:
 	if tex == null:
 		return
 	_stow_base = _cfg_vec2(&"stow_offset", STOW_OFFSET)
-	var sprite := equip_weapon(tex, _stow_base, weapon_rig.get_stow_scale())
+	var stow_scale := weapon_rig.get_stow_scale() * (0.86 if (rig_v2 != null and rig_v2.visible) else 1.0)
+	var sprite := equip_weapon(tex, _stow_base, stow_scale)
 	sprite.rotation = _cfg_float(&"stow_rotation", STOW_ROTATION)
 	sprite.flip_v = direction == 2
 	sprite.modulate = _cfg_color(&"stow_tint", STOW_TINT)
@@ -868,6 +909,7 @@ func _physics_process(delta: float) -> void:
 			var w_holstered := weapon_rig == null or weapon_rig.is_holstered()
 			rig_v2.update_rig(velocity, walk_speed, sprint_speed, aim_target, aim_enabled,
 				w_armed, w_holstered, false, true, u, _dodge_dir, delta)
+			_update_weapon_anchor()
 		elif rig != null:
 			rig.set_state("run", direction, aim_target, false, delta)
 		_sync_head()
@@ -922,8 +964,8 @@ func _physics_process(delta: float) -> void:
 		var w_holstered := weapon_rig == null or weapon_rig.is_holstered()
 		rig_v2.update_rig(velocity, walk_speed, sprint_speed, aim_target, aim_enabled,
 			armed, w_holstered, ads, false, 0.0, Vector2.ZERO, delta)
-		if armed and aim_enabled:
-			direction = rig_v2.upper_direction
+		direction = rig_v2.upper_direction
+		_update_weapon_anchor()
 	elif rig != null:
 		var mode := "idle"
 		if moving:
@@ -988,9 +1030,12 @@ func _apply_bob(moving: bool) -> void:
 		rig_v2.position = _flinch
 	if weapon_rig != null:
 		weapon_rig.position = _flinch
-	# 背后挂点的枪不挂在 Body 下，手动跟随走路起伏
+	# 背后挂点的枪不挂在 Body 下，手动跟随走路起伏（Modular Rig v2 同步躯干呼吸/颠簸偏移）
 	if _weapon_sprite != null:
-		_weapon_sprite.position = _stow_base + Vector2(0.0, body.offset.y - _base_offset)
+		if rig_v2 != null and rig_v2.visible:
+			_weapon_sprite.position = _stow_base + rig_v2.get_weapon_shoulder_offset()
+		else:
+			_weapon_sprite.position = _stow_base + Vector2(0.0, body.offset.y - _base_offset)
 
 func _direction_index(input_vector: Vector2) -> int:
 	# 0=下 1=上 2=左 3=右，以主轴方向为准，避免斜向时抖动。

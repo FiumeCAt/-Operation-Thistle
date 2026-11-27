@@ -74,21 +74,34 @@ func _run() -> void:
 	_check(max_knee > 0.25, "2-segment legs bend knees smoothly during gait (max %.2f rad)" % max_knee)
 	_check(foot_events[0] >= 1, "footstep_planted signal emits on stride contact (%d)" % foot_events[0])
 
-	# 4b) 验证正/背移动抬膝与收枪奔跑双臂肘部明显弯曲（确保四肢关节全向灵动）
+	# 4b) 验证正/背移动垂直抬膝（彻底消除外八鸭子撇腿）与收枪侧跑双臂屈肘
 	var max_front_lift := 0.0
+	var max_front_splay := 0.0
 	var max_elbow_bend := 0.0
-	for _i in 24:
+	for i in 24:
 		rv2.update_rig(Vector2(0, 360), 250.0, 380.0, doll.global_position + Vector2(0, 240), true, false, true, false,
 			false, 0.0, Vector2.ZERO, 0.03)
 		var base_ky := DollRigV2.THIGH_LEN - 2.0
 		max_front_lift = maxf(max_front_lift, maxf(base_ky - rv2.leg_l_knee.position.y, base_ky - rv2.leg_r_knee.position.y))
+		if i >= 6:
+			max_front_splay = maxf(max_front_splay, maxf(absf(rv2.leg_l_knee.rotation), absf(rv2.leg_r_knee.rotation)))
 		max_elbow_bend = maxf(max_elbow_bend, maxf(absf(rv2.arm_l_elbow.rotation), absf(rv2.arm_r_elbow.rotation)))
 	for _i in 18:
 		rv2.update_rig(Vector2(360, 0), 250.0, 380.0, aim_right, true, false, true, false,
 			false, 0.0, Vector2.ZERO, 0.03)
 		max_elbow_bend = maxf(max_elbow_bend, maxf(absf(rv2.arm_l_elbow.rotation), absf(rv2.arm_r_elbow.rotation)))
-	_check(max_front_lift > 4.0 and max_elbow_bend > 0.45,
-		"front/back gait lifts knee joints (%.1fpx) and arms flex elbows clearly (%.2f rad)" % [max_front_lift, max_elbow_bend])
+	_check(max_front_lift > 4.0 and max_front_splay < 0.06 and max_elbow_bend > 0.45,
+		"front/back gait lifts knees cleanly (%.1fpx, zero duck splay %.2f rad) and side arms flex elbows (%.2f rad)" % [max_front_lift, max_front_splay, max_elbow_bend])
+
+	# 4c) 冲刺速度下反向移动 + 朝右瞄准 -> 仍保持 backpedal 且膝盖严格向后弯曲（零火烈鸟反关节）
+	var sprint_back_ok := true
+	for _i in 20:
+		rv2.update_rig(Vector2(-380, 0), 250.0, 380.0, aim_right, true, true, false, false,
+			false, 0.0, Vector2.ZERO, 0.03)
+		if rv2.locomotion_mode != &"backpedal" or rv2.leg_l_knee.rotation < -0.05 or rv2.leg_r_knee.rotation < -0.05:
+			sprint_back_ok = false
+			break
+	_check(sprint_back_ok, "sprint-backpedal keeps anatomical backward knee bend (no reverse-joint flamingo knee)")
 
 	# 5) 侧面移动 + 朝上瞄准 -> 识别为 strafe，且背后枪盒切至身体前层 (z > 0)
 	var aim_up := doll.global_position + Vector2(0, -240)
@@ -144,6 +157,15 @@ func _run() -> void:
 	var holstered_arms_shown := rv2.arm_l_shoulder.visible or rv2.arm_r_shoulder.visible
 	_check(armed_arms_hidden and holstered_arms_shown and wr.get_stance_id() == &"rifle",
 		"holstered rig arms cleanly hand off to WeaponRig2D when armed")
+
+	rv2.update_rig(Vector2.ZERO, 250.0, 380.0, doll.global_position + Vector2(-240, 0), true, false, true, false,
+		false, 0.0, Vector2.ZERO, 0.02)
+	doll.direction = rv2.upper_direction
+	wr.holster()
+	doll._show_stowed_weapon()
+	var stow_behind_left := doll._weapon_mount != null and doll._weapon_mount.z_index < 0 and doll._weapon_mount.position.x > 0.0
+	_check(stow_behind_left, "holstered side weapon tucks behind back (z<0, +X when facing left, never floating on chest)")
+	wr.draw()
 
 	# 10) 皮肤包完整性（doll_v2 / doll_thistle / mannequin 全 19+3 分件 + skin_manifest.json + 严格 1:1 target_h）
 	for sid: String in ["doll_v2", "doll_thistle", "mannequin"]:

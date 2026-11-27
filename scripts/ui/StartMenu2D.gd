@@ -8,6 +8,7 @@ class_name StartMenu2D
 
 const MAIN_SCENE := "res://scenes/core/Main2D.tscn"
 const SAVE_SLOTS_MENU := preload("res://scripts/ui/SaveSlotsMenu2D.gd")
+const CHARACTER_MENU := preload("res://scripts/ui/CharacterMenu2D.gd")
 const COMBAT_FX_WARMUP := preload("res://scripts/fx/CombatFxWarmup.gd")
 const HIT_FX := preload("res://scripts/fx/HitFX2D.gd")
 
@@ -25,6 +26,7 @@ const BG_FADE_SECONDS := 1.8
 
 var start_button: Button
 var waves_button: Button
+var character_button: Button
 var talents_button: Button
 var armory_button: Button
 var stash_button: Button
@@ -32,6 +34,7 @@ var saves_button: Button
 var settings_button: Button
 var codex_button: Button
 var quit_button: Button
+var character_menu: CharacterMenu2D
 var talents: TalentTree2D
 var armory: ArmoryMenu2D
 var stash: StashMenu2D
@@ -240,6 +243,12 @@ func _build() -> void:
 	_build_right_cards()
 	_build_footer()
 
+	character_menu = CHARACTER_MENU.new()
+	character_menu.name = "CharacterMenu2D"
+	character_menu.closed.connect(_on_sub_closed)
+	character_menu.character_changed.connect(_on_character_changed)
+	add_child(character_menu)
+
 	talents = TalentTree2D.new()
 	talents.name = "TalentTree2D"
 	talents.closed.connect(_on_sub_closed)
@@ -323,12 +332,12 @@ func _build_nav_sidebar() -> void:
 	_nav_bg_panel.set_anchors_preset(Control.PRESET_LEFT_WIDE)
 	_nav_bg_panel.offset_left = 44
 	_nav_bg_panel.offset_right = 492
-	_nav_bg_panel.offset_top = 44
-	_nav_bg_panel.offset_bottom = -82
+	_nav_bg_panel.offset_top = 28
+	_nav_bg_panel.offset_bottom = -74
 	add_child(_nav_bg_panel)
 
 	var rows := VBoxContainer.new()
-	rows.add_theme_constant_override("separation", 10)
+	rows.add_theme_constant_override("separation", 7)
 	_nav_bg_panel.add_child(rows)
 
 	var tag := PixelUI.emphasize(
@@ -367,23 +376,44 @@ func _build_nav_sidebar() -> void:
 	actions.add_child(waves_button)
 	_themed_buttons.append(waves_button)
 
-	# --- 战前整备 ---
+	# --- 战前整备（2×2 紧凑布局：角色 / 武备库 / 天赋树 / 仓库）---
 	var prep_hdr := PixelUI.label(rows, "战前整备 // PREP", 16, PixelUI.theme_accent())
 	_themed_accent_labels.append(prep_hdr)
 
+	var prep_row1 := HBoxContainer.new()
+	prep_row1.add_theme_constant_override("separation", 8)
+	rows.add_child(prep_row1)
+
+	character_button = PixelUI.button("角色 // OPERATOR", 46)
+	character_button.add_theme_font_size_override("font_size", 16)
+	character_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	character_button.pressed.connect(_open_character)
+	prep_row1.add_child(character_button)
+	_themed_buttons.append(character_button)
+
 	armory_button = PixelUI.button("武备库 // ARSENAL", 46)
+	armory_button.add_theme_font_size_override("font_size", 16)
+	armory_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	armory_button.pressed.connect(_open_armory)
-	rows.add_child(armory_button)
+	prep_row1.add_child(armory_button)
 	_themed_buttons.append(armory_button)
 
+	var prep_row2 := HBoxContainer.new()
+	prep_row2.add_theme_constant_override("separation", 8)
+	rows.add_child(prep_row2)
+
 	talents_button = PixelUI.button("天赋树 // TALENTS", 46)
+	talents_button.add_theme_font_size_override("font_size", 16)
+	talents_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	talents_button.pressed.connect(_open_talents)
-	rows.add_child(talents_button)
+	prep_row2.add_child(talents_button)
 	_themed_buttons.append(talents_button)
 
 	stash_button = PixelUI.button("仓库 // STASH", 46)
+	stash_button.add_theme_font_size_override("font_size", 16)
+	stash_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stash_button.pressed.connect(_open_stash)
-	rows.add_child(stash_button)
+	prep_row2.add_child(stash_button)
 	_themed_buttons.append(stash_button)
 
 	# --- 次级功能行（存档 · 图鉴 · 设置 · 退出）---
@@ -495,10 +525,20 @@ func _build_right_cards() -> void:
 	var d_title := PixelUI.emphasize(
 		PixelUI.label(d_rows, "DOLL-01 // 作战档案", 22, PixelUI.theme_accent()), 2, 1)
 	_themed_accent_labels.append(d_title)
+	_stats["dossier_title"] = d_title
 
 	var d_div := HSeparator.new()
 	d_rows.add_child(d_div)
 	_themed_dividers.append(d_div)
+
+	var op_line := HBoxContainer.new()
+	op_line.add_theme_constant_override("separation", 8)
+	d_rows.add_child(op_line)
+	PixelUI.label(op_line, "出击人形", 15, PixelUI.theme_dim())
+	var op_val := PixelUI.emphasize(PixelUI.label(op_line, "灰蓝猫耳", 16, PixelUI.theme_accent_bright()), 2, 1)
+	op_val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_themed_bright_labels.append(op_val)
+	_stats["operator"] = op_val
 
 	# 信用点 + 技能等级（第一行），XP + 天赋进度（第二行），宽度充裕永不溢出
 	var top_metrics := HBoxContainer.new()
@@ -735,8 +775,8 @@ func _apply_menu_theme() -> void:
 		nav_st.border_width_bottom = 1
 		nav_st.content_margin_left = 20
 		nav_st.content_margin_right = 20
-		nav_st.content_margin_top = 18
-		nav_st.content_margin_bottom = 16
+		nav_st.content_margin_top = 14
+		nav_st.content_margin_bottom = 12
 		_nav_bg_panel.add_theme_stylebox_override("panel", nav_st)
 
 	for p in _themed_panels:
@@ -822,6 +862,11 @@ func _refresh_dossier() -> void:
 		total += int(p.talent_2d_level(id))
 		max_total += int(p.talent_2d_max(id))
 	_stats["talents"].text = "%d/%d" % [total, max_total]
+	var cur_skin := String(p.character_skin()) if p.has_method("character_skin") else "doll_v2"
+	if _stats.has("dossier_title"):
+		(_stats["dossier_title"] as Label).text = "%s // 作战档案" % CHARACTER_MENU.operator_code(cur_skin)
+	if _stats.has("operator"):
+		(_stats["operator"] as Label).text = CHARACTER_MENU.operator_short_label(cur_skin)
 	_refresh_loadout_preview(p)
 
 
@@ -863,6 +908,16 @@ func _set_stash(id: StringName, value: int) -> void:
 func _on_sub_closed() -> void:
 	start_button.grab_focus()
 	_refresh_dossier()
+
+
+func _on_character_changed(_skin_id: String) -> void:
+	_refresh_dossier()
+
+
+func _open_character() -> void:
+	if _closing or character_menu == null:
+		return
+	character_menu.open()
 
 
 func _open_talents() -> void:
@@ -1007,6 +1062,11 @@ func _wait_main_scene() -> PackedScene:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _closing or not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if character_menu != null and character_menu.visible:
+		if event.keycode == KEY_ESCAPE:
+			character_menu.close_menu()
+			get_viewport().set_input_as_handled()
 		return
 	if codex != null and codex.visible:
 		if event.keycode == KEY_ESCAPE:
