@@ -145,7 +145,61 @@ func _run() -> void:
 	_check(armed_arms_hidden and holstered_arms_shown and wr.get_stance_id() == &"rifle",
 		"holstered rig arms cleanly hand off to WeaponRig2D when armed")
 
-	# 10) 收尾清理 + 旧版回退模式可用
+	# 10) 皮肤包完整性（doll_v2 & mannequin 全 19+3 分件 + mannequin 1:1 target_h 像素锁定）
+	_check(DollRigV2.skin_exists("doll_v2") and WeaponRig2D.skin_has_arm2("doll_v2"),
+		"doll_v2 skin has all required parts and 3 arm2 weapon-arm textures")
+	_check(DollRigV2.skin_exists("mannequin") and WeaponRig2D.skin_has_arm2("mannequin"),
+		"mannequin skin has all required parts and 3 arm2 weapon-arm textures")
+	var manifest_path := DollRigV2.skin_manifest_path("mannequin")
+	var manifest_raw = JSON.parse_string(FileAccess.get_file_as_string(manifest_path)) if FileAccess.file_exists(manifest_path) else null
+	_check(manifest_raw is Dictionary and int((manifest_raw as Dictionary).get("parts_count", 0)) == 19
+		and int((manifest_raw as Dictionary).get("arm2_count", 0)) == 3,
+		"mannequin skin_manifest.json exists and declares 19 parts + 3 arm2")
+
+	# 11) set_skin() 热切换同步 DollRigV2 与 WeaponRig2D + 1:1 scale 校验 + 左蓝/右橙分色
+	var switched_m := doll.set_skin("mannequin")
+	await process_frame
+	_check(switched_m and doll.get_skin() == "mannequin" and rv2.skin_id == "mannequin"
+		and wr.skin_id == "mannequin" and rv2.has_all_part_textures(),
+		"set_skin('mannequin') hot-swaps both DollRigV2 (19 parts) and WeaponRig2D (3 arm2)")
+	var all_1to1 := true
+	for k in rv2._part_scale_base:
+		var sc: Vector2 = rv2._part_scale_base[k]
+		if not sc.is_equal_approx(Vector2.ONE):
+			all_1to1 = false
+			break
+	_check(all_1to1, "all 19 mannequin parts match DollRigV2 target_h 1:1 (zero non-integer scale distortion)")
+	var l_thigh_sp := rv2.leg_l_hip.get_child(0) as Sprite2D
+	var r_thigh_sp := rv2.leg_r_hip.get_child(0) as Sprite2D
+	_check(l_thigh_sp != null and r_thigh_sp != null and l_thigh_sp.texture != r_thigh_sp.texture,
+		"mannequin mode applies distinct left-blue / right-orange limb textures")
+	var wr2 := doll.equip_weapon_id(&"awm")
+	await process_frame
+	_check(wr2.skin_id == "mannequin", "newly equipped WeaponRig2D inherits active skin_id ('mannequin')")
+
+	# 12) 非法或缺失皮肤自动安全回退至 doll_v2
+	var bad_ok := doll.set_skin("nonexistent_skin_xyz")
+	_check(not bad_ok and doll.get_skin() == "doll_v2" and rv2.skin_id == "doll_v2" and wr2.skin_id == "doll_v2",
+		"invalid skin safely falls back to 'doll_v2' on both DollRigV2 and WeaponRig2D")
+	var traversal_ok := doll.set_skin("../invalid")
+	_check(not traversal_ok and doll.get_skin() == "doll_v2" and rv2.has_all_part_textures(),
+		"path-traversal skin id rejected and safely falls back to 'doll_v2'")
+
+	# 13) DebugMenu2D 一键外观开关实时热切换当前场景角色皮肤
+	var dm := DebugMenu2D.new()
+	stage.add_child(dm)
+	await process_frame
+	var toggled_to := dm.toggle_character_skin()
+	_check(toggled_to == "mannequin" and doll.get_skin() == "mannequin" and wr2.skin_id == "mannequin",
+		"DebugMenu2D toggle switches live player to mannequin")
+	var toggled_back := dm.toggle_character_skin()
+	_check(toggled_back == "doll_v2" and doll.get_skin() == "doll_v2" and wr2.skin_id == "doll_v2",
+		"DebugMenu2D toggle switches live player back to formal doll_v2")
+	var p := root.get_node_or_null("Progress")
+	if p != null and p.has_method("reset_debug"):
+		p.reset_debug()
+
+	# 14) 收尾清理 + 旧版回退模式可用
 	doll.enable_rig("legacy")
 	_check(not rv2.visible and doll.body.visible, "enable_rig('legacy') falls back to legacy sprite cleanly")
 	doll.enable_rig("v2")

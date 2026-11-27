@@ -443,16 +443,20 @@ func _is_dodge_blocked() -> bool:
 
 
 ## 通过命令行切换角色表现：
-##   默认：整身图集 + 独立头部（头随鼠标摆动）+ 手持 g17
+##   默认：Modular Doll Rig v2 正式皮肤（doll_v2）+ 当前配装主武器
+##   `-- --skin=mannequin`              热切换角色皮肤包（doll_v2 / mannequin）
 ##   `-- --rig=normal` / `--rig=chibi`  实验性的分件骨架（头/躯干/四肢/武器箱）
 ##   `-- --lod=1024`                    切换整身图集精度
 ##   `-- --weapon=off`                  不举枪
 func _apply_visual_override() -> void:
 	var rig_style := ""
 	var weapon := "g17"
+	var skin_id := "doll_v2"
 	var loadout_ids: Array[StringName] = []
 	var progress := get_node_or_null("/root/Progress")
 	if progress != null:
+		if progress.has_method("character_skin"):
+			skin_id = String(progress.character_skin())
 		for id in progress.loadout_2d():
 			loadout_ids.append(StringName(id))
 		if not loadout_ids.is_empty():
@@ -460,6 +464,8 @@ func _apply_visual_override() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--rig="):
 			rig_style = arg.get_slice("=", 1)
+		elif arg.begins_with("--skin="):
+			skin_id = arg.get_slice("=", 1)
 		elif arg.begins_with("--weapon="):
 			weapon = arg.get_slice("=", 1)
 		elif arg.begins_with("--lod="):
@@ -477,9 +483,10 @@ func _apply_visual_override() -> void:
 		rig.fire_input_blocked_fn = hud.is_pointer_over_interactive
 		rig.fire_mode_changed.connect(_on_fire_mode_changed)
 		rig.ammo_switched.connect(_on_ammo_switched)
-	if rig_style == "" or rig_style == "off":
-		return
-	doll.enable_rig(rig_style)
+	if rig_style != "" and rig_style != "off":
+		doll.enable_rig(rig_style)
+	if skin_id != "" and doll != null and doll.has_method("set_skin"):
+		doll.set_skin(skin_id)
 
 
 ## 把 2D 天赋树等级应用到本局角色/武器；升级从下一次行动开始生效。

@@ -12,8 +12,24 @@ class_name DollRigV2
 
 signal footstep_planted(local_offset: Vector2, is_running: bool)
 
+const SKIN_ROOT := "res://assets/art/characters/"
+const DEFAULT_SKIN := "doll_v2"
+## 兼容只读常量（指向默认正式皮分件目录）
 const PART_DIR := "res://assets/art/characters/doll_v2/parts/"
 const SHADOW_TEX_PATH := "res://assets/art/env/pixel_shadow_64.png"
+
+const PART_NAMES: Array[String] = [
+	"head_front", "head_front_blink", "head_back", "head_left", "head_left_blink",
+	"torso_front", "torso_back", "torso_left",
+	"hair_back_root", "hair_back_tip", "hair_side",
+	"coat_flap_root", "coat_flap_tip", "skirt_hem",
+	"thigh", "shin_boot", "gun_case",
+	"arm_upper", "arm_forearm",
+]
+const LIMB_COLOR_PARTS: Array[String] = ["thigh", "shin_boot", "arm_upper", "arm_forearm"]
+const MANNEQUIN_LEFT_TINT := Color(0.38, 0.80, 1.0, 1.0)
+const MANNEQUIN_RIGHT_TINT := Color(1.0, 0.62, 0.24, 1.0)
+static var _tinted_tex_cache: Dictionary = {}
 
 ## 统一 128px×1 像素规格画布：脚底基线位于 (80, 148)，头顶猫耳约 y = 20。
 const CANVAS_SIZE := Vector2i(160, 160)
@@ -72,8 +88,15 @@ var arm_l_elbow: Node2D
 var arm_r_shoulder: Node2D
 var arm_r_elbow: Node2D
 
+var skin_id := DEFAULT_SKIN
+var _limb_side_coloring := false
+var _left_limb_tint := MANNEQUIN_LEFT_TINT
+var _right_limb_tint := MANNEQUIN_RIGHT_TINT
 var _textures: Dictionary = {}
+var _textures_left: Dictionary = {}
+var _textures_right: Dictionary = {}
 var _part_scale_base: Dictionary = {}
+var _sprite_bindings: Array[Dictionary] = []
 
 ## 运动学与物理状态
 var _gait_phase := 0.0
@@ -88,6 +111,8 @@ var _head_tilt := 0.0
 var _prev_vel := Vector2.ZERO
 var _brake_impulse := 0.0
 var _brake_vel := 0.0
+var _prev_upper_dir := -1
+var _turn_squash := 0.0
 
 ## 弹簧阻尼次级物理状态（[angle, angular_vel]）
 var _hair_root_a := 0.0
@@ -123,39 +148,184 @@ var _dynamic_dodge_weapon_rot := 0.0
 
 
 func _ready() -> void:
-	_load_textures()
+	_load_skin_textures(skin_id)
 	_build_viewport_and_rig()
 	_apply_facing_layers()
 
 
-func _load_textures() -> void:
-	var names: Array[String] = [
-		"head_front", "head_front_blink", "head_back", "head_left", "head_left_blink",
-		"torso_front", "torso_back", "torso_left",
-		"hair_back_root", "hair_back_tip", "hair_side",
-		"coat_flap_root", "coat_flap_tip", "skirt_hem",
-		"thigh", "shin_boot", "gun_case",
-		"arm_upper", "arm_forearm",
+static func sanitize_skin_id(raw_id: String) -> String:
+	var clean := raw_id.strip_edges()
+	if clean.is_empty() or clean.contains("..") or clean.contains("/") or clean.contains("\\"):
+		return ""
+	return clean
+
+
+static func skin_parts_dir(id: String) -> String:
+	var clean := sanitize_skin_id(id)
+	if clean.is_empty():
+		return PART_DIR
+	return SKIN_ROOT + clean + "/parts/"
+
+
+static func skin_manifest_path(id: String) -> String:
+	var clean := sanitize_skin_id(id)
+	if clean.is_empty():
+		return ""
+	return SKIN_ROOT + clean + "/skin_manifest.json"
+
+
+static func skin_exists(id: String) -> bool:
+	var clean := sanitize_skin_id(id)
+	if clean.is_empty():
+		return false
+	var dir := skin_parts_dir(clean)
+	return ResourceLoader.exists(dir + "head_front.png") \
+		and ResourceLoader.exists(dir + "torso_front.png")
+
+
+static func colorize_neutral_pixels(src: Texture2D, tint: Color) -> Texture2D:
+	if src == null:
+		return null
+	var cache_key := "%s|%d|%d|%d" % [
+		src.resource_path,
+		int(round(tint.r * 255.0)),
+		int(round(tint.g * 255.0)),
+		int(round(tint.b * 255.0)),
 	]
-	for n: String in names:
-		var path: String = PART_DIR + n + ".png"
-		if ResourceLoader.exists(path):
-			_textures[n] = load(path)
+	if src.resource_path != "" and _tinted_tex_cache.has(cache_key):
+		return _tinted_tex_cache[cache_key]
+	var img := src.get_image()
+	if img == null or img.is_empty():
+		return src
+	img = img.duplicate()
+	if img.is_compressed():
+		img.decompress()
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
+	var w := img.get_width()
+	var h := img.get_height()
+	for y in h:
+		for x in w:
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.01:
+				continue
+			var sat := maxf(c.r, maxf(c.g, c.b)) - minf(c.r, minf(c.g, c.b))
+			# 保留高饱和红/黄关节圆心原色，仅对中性灰度肢体主体着色
+			if sat > 0.14:
+				continue
+			var lum := c.r
+			img.set_pixel(x, y, Color(
+				clampf(lum * tint.r, 0.0, 1.0),
+				clampf(lum * tint.g, 0.0, 1.0),
+				clampf(lum * tint.b, 0.0, 1.0),
+				c.a))
+	var out := ImageTexture.create_from_image(img)
+	if src.resource_path != "":
+		_tinted_tex_cache[cache_key] = out
+	return out
+
+
+func _read_skin_color_coding(id: String) -> void:
+	_limb_side_coloring = (id == "mannequin")
+	_left_limb_tint = MANNEQUIN_LEFT_TINT
+	_right_limb_tint = MANNEQUIN_RIGHT_TINT
+	var mpath := skin_manifest_path(id)
+	if mpath.is_empty() or not FileAccess.file_exists(mpath):
+		return
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(mpath))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	var cc = (parsed as Dictionary).get("color_coding", null)
+	if typeof(cc) != TYPE_DICTIONARY:
+		return
+	var cc_dict := cc as Dictionary
+	_limb_side_coloring = bool(cc_dict.get("limb_side_coloring", _limb_side_coloring))
+	var lt = cc_dict.get("left_limb_tint", null)
+	if lt is Array and (lt as Array).size() >= 3:
+		_left_limb_tint = Color(float(lt[0]), float(lt[1]), float(lt[2]), 1.0)
+	var rt = cc_dict.get("right_limb_tint", null)
+	if rt is Array and (rt as Array).size() >= 3:
+		_right_limb_tint = Color(float(rt[0]), float(rt[1]), float(rt[2]), 1.0)
+
+
+func _load_skin_textures(req_skin_id: String) -> bool:
+	var clean := sanitize_skin_id(req_skin_id)
+	var valid := not clean.is_empty() and skin_exists(clean)
+	var active_id := clean if valid else DEFAULT_SKIN
+	skin_id = active_id
+	_read_skin_color_coding(active_id)
+	_textures.clear()
+	_textures_left.clear()
+	_textures_right.clear()
+	var dir := skin_parts_dir(active_id)
+	var fallback_dir := skin_parts_dir(DEFAULT_SKIN)
+	for n: String in PART_NAMES:
+		var path: String = dir + n + ".png"
+		var chosen := path if ResourceLoader.exists(path) else (fallback_dir + n + ".png")
+		if ResourceLoader.exists(chosen):
+			var tex := load(chosen) as Texture2D
+			if tex != null:
+				_textures[n] = tex
+	if _limb_side_coloring:
+		for ln: String in LIMB_COLOR_PARTS:
+			var base_tex: Texture2D = _textures.get(ln)
+			if base_tex != null:
+				_textures_left[ln] = colorize_neutral_pixels(base_tex, _left_limb_tint)
+				_textures_right[ln] = colorize_neutral_pixels(base_tex, _right_limb_tint)
+	return valid
+
+
+func _resolve_part_texture(tex_key: String, side: String = "") -> Texture2D:
+	if _limb_side_coloring:
+		if side == "left" and _textures_left.has(tex_key):
+			return _textures_left[tex_key]
+		if side == "right" and _textures_right.has(tex_key):
+			return _textures_right[tex_key]
+	return _textures.get(tex_key)
+
+
+## 运行时热切换皮肤包（默认 "doll_v2" / 功能分色体模 "mannequin"）；非法或缺失分件自动安全回退 "doll_v2"。
+func set_skin(new_skin_id: String) -> bool:
+	var valid := _load_skin_textures(new_skin_id)
+	for bind: Dictionary in _sprite_bindings:
+		var sp := bind.get("sprite") as Sprite2D
+		if sp == null or not is_instance_valid(sp):
+			continue
+		var tex_key := String(bind.get("tex_key", ""))
+		var target_h := float(bind.get("target_h", 0.0))
+		var side := String(bind.get("side", ""))
+		var tex := _resolve_part_texture(tex_key, side)
+		if tex != null:
+			sp.texture = tex
+			if target_h > 0.0 and tex.get_height() > 0:
+				var s := target_h / float(tex.get_height())
+				sp.scale = Vector2(s, s)
+			else:
+				sp.scale = Vector2.ONE
+			_part_scale_base[sp.name] = sp.scale
+	if pelvis != null:
+		_apply_facing_layers()
+	return valid
+
+
+func get_part_texture(tex_key: String) -> Texture2D:
+	return _textures.get(tex_key)
 
 
 func has_all_part_textures() -> bool:
-	return _textures.has("head_front") and _textures.has("torso_front") \
-		and _textures.has("thigh") and _textures.has("shin_boot") \
-		and _textures.has("hair_back_root") and _textures.has("coat_flap_root")
+	for n: String in PART_NAMES:
+		if not _textures.has(n):
+			return false
+	return true
 
 
 func _make_sprite(node_name: String, tex_key: String, z: int,
-		offset_px := Vector2.ZERO, target_h := 0.0) -> Sprite2D:
+		offset_px := Vector2.ZERO, target_h := 0.0, side := "") -> Sprite2D:
 	var sp := Sprite2D.new()
 	sp.name = node_name
 	sp.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sp.z_index = z
-	var tex: Texture2D = _textures.get(tex_key)
+	var tex := _resolve_part_texture(tex_key, side)
 	if tex != null:
 		sp.texture = tex
 		if target_h > 0.0 and tex.get_height() > 0:
@@ -163,6 +333,12 @@ func _make_sprite(node_name: String, tex_key: String, z: int,
 			sp.scale = Vector2(s, s)
 	sp.offset = offset_px
 	_part_scale_base[node_name] = sp.scale
+	_sprite_bindings.append({
+		"sprite": sp,
+		"tex_key": tex_key,
+		"target_h": target_h,
+		"side": side,
+	})
 	return sp
 
 
@@ -215,10 +391,10 @@ func _build_viewport_and_rig() -> void:
 	var legs_container := Node2D.new()
 	legs_container.name = "Legs"
 	pelvis.add_child(legs_container)
-	var leg_l_nodes := _build_leg(legs_container, "LegL", Vector2(-5.0, 0.0), -3)
+	var leg_l_nodes := _build_leg(legs_container, "LegL", Vector2(5.5, 0.0), -3, "left")
 	leg_l_hip = leg_l_nodes[0]
 	leg_l_knee = leg_l_nodes[1]
-	var leg_r_nodes := _build_leg(legs_container, "LegR", Vector2(5.0, 0.0), -2)
+	var leg_r_nodes := _build_leg(legs_container, "LegR", Vector2(-5.5, 0.0), -2, "right")
 	leg_r_hip = leg_r_nodes[0]
 	leg_r_knee = leg_r_nodes[1]
 
@@ -267,10 +443,10 @@ func _build_viewport_and_rig() -> void:
 	coat_r_tip = coat_r_nodes[1]
 
 	# ---- 收枪双臂（2段上臂+前臂，持枪时交给 WeaponRig2D 避免双臂重叠） ----
-	var arm_l_nodes := _build_arm(torso_pivot, "ArmL", Vector2(-10.0, SHOULDER_OFFSET_Y), 3)
+	var arm_l_nodes := _build_arm(torso_pivot, "ArmL", Vector2(10.0, SHOULDER_OFFSET_Y), 3, "left")
 	arm_l_shoulder = arm_l_nodes[0]
 	arm_l_elbow = arm_l_nodes[1]
-	var arm_r_nodes := _build_arm(torso_pivot, "ArmR", Vector2(10.0, SHOULDER_OFFSET_Y), 3)
+	var arm_r_nodes := _build_arm(torso_pivot, "ArmR", Vector2(-10.0, SHOULDER_OFFSET_Y), 3, "right")
 	arm_r_shoulder = arm_r_nodes[0]
 	arm_r_elbow = arm_r_nodes[1]
 
@@ -320,13 +496,13 @@ func _build_viewport_and_rig() -> void:
 	hair_side_r_pivot.add_child(hsr)
 
 
-func _build_leg(parent: Node2D, base_name: String, hip_pos: Vector2, z: int) -> Array[Node2D]:
+func _build_leg(parent: Node2D, base_name: String, hip_pos: Vector2, z: int, side := "") -> Array[Node2D]:
 	var hip := Node2D.new()
 	hip.name = base_name + "Hip"
 	hip.position = hip_pos
 	parent.add_child(hip)
 	# 大腿段顶端向上延出 3px 圆角包边，与髋部/格裙完全重叠不露缝
-	var thigh := _make_sprite(base_name + "Thigh", "thigh", z, Vector2(0.0, THIGH_LEN * 0.5 - 1.0), THIGH_LEN + 5.0)
+	var thigh := _make_sprite(base_name + "Thigh", "thigh", z, Vector2(0.0, THIGH_LEN * 0.5 - 1.0), THIGH_LEN + 5.0, side)
 	hip.add_child(thigh)
 
 	var knee := Node2D.new()
@@ -334,7 +510,7 @@ func _build_leg(parent: Node2D, base_name: String, hip_pos: Vector2, z: int) -> 
 	knee.position = Vector2(0.0, THIGH_LEN - 2.0)
 	hip.add_child(knee)
 	# 小腿+球鞋段顶端向上重叠 3px 盖住膝盖圆角，屈膝绝不裂开
-	var shin := _make_sprite(base_name + "Shin", "shin_boot", z, Vector2(0.0, SHIN_LEN * 0.5 - 1.0), SHIN_LEN + 4.0)
+	var shin := _make_sprite(base_name + "Shin", "shin_boot", z, Vector2(0.0, SHIN_LEN * 0.5 - 1.0), SHIN_LEN + 4.0, side)
 	knee.add_child(shin)
 	return [hip, knee]
 
@@ -359,19 +535,19 @@ func _build_coat_flap(parent: Node2D, base_name: String, root_pos: Vector2,
 	return [root_n, tip_n]
 
 
-func _build_arm(parent: Node2D, base_name: String, shoulder_pos: Vector2, z: int) -> Array[Node2D]:
+func _build_arm(parent: Node2D, base_name: String, shoulder_pos: Vector2, z: int, side := "") -> Array[Node2D]:
 	var sh := Node2D.new()
 	sh.name = base_name + "Shoulder"
 	sh.position = shoulder_pos
 	parent.add_child(sh)
-	var up := _make_sprite(base_name + "Upper", "arm_upper", z, Vector2(0.0, UPPER_ARM_LEN * 0.5 - 1.0), UPPER_ARM_LEN + 4.0)
+	var up := _make_sprite(base_name + "Upper", "arm_upper", z, Vector2(0.0, UPPER_ARM_LEN * 0.5 - 1.0), UPPER_ARM_LEN + 4.0, side)
 	sh.add_child(up)
 
 	var el := Node2D.new()
 	el.name = base_name + "Elbow"
 	el.position = Vector2(0.0, UPPER_ARM_LEN - 2.0)
 	sh.add_child(el)
-	var fo := _make_sprite(base_name + "Forearm", "arm_forearm", z, Vector2(0.0, FOREARM_LEN * 0.5 - 1.0), FOREARM_LEN + 4.0)
+	var fo := _make_sprite(base_name + "Forearm", "arm_forearm", z, Vector2(0.0, FOREARM_LEN * 0.5 - 1.0), FOREARM_LEN + 4.0, side)
 	el.add_child(fo)
 	return [sh, el]
 
@@ -508,7 +684,18 @@ func update_rig(velocity: Vector2, walk_speed: float, sprint_speed: float,
 	_brake_vel += b_acc * dt
 	_brake_impulse = clampf(_brake_impulse + _brake_vel * dt, -0.22, 0.22)
 
-	# 4) 衰减后坐与受击计时器，更新眨眼状态
+	# 4) 衰减后坐与受击计时器，更新左右转身柔化脉冲与眨眼状态
+	if _prev_upper_dir != -1 and _prev_upper_dir != upper_direction and not is_dodging:
+		var lr_flip := (_prev_upper_dir == 2 and upper_direction == 3) or (_prev_upper_dir == 3 and upper_direction == 2)
+		_turn_squash = 0.18 if lr_flip else 0.09
+		var turn_kick := 1.0 if upper_direction == 3 else -1.0
+		_hair_root_v -= turn_kick * (4.2 if lr_flip else 2.2)
+		_hair_tip_v -= turn_kick * (5.6 if lr_flip else 3.0)
+		_coat_l_v -= turn_kick * (2.8 if lr_flip else 1.5)
+		_coat_r_v -= turn_kick * (2.8 if lr_flip else 1.5)
+	_prev_upper_dir = upper_direction
+	if _turn_squash > 0.0:
+		_turn_squash = maxf(_turn_squash - dt * 1.45, 0.0)
 	if _recoil_t > 0.0:
 		_recoil_t = maxf(_recoil_t - dt, 0.0)
 	if _hurt_t > 0.0:
@@ -633,56 +820,88 @@ func _apply_facing_layers() -> void:
 			coat_l_pivot.visible = true
 			coat_r_pivot.visible = true
 
-	# 双腿站位间距、侧面层级与远近腿明暗分离（防止交错步态糊成一团）
-	var side_l := lower_direction == 2 or lower_direction == 3
-	var leg_flip := lower_direction == 3
+	# 双腿站位间距、解剖学左右一致性（0正：右腿在画面左/左腿在画面右；1背：左腿在画面左/右腿在画面右；
+	# 2朝左：左腿近景/右腿远景；3朝右：右腿近景/左腿远景），倒退走时腿部朝向对齐上身瞄准方向。
+	var visual_leg_dir := upper_direction if (locomotion_mode == &"backpedal" and not _dodging) else lower_direction
+	var side_l := visual_leg_dir == 2 or visual_leg_dir == 3
+	var leg_flip := visual_leg_dir == 3
 	if leg_l_hip != null and leg_r_hip != null:
-		leg_l_hip.position.x = -2.0 if side_l else -5.5
-		leg_r_hip.position.x = 2.0 if side_l else 5.5
-		var far_tint := Color(0.76, 0.79, 0.86, 1.0)
+		var far_tint := Color(0.74, 0.78, 0.86, 1.0)
 		var near_tint := Color.WHITE
+		var ll_z := -3
+		var lr_z := -3
+		var ll_tint := near_tint
+		var lr_tint := near_tint
+		var strafe_front_back := locomotion_mode == &"strafe" and (upper_direction == 0 or upper_direction == 1)
+		match visual_leg_dir:
+			0:
+				# 朝下(正)：解剖学右腿在画面左(-5.5)，左腿在画面右(+5.5)
+				leg_r_hip.position.x = -5.5
+				leg_l_hip.position.x = 5.5
+			1:
+				# 朝上(背)：解剖学左腿在画面左(-5.5)，右腿在画面右(+5.5)
+				leg_l_hip.position.x = -5.5
+				leg_r_hip.position.x = 5.5
+			2:
+				# 朝左：左腿近景置前、右腿远景压暗置后
+				leg_l_hip.position.x = 2.8 if strafe_front_back else 1.6
+				leg_r_hip.position.x = -2.8 if strafe_front_back else -2.2
+				ll_z = -2
+				lr_z = -4
+				lr_tint = far_tint
+			3:
+				# 朝右：右腿近景置前、左腿远景压暗置后
+				leg_r_hip.position.x = -2.8 if strafe_front_back else -1.6
+				leg_l_hip.position.x = 2.8 if strafe_front_back else 2.2
+				lr_z = -2
+				ll_z = -4
+				ll_tint = far_tint
 		for sp in leg_l_hip.find_children("*", "Sprite2D", true, false):
 			var s2d := sp as Sprite2D
-			s2d.flip_h = leg_flip
-			s2d.z_index = -4 if side_l else -3
-			s2d.modulate = far_tint if side_l else near_tint
+			s2d.flip_h = leg_flip if side_l else (leg_l_hip.position.x > 0.0)
+			s2d.z_index = ll_z
+			s2d.modulate = ll_tint
 		for sp in leg_r_hip.find_children("*", "Sprite2D", true, false):
 			var s2d := sp as Sprite2D
-			s2d.flip_h = leg_flip
-			s2d.z_index = -2
-			s2d.modulate = near_tint
+			s2d.flip_h = leg_flip if side_l else (leg_r_hip.position.x > 0.0)
+			s2d.z_index = lr_z
+			s2d.modulate = lr_tint
 
-	# 收枪手臂显隐与远近层级：侧面同时保留远/近双臂交替摆动（远臂压暗置后、近臂提亮置前）
+	# 收枪手臂显隐与解剖学左右/远近层级（与双腿 360° 转向完全同侧一致）
 	var show_holster_arms := (not armed) or holstered or _dodging
 	if arm_l_shoulder != null and arm_r_shoulder != null:
 		arm_l_shoulder.visible = show_holster_arms
 		arm_r_shoulder.visible = show_holster_arms
-		var arm_far_tint := Color(0.78, 0.81, 0.88, 1.0)
+		var arm_far_tint := Color(0.74, 0.78, 0.86, 1.0)
 		var l_z := 4
 		var r_z := 4
 		var l_tint := Color.WHITE
 		var r_tint := Color.WHITE
 		match upper_direction:
+			0:
+				# 朝下(正)：右臂在画面左(-10)，左臂在画面右(+10)
+				arm_r_shoulder.position.x = -10.0
+				arm_l_shoulder.position.x = 10.0
 			1:
+				# 朝上(背)：左臂在画面左(-10)，右臂在画面右(+10)
+				arm_l_shoulder.position.x = -10.0
+				arm_r_shoulder.position.x = 10.0
 				l_z = -2
 				r_z = -2
 			2:
-				# 朝左：左臂在远侧置后、右臂在近侧置前
-				arm_l_shoulder.position.x = -3.0
-				arm_r_shoulder.position.x = 2.0
-				l_z = -3
-				r_z = 4
-				l_tint = arm_far_tint
+				# 朝左：左臂近景置前、右臂远景压暗置后
+				arm_l_shoulder.position.x = 2.0
+				arm_r_shoulder.position.x = -3.0
+				l_z = 4
+				r_z = -3
+				r_tint = arm_far_tint
 			3:
-				# 朝右：左臂在远侧置后、右臂在近侧置前
-				arm_l_shoulder.position.x = 3.0
+				# 朝右：右臂近景置前、左臂远景压暗置后
 				arm_r_shoulder.position.x = -2.0
-				l_z = -3
+				arm_l_shoulder.position.x = 3.0
 				r_z = 4
+				l_z = -3
 				l_tint = arm_far_tint
-			_:
-				arm_l_shoulder.position.x = -10.0
-				arm_r_shoulder.position.x = 10.0
 		for sp in arm_l_shoulder.find_children("*", "Sprite2D", true, false):
 			var s2d := sp as Sprite2D
 			s2d.z_index = l_z
@@ -722,17 +941,18 @@ func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,
 			footstep_planted.emit(Vector2(foot_side, 0.0), is_run)
 		_prev_sin_phase = s
 
-		var side_lower := lower_direction == 2 or lower_direction == 3
-		var face_sign := -1.0 if lower_direction == 2 else 1.0
-		var swing_amp := 0.66 if is_run else (0.42 if is_strafe else 0.50)
-		var knee_scale := 1.0 if is_run else (0.64 if is_strafe else 0.78)
+		var visual_leg_dir := upper_direction if is_backpedal else lower_direction
+		var side_lower := visual_leg_dir == 2 or visual_leg_dir == 3
+		var face_sign := -1.0 if visual_leg_dir == 2 else 1.0
+		var swing_amp := 0.66 if is_run else (0.38 if is_strafe else (0.44 if is_backpedal else 0.50))
+		var knee_scale := 1.0 if is_run else (0.56 if is_strafe else (0.76 if is_backpedal else 0.80))
 		var knee_base_y := THIGH_LEN - 2.0
 
 		if side_lower:
 			# 解剖学二段式屈膝步态（theta = 左腿相位，theta + PI = 右腿相位）：
-			# - 抬腿前摆经过中心（cos > 0）时深度后屈膝，脚清晰离地；
-			# - 后蹬离地（-sin > 0）时脚跟自然向后勾起；
-			# - 前迈着地（sin > 0）时仍保留轻微运动微屈，彻底告别“硬直木棍腿”。
+			# - 无论前进(phase_dir=+1)还是倒退(phase_dir=-1)，cos(th) > 0 恒为腾空摆动相（深度后屈膝）；
+			# - 支撑腿在重心正下方保持有力支撑，蹬离末段（pow 1.45）再迅捷后勾脚跟；
+			# - 按双腿实时垂向投影 reach 自动计算贴地骨盆下沉量，走路全程踩实零漂浮，冲刺带利落弹跳。
 			var th_l := _gait_phase
 			var th_r := wrapf(_gait_phase + PI, 0.0, TAU)
 			var l_fwd := sin(th_l) * swing_amp
@@ -741,12 +961,12 @@ func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,
 			var l_thigh := -l_fwd * face_sign
 			var r_thigh := -r_fwd * face_sign
 
-			var l_tuck := clampf(cos(th_l) * phase_dir, 0.0, 1.0)
-			var r_tuck := clampf(cos(th_r) * phase_dir, 0.0, 1.0)
-			var l_kick := clampf(-sin(th_l), 0.0, 1.0)
-			var r_kick := clampf(-sin(th_r), 0.0, 1.0)
-			var l_flex := clampf(0.16 + l_tuck * 0.92 + l_kick * 0.68 + clampf(sin(th_l), 0.0, 1.0) * 0.22, 0.12, 1.38) * knee_scale
-			var r_flex := clampf(0.16 + r_tuck * 0.92 + r_kick * 0.68 + clampf(sin(th_r), 0.0, 1.0) * 0.22, 0.12, 1.38) * knee_scale
+			var l_tuck := clampf(cos(th_l), 0.0, 1.0)
+			var r_tuck := clampf(cos(th_r), 0.0, 1.0)
+			var l_kick := pow(clampf(-sin(th_l) * phase_dir, 0.0, 1.0), 1.45)
+			var r_kick := pow(clampf(-sin(th_r) * phase_dir, 0.0, 1.0), 1.45)
+			var l_flex := clampf(0.10 + l_tuck * 0.96 + l_kick * 0.68 + clampf(sin(th_l) * phase_dir, 0.0, 1.0) * 0.16, 0.08, 1.40) * knee_scale
+			var r_flex := clampf(0.10 + r_tuck * 0.96 + r_kick * 0.68 + clampf(sin(th_r) * phase_dir, 0.0, 1.0) * 0.16, 0.08, 1.40) * knee_scale
 			# 膝盖严格向身体后方弯曲（朝右 +1 顺时针，朝左 -1 逆时针）
 			var knee_back := face_sign
 			leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, l_thigh, clampf(dt * 24.0, 0.0, 1.0))
@@ -762,14 +982,19 @@ func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,
 				var bs: Vector2 = _part_scale_base.get(String(pair[1]), Vector2.ONE)
 				if sp != null:
 					sp.scale = sp.scale.lerp(bs, clampf(dt * 22.0, 0.0, 1.0))
-			# 支撑腿踩实时髋部自然下沉，腾空过渡帧微抬，脚底不打滑
-			var contact_drop := absf(s) * (4.6 if is_run else 2.8)
-			target_bob = contact_drop - (2.0 if is_run else 1.0)
+			# 由支撑腿实时几何投影计算精准贴地高度；冲刺经过腾空相时叠加轻盈 2.5px 蹬跃
+			var l_reach := (THIGH_LEN - 2.0) * cos(leg_l_hip.rotation) + SHIN_LEN * cos(leg_l_hip.rotation + leg_l_knee.rotation)
+			var r_reach := (THIGH_LEN - 2.0) * cos(leg_r_hip.rotation) + SHIN_LEN * cos(leg_r_hip.rotation + leg_r_knee.rotation)
+			var max_reach := maxf(l_reach, r_reach)
+			var ground_drop := clampf((PELVIS_HEIGHT - 1.0) - max_reach, -1.5, 9.0)
+			var run_flight := -2.6 * (1.0 - absf(s)) if is_run else 0.0
+			target_bob = ground_drop + run_flight
 		else:
-			# 正面/背面 3D 透视屈膝步态：
-			# 抬腿时仅压缩大腿并把膝关节节点上提（呈现膝盖顶向镜头/背向提膝），小腿保持自然垂挂离地！
+			# 正面/背面 3D 透视屈膝步态（基于各腿当前屏幕左右位置对称外展/提膝）
 			var l_lift := clampf(sin(_gait_phase), 0.0, 1.0)
 			var r_lift := clampf(-sin(_gait_phase), 0.0, 1.0)
+			var l_x_sign := -1.0 if leg_l_hip.position.x < 0.0 else 1.0
+			var r_x_sign := -1.0 if leg_r_hip.position.x < 0.0 else 1.0
 			var knee_lift_px := 9.5 if is_run else 6.2
 			var l_shin_sp := leg_l_knee.get_child(0) as Sprite2D
 			var r_shin_sp := leg_r_knee.get_child(0) as Sprite2D
@@ -780,12 +1005,12 @@ func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,
 			var l_base_ss: Vector2 = _part_scale_base.get("LegLShin", Vector2.ONE)
 			var r_base_ss: Vector2 = _part_scale_base.get("LegRShin", Vector2.ONE)
 
-			leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, -l_lift * 0.14 + r_lift * 0.06, clampf(dt * 22.0, 0.0, 1.0))
-			leg_r_hip.rotation = lerp_angle(leg_r_hip.rotation, r_lift * 0.14 - l_lift * 0.06, clampf(dt * 22.0, 0.0, 1.0))
+			leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, -l_x_sign * (l_lift * 0.14 - r_lift * 0.05), clampf(dt * 22.0, 0.0, 1.0))
+			leg_r_hip.rotation = lerp_angle(leg_r_hip.rotation, -r_x_sign * (r_lift * 0.14 - l_lift * 0.05), clampf(dt * 22.0, 0.0, 1.0))
 			leg_l_knee.position.y = lerpf(leg_l_knee.position.y, knee_base_y - l_lift * knee_lift_px, clampf(dt * 22.0, 0.0, 1.0))
 			leg_r_knee.position.y = lerpf(leg_r_knee.position.y, knee_base_y - r_lift * knee_lift_px, clampf(dt * 22.0, 0.0, 1.0))
-			leg_l_knee.rotation = lerp_angle(leg_l_knee.rotation, l_lift * 0.24, clampf(dt * 22.0, 0.0, 1.0))
-			leg_r_knee.rotation = lerp_angle(leg_r_knee.rotation, -r_lift * 0.24, clampf(dt * 22.0, 0.0, 1.0))
+			leg_l_knee.rotation = lerp_angle(leg_l_knee.rotation, l_x_sign * l_lift * 0.24, clampf(dt * 22.0, 0.0, 1.0))
+			leg_r_knee.rotation = lerp_angle(leg_r_knee.rotation, r_x_sign * r_lift * 0.24, clampf(dt * 22.0, 0.0, 1.0))
 			if l_thigh_sp != null:
 				l_thigh_sp.scale = Vector2(l_base_ts.x * (1.0 + l_lift * 0.08), l_base_ts.y * (1.0 - l_lift * 0.34))
 			if r_thigh_sp != null:
@@ -797,9 +1022,9 @@ func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,
 			leg_l_hip.scale = Vector2.ONE
 			leg_r_hip.scale = Vector2.ONE
 			target_bob = absf(s) * (3.6 if is_run else 2.2) - 1.0
-			target_pelvis_x = s * (2.0 if is_run else 1.2)
+			target_pelvis_x = s * l_x_sign * (2.0 if is_run else 1.2)
 
-		# 收枪双臂二段式自然反向摆动（肘部严格向身体前方自然弯曲！）
+		# 收枪双臂二段式严格反向摆动（左手配右腿、右手配左腿，彻底杜绝顺拐；肘部向身前自然屈曲）
 		var arm_face := -1.0 if upper_direction == 2 else 1.0
 		var arm_amp := 0.68 if is_run else 0.42
 		var arm_l_fwd := -sin(_gait_phase) * arm_amp
@@ -814,16 +1039,29 @@ func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,
 			arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, el_l * elbow_fwd_sign, clampf(dt * 20.0, 0.0, 1.0))
 			arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, el_r * elbow_fwd_sign, clampf(dt * 20.0, 0.0, 1.0))
 		else:
-			arm_l_shoulder.rotation = lerp_angle(arm_l_shoulder.rotation, -s * 0.22 + 0.08, clampf(dt * 18.0, 0.0, 1.0))
-			arm_r_shoulder.rotation = lerp_angle(arm_r_shoulder.rotation, s * 0.22 - 0.08, clampf(dt * 18.0, 0.0, 1.0))
-			arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, -(0.28 + maxf(-s, 0.0) * (0.55 if is_run else 0.30)), clampf(dt * 18.0, 0.0, 1.0))
-			arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, (0.28 + maxf(s, 0.0) * (0.55 if is_run else 0.30)), clampf(dt * 18.0, 0.0, 1.0))
+			var al_x := -1.0 if arm_l_shoulder.position.x < 0.0 else 1.0
+			var ar_x := -1.0 if arm_r_shoulder.position.x < 0.0 else 1.0
+			arm_l_shoulder.rotation = lerp_angle(arm_l_shoulder.rotation, -al_x * (0.08 + maxf(-s, 0.0) * 0.20 - maxf(s, 0.0) * 0.12), clampf(dt * 18.0, 0.0, 1.0))
+			arm_r_shoulder.rotation = lerp_angle(arm_r_shoulder.rotation, -ar_x * (0.08 + maxf(s, 0.0) * 0.20 - maxf(-s, 0.0) * 0.12), clampf(dt * 18.0, 0.0, 1.0))
+			arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, al_x * (0.28 + maxf(-s, 0.0) * (0.55 if is_run else 0.30)), clampf(dt * 18.0, 0.0, 1.0))
+			arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, ar_x * (0.28 + maxf(s, 0.0) * (0.55 if is_run else 0.30)), clampf(dt * 18.0, 0.0, 1.0))
 	else:
-		# 站立待机：双脚稳踩地面、微呼吸起伏，复位正/背透视压缩
-		leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
-		leg_r_hip.rotation = lerp_angle(leg_r_hip.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
-		leg_l_knee.rotation = lerp_angle(leg_l_knee.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
-		leg_r_knee.rotation = lerp_angle(leg_r_knee.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
+		# 站立待机：双脚稳踩地面、微呼吸起伏；急停瞬间附加短暂单膝前撑缓冲（消除骤停僵直）
+		var brake_mag := absf(_brake_impulse)
+		var side_idle_leg := lower_direction == 2 or lower_direction == 3
+		if side_idle_leg and brake_mag > 0.02:
+			var b_sign := 1.0 if _brake_impulse >= 0.0 else -1.0
+			var knee_b := -1.0 if lower_direction == 2 else 1.0
+			leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, -b_sign * brake_mag * 1.45, clampf(dt * 22.0, 0.0, 1.0))
+			leg_r_hip.rotation = lerp_angle(leg_r_hip.rotation, b_sign * brake_mag * 0.95, clampf(dt * 22.0, 0.0, 1.0))
+			leg_l_knee.rotation = lerp_angle(leg_l_knee.rotation, knee_b * brake_mag * 1.85, clampf(dt * 22.0, 0.0, 1.0))
+			leg_r_knee.rotation = lerp_angle(leg_r_knee.rotation, knee_b * brake_mag * 1.35, clampf(dt * 22.0, 0.0, 1.0))
+			target_bob += clampf(brake_mag * 18.0, 0.0, 4.5)
+		else:
+			leg_l_hip.rotation = lerp_angle(leg_l_hip.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
+			leg_r_hip.rotation = lerp_angle(leg_r_hip.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
+			leg_l_knee.rotation = lerp_angle(leg_l_knee.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
+			leg_r_knee.rotation = lerp_angle(leg_r_knee.rotation, 0.0, clampf(dt * 14.0, 0.0, 1.0))
 		leg_l_knee.position.y = lerpf(leg_l_knee.position.y, THIGH_LEN - 2.0, clampf(dt * 16.0, 0.0, 1.0))
 		leg_r_knee.position.y = lerpf(leg_r_knee.position.y, THIGH_LEN - 2.0, clampf(dt * 16.0, 0.0, 1.0))
 		leg_l_hip.scale = leg_l_hip.scale.lerp(Vector2.ONE, clampf(dt * 14.0, 0.0, 1.0))
@@ -833,10 +1071,21 @@ func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,
 			var bs: Vector2 = _part_scale_base.get(String(pair[1]), Vector2.ONE)
 			if sp != null:
 				sp.scale = sp.scale.lerp(bs, clampf(dt * 14.0, 0.0, 1.0))
-		arm_l_shoulder.rotation = lerp_angle(arm_l_shoulder.rotation, 0.05 + breath * 0.03, clampf(dt * 10.0, 0.0, 1.0))
-		arm_r_shoulder.rotation = lerp_angle(arm_r_shoulder.rotation, -0.05 - breath * 0.03, clampf(dt * 10.0, 0.0, 1.0))
-		arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, -0.14, clampf(dt * 10.0, 0.0, 1.0))
-		arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, 0.14, clampf(dt * 10.0, 0.0, 1.0))
+		var side_u_idle := upper_direction == 2 or upper_direction == 3
+		if side_u_idle:
+			var arm_face_i := -1.0 if upper_direction == 2 else 1.0
+			var elbow_fwd_i := -arm_face_i
+			arm_l_shoulder.rotation = lerp_angle(arm_l_shoulder.rotation, 0.04 * arm_face_i + breath * 0.02, clampf(dt * 10.0, 0.0, 1.0))
+			arm_r_shoulder.rotation = lerp_angle(arm_r_shoulder.rotation, -0.04 * arm_face_i - breath * 0.02, clampf(dt * 10.0, 0.0, 1.0))
+			arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, elbow_fwd_i * 0.18, clampf(dt * 10.0, 0.0, 1.0))
+			arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, elbow_fwd_i * 0.18, clampf(dt * 10.0, 0.0, 1.0))
+		else:
+			var al_xi := -1.0 if arm_l_shoulder.position.x < 0.0 else 1.0
+			var ar_xi := -1.0 if arm_r_shoulder.position.x < 0.0 else 1.0
+			arm_l_shoulder.rotation = lerp_angle(arm_l_shoulder.rotation, -al_xi * (0.06 + breath * 0.03), clampf(dt * 10.0, 0.0, 1.0))
+			arm_r_shoulder.rotation = lerp_angle(arm_r_shoulder.rotation, -ar_xi * (0.06 + breath * 0.03), clampf(dt * 10.0, 0.0, 1.0))
+			arm_l_elbow.rotation = lerp_angle(arm_l_elbow.rotation, al_xi * 0.14, clampf(dt * 10.0, 0.0, 1.0))
+			arm_r_elbow.rotation = lerp_angle(arm_r_elbow.rotation, ar_xi * 0.14, clampf(dt * 10.0, 0.0, 1.0))
 
 	_hip_bob = lerpf(_hip_bob, target_bob, clampf(dt * 18.0, 0.0, 1.0))
 	pelvis.position = Vector2(
@@ -861,9 +1110,11 @@ func _apply_locomotion_pose(velocity: Vector2, speed: float, walk_speed: float,
 	_torso_lean = lerpf(_torso_lean, lean_target, clampf(dt * 12.0, 0.0, 1.0))
 	torso_pivot.rotation = _torso_lean + _brake_impulse * 0.55 + recoil_kick + hurt_kick
 
-	# 胸腔柔和呼吸起伏
+	# 胸腔柔和呼吸起伏 + 左右转身短暂透视挤压（消除镜像翻转突兀感）
 	var base_ts: Vector2 = _part_scale_base.get("TorsoSprite", Vector2.ONE)
-	torso_sprite.scale = Vector2(base_ts.x * (1.0 + breath * 0.015), base_ts.y * (1.0 - breath * 0.012))
+	var turn_sx := 1.0 - _turn_squash * 0.42
+	torso_sprite.scale = Vector2(base_ts.x * (1.0 + breath * 0.015) * turn_sx, base_ts.y * (1.0 - breath * 0.012))
+	head_pivot.scale = Vector2(1.0 - _turn_squash * 0.30, 1.0)
 
 	# 头部独立跟随鼠标准心微转与后坐微仰（与躯干轻微错拍显得更鲜活）
 	var target_head_tilt := 0.0
@@ -905,22 +1156,28 @@ func _apply_dodge_pose(u: float, dt: float) -> void:
 		leg_r_knee.rotation = knee_back * 0.95 * e
 		_dynamic_dodge_weapon_rot = roll_sign * 0.42 * e
 	elif u < 0.78:
-		# 阶段 2：紧凑团身前滚（抬高质心至 y=-54 防底部裁切，双腿紧蜷胸前，完整 360° 滚翻）
+		# 阶段 2：紧凑团身前滚（大腿紧抱胸前、小腿折叠贴臀，尾段顺滑展开衔接落地缓冲无悬空跳变）
 		_dodge_phase_name = &"tuck_roll"
 		var k := (u - 0.22) / 0.56
 		var arch := sin(k * PI)
-		pelvis.position = Vector2(roll_sign * 4.0 * arch, -50.0 - 10.0 * arch)
-		pelvis.rotation = roll_sign * (0.44 + k * (TAU - 0.72))
-		torso_pivot.rotation = roll_sign * 0.40
-		head_pivot.rotation = roll_sign * 0.28
-		leg_l_hip.rotation = -roll_sign * 1.15
-		leg_l_knee.rotation = knee_back * 1.75
-		leg_r_hip.rotation = -roll_sign * 0.85
-		leg_r_knee.rotation = knee_back * 1.60
-		arm_l_shoulder.rotation = -roll_sign * 0.85
-		arm_l_elbow.rotation = -roll_sign * 1.10
-		arm_r_shoulder.rotation = -roll_sign * 0.70
-		arm_r_elbow.rotation = -roll_sign * 1.00
+		# 前 72% 保持极致团滚球态，后 28% 平滑展身落脚迎接 recover
+		var uncurl := clampf((k - 0.72) / 0.28, 0.0, 1.0)
+		var tuck := 1.0 - uncurl * uncurl
+		pelvis.position = Vector2(
+			lerpf(roll_sign * 4.0 * arch, roll_sign * 2.0, uncurl),
+			lerpf(-52.0 - 11.0 * arch, -PELVIS_HEIGHT + 16.0, uncurl * uncurl)
+		)
+		pelvis.rotation = roll_sign * (0.44 + k * (TAU - 0.68))
+		torso_pivot.rotation = roll_sign * lerpf(0.28, 0.62, tuck)
+		head_pivot.rotation = roll_sign * lerpf(-0.10, 0.48, tuck)
+		leg_l_hip.rotation = -roll_sign * lerpf(0.68, 2.08, tuck)
+		leg_l_knee.rotation = knee_back * lerpf(1.15, 2.38, tuck)
+		leg_r_hip.rotation = -roll_sign * lerpf(-0.30, 1.90, tuck)
+		leg_r_knee.rotation = knee_back * lerpf(0.78, 2.30, tuck)
+		arm_l_shoulder.rotation = -roll_sign * lerpf(0.40, 1.15, tuck)
+		arm_l_elbow.rotation = -roll_sign * lerpf(0.45, 1.45, tuck)
+		arm_r_shoulder.rotation = -roll_sign * lerpf(0.32, 0.96, tuck)
+		arm_r_elbow.rotation = -roll_sign * lerpf(0.40, 1.32, tuck)
 		_dynamic_dodge_weapon_rot = pelvis.rotation * 0.55
 		_hair_root_v -= roll_sign * 18.0 * dt
 		_coat_l_v -= roll_sign * 16.0 * dt
@@ -930,7 +1187,7 @@ func _apply_dodge_pose(u: float, dt: float) -> void:
 		_dodge_phase_name = &"recover"
 		var k := (u - 0.78) / 0.22
 		var inv := 1.0 - k
-		var bounce := sin(k * PI) * 4.0
+		var bounce := sin(k * PI) * 3.0
 		pelvis.position = Vector2(roll_sign * 2.0 * inv, -PELVIS_HEIGHT + 16.0 * inv * inv + bounce)
 		pelvis.rotation = roll_sign * (-0.24 * inv)
 		torso_pivot.rotation = roll_sign * 0.28 * inv
@@ -940,6 +1197,7 @@ func _apply_dodge_pose(u: float, dt: float) -> void:
 		leg_r_hip.rotation = roll_sign * 0.30 * inv
 		leg_r_knee.rotation = knee_back * 0.78 * inv
 		_dynamic_dodge_weapon_rot = roll_sign * 0.25 * inv
+	head_pivot.scale = Vector2.ONE
 
 	# 翻滚期间武器始终紧锁在旋转后的胸口位置，绝不悬空脱手
 	var chest_now := pelvis.position + Vector2(0.0, -22.0).rotated(pelvis.rotation + torso_pivot.rotation)

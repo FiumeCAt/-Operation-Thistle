@@ -21,10 +21,10 @@ const LIMB_OVERLAP := 1.5
 const ARM_LENGTH := 22.8
 
 const SHOULDER := {
-	0: Vector2(6.0, -88.0),
-	1: Vector2(17.0, -90.0),
-	2: Vector2(0.0, -88.0),
-	3: Vector2(0.0, -88.0),
+	0: Vector2(-6.0, -90.0),
+	1: Vector2(9.0, -90.0),
+	2: Vector2(-1.5, -90.0),
+	3: Vector2(-1.5, -90.0),
 }
 
 const BEHIND_FROM := -2.356      # -135°
@@ -206,19 +206,37 @@ static func solve_primary_arm(upper_arm: Sprite2D, forearm: Sprite2D,
 	return wrist_local
 
 
+static func support_shoulder_offset(body_direction: int, flipped: bool) -> Vector2:
+	match body_direction:
+		0:
+			# 正面：主手在画面左(-6)，副手锚定画面右(+8)
+			return Vector2(14.0, 0.0)
+		1:
+			# 背面：主手在画面右(+9)，副手锚定画面左(-9)
+			return Vector2(-18.0, 0.0)
+		2:
+			# 朝左：副手为近侧左肩，严密贴合胸肩前缘
+			return Vector2(3.5, 0.0)
+		3:
+			# 朝右：副手为远侧左肩，略偏前上不穿入背后枪盒
+			return Vector2(3.5, -1.0)
+		_:
+			return Vector2(-3.5 if flipped else 3.5, 0.0)
+
+
 ## 长枪支撑手两段 IK：肩点固定在身体，手掌目标跟随枪的护木位置；换弹中段自动向弹匣井靠拢做出摸弹匣动作。
 static func solve_support_arm(support_root: Node2D, support_upper: Sprite2D,
 		support_forearm: Sprite2D, support_hand: Sprite2D, pivot: Node2D,
 		anchor: Vector2, wrist_local: Vector2, gun_len: float,
 		elbow_sign: float, flipped: bool, show: bool,
 		grip_ratio: float = SUPPORT_GRIP_RATIO, lift: float = SUPPORT_LIFT,
-		reload_progress := 0.0) -> void:
+		reload_progress := 0.0, body_direction := 3) -> void:
 	if support_root == null or support_upper == null or pivot == null:
 		return
 	support_root.visible = show
 	if not show:
 		return
-	support_root.position = anchor + SUPPORT_SHOULDER_OFFSET
+	support_root.position = anchor + support_shoulder_offset(body_direction, flipped)
 	var support_local := wrist_local + Vector2(gun_len * grip_ratio, lift)
 	if reload_progress > 0.01 and reload_progress < 0.99:
 		# 换弹时副手由护木自然收回并下探至弹匣井/腰侧抓弹匣，再推回护木

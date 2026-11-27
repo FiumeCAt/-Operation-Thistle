@@ -309,6 +309,18 @@ static func set_debug_unlock_all_weapons(data: Dictionary, enabled: bool) -> voi
 	data["debug_unlock_all_weapons"] = enabled
 
 
+static func character_skin(data: Dictionary) -> String:
+	var id := String(data.get("character_skin", "doll_v2"))
+	return id if SAVE_STORE.CHARACTER_SKIN_IDS.has(id) else "doll_v2"
+
+
+static func set_character_skin(data: Dictionary, skin_id: String) -> bool:
+	if not SAVE_STORE.CHARACTER_SKIN_IDS.has(skin_id):
+		return false
+	data["character_skin"] = skin_id
+	return true
+
+
 static func debug_default(key: String) -> float:
 	return 0.0 if DEBUG_FLAT_KEYS.has(key) else 1.0
 
@@ -348,6 +360,7 @@ static func set_debug_value(data: Dictionary, key: String, value: float) -> void
 
 static func reset_debug(data: Dictionary) -> void:
 	data["debug_unlock_all_weapons"] = false
+	data["character_skin"] = "doll_v2"
 	data["debug"] = {
 		"recoil_v": 1.0, "recoil_h": 1.0, "recoil_cap": 1.0,
 		"spread": 1.0, "damage": 1.0, "ads": 1.0, "move": 1.0, "vision": 1.0,

@@ -26,6 +26,7 @@ const PICKUP_MERGE_MAX := 10.0
 const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
 const MUZZLE_FLASH_MODES := ["full", "partial", "off"]
 const HEARING_DISPLAY_MODES := ["both", "ripple", "ring"]
+const CHARACTER_SKIN_IDS := ["doll_v2", "mannequin"]
 const EXPORT_FORMAT := "operation_thistle_save"
 const EXPORT_VERSION := 1
 ## 本地偏好设置键集合：重置游戏进度（默认保留设置）或导入存档（可选不覆盖本地偏好）时保留这些键。
@@ -43,7 +44,7 @@ const PREFERENCE_KEYS := [
 	"reticle_styles", "laser_color", "reticle_color",
 	"ui_theme", "ui_theme_color",
 	"show_fps",
-	"debug_enabled", "debug", "debug_unlock_all_weapons",
+	"debug_enabled", "debug", "debug_unlock_all_weapons", "character_skin",
 	"camera_mode", "bright_test", "settings_rev",
 ]
 const WEAPON_IDS := [
@@ -120,6 +121,7 @@ static func defaults() -> Dictionary:
 		"show_fps": false,
 		"debug_enabled": false,
 		"debug_unlock_all_weapons": false,
+		"character_skin": "doll_v2",
 		"debug": {
 			"recoil_v": 1.0, "recoil_h": 1.0, "recoil_cap": 1.0,
 			"spread": 1.0, "damage": 1.0, "ads": 1.0, "move": 1.0, "vision": 1.0,

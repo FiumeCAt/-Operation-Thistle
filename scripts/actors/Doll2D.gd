@@ -107,6 +107,8 @@ var rig: DollRig2D
 ## Phase 7B 主力模块化像素骨骼（SubViewport 160×160 像素光栅化 + 二段腿 + 弹簧发/衣摆 + 眨眼）。
 var rig_v2: DollRigV2
 @export var use_modular_rig_v2 := true
+## 当前角色皮肤包 ID（默认 "doll_v2"，支持 "mannequin" 等热切换并同步 WeaponRig2D 持枪双臂）。
+var skin_id := "doll_v2"
 
 ## 生命值：受伤后短暂无敌，归零发 died 信号交给 Main2D 结算。
 signal died
@@ -202,18 +204,41 @@ func enable_rig(rig_style: String = "normal") -> void:
 
 
 func _enable_rig_v2() -> void:
-	if not ResourceLoader.exists(RIG_V2.PART_DIR + "head_front.png"):
+	if not RIG_V2.skin_exists(RIG_V2.DEFAULT_SKIN):
 		return
 	if rig_v2 == null:
 		rig_v2 = RIG_V2.new()
 		rig_v2.name = "RigV2"
+		rig_v2.skin_id = skin_id
 		add_child(rig_v2)
 		rig_v2.footstep_planted.connect(_on_footstep_planted)
+	elif rig_v2.skin_id != skin_id:
+		rig_v2.set_skin(skin_id)
 	rig_v2.visible = true
 	body.visible = false
 	var old_sh := get_node_or_null("Shadow") as CanvasItem
 	if old_sh != null:
 		old_sh.visible = false
+
+
+## 运行时热切换角色皮肤包（同步刷新 DollRigV2 身体 19 分件与 WeaponRig2D 持枪双臂 3 分件）。
+## 非法或缺失皮肤自动安全回退 "doll_v2"，返回 true 表示目标皮肤校验通过并生效。
+func set_skin(new_skin_id: String) -> bool:
+	var ok := RIG_V2.skin_exists(new_skin_id)
+	var target := RIG_V2.sanitize_skin_id(new_skin_id) if ok else RIG_V2.DEFAULT_SKIN
+	skin_id = target
+	if rig_v2 != null:
+		ok = rig_v2.set_skin(new_skin_id)
+		skin_id = rig_v2.skin_id
+	if weapon_rig != null:
+		weapon_rig.set_skin(skin_id)
+	return ok
+
+
+func get_skin() -> String:
+	if rig_v2 != null:
+		return rig_v2.skin_id
+	return skin_id
 
 
 func _on_footstep_planted(local_offset: Vector2, is_running: bool) -> void:
@@ -419,6 +444,7 @@ func equip_weapon_id(id: StringName) -> WeaponRig2D:
 	weapon_rig = WeaponRig2D.new()
 	weapon_rig.name = "WeaponRig"
 	weapon_rig.weapon_id = id
+	weapon_rig.skin_id = skin_id
 	add_child(weapon_rig)
 	weapon_rig.fired.connect(_on_weapon_fired)
 	weapon_rig.holstered_changed.connect(_on_holstered_changed)

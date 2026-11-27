@@ -17,9 +17,14 @@ const STATS_MODEL := preload("res://scripts/weapons/WeaponStatsModel.gd")
 const FEED_STATE := preload("res://scripts/weapons/WeaponFeedState2D.gd")
 const POSE_IK := preload("res://scripts/weapons/WeaponPoseIK2D.gd")
 
+const SKIN_ROOT := "res://assets/art/characters/"
+const DEFAULT_SKIN := "doll_v2"
 const V2_UPPER_ARM_PATH := "res://assets/art/characters/doll_v2/arm2/upper_arm.png"
 const V2_FOREARM_PATH := "res://assets/art/characters/doll_v2/arm2/forearm.png"
 const V2_HAND_PATH := "res://assets/art/characters/doll_v2/arm2/hand.png"
+const MANNEQUIN_RIGHT_TINT := Color(1.0, 0.62, 0.24, 1.0)
+const MANNEQUIN_LEFT_TINT := Color(0.38, 0.80, 1.0, 1.0)
+static var _arm_tint_cache: Dictionary = {}
 const UPPER_ARM_TEX := preload("res://assets/art/characters/doll_b/parts/arm2/upper_arm.png")
 const FOREARM_TEX := preload("res://assets/art/characters/doll_b/parts/arm2/forearm.png")
 const HAND_TEX := preload("res://assets/art/characters/doll_b/parts/arm2/hand.png")
@@ -116,6 +121,8 @@ var switch_t: float:
 var sprinting := false
 var dodging := false
 var ads := false
+## 当前持枪双臂皮肤 ID（默认 "doll_v2"，支持 "mannequin" 等热切换并同步左蓝/右橙分色）。
+var skin_id := DEFAULT_SKIN
 ## 由 DollRigV2 每帧注入的动态肩部偏移与翻滚收枪倾角，使武器紧贴呼吸/奔跑/后坐/翻滚中的躯干。
 var dynamic_shoulder_offset := Vector2.ZERO
 var dodge_pose_rot := 0.0
@@ -232,9 +239,9 @@ func setup(id: StringName) -> void:
 	_pivot.add_child(_gun)
 	_align_gun(false)
 
-	_upper_arm = _make_limb(_pivot, "UpperArm", UPPER_ARM_TEX)
-	_forearm = _make_limb(_pivot, "Forearm", FOREARM_TEX)
-	_hand = _make_hand(_pivot, "Hand")
+	_upper_arm = _make_limb(_pivot, "UpperArm", "upper_arm", UPPER_ARM_TEX, "right")
+	_forearm = _make_limb(_pivot, "Forearm", "forearm", FOREARM_TEX, "right")
+	_hand = _make_hand(_pivot, "Hand", "right")
 
 	_muzzle = Marker2D.new()
 	_muzzle.name = "Muzzle"
@@ -263,9 +270,9 @@ func setup(id: StringName) -> void:
 	_support_root = Node2D.new()
 	_support_root.name = "SupportPivot"
 	add_child(_support_root)
-	_support_upper = _make_limb(_support_root, "SupportUpperArm", UPPER_ARM_TEX)
-	_support_forearm = _make_limb(_support_root, "SupportForearm", FOREARM_TEX)
-	_support_hand = _make_hand(_support_root, "SupportHand")
+	_support_upper = _make_limb(_support_root, "SupportUpperArm", "upper_arm", UPPER_ARM_TEX, "left")
+	_support_forearm = _make_limb(_support_root, "SupportForearm", "forearm", FOREARM_TEX, "left")
+	_support_hand = _make_hand(_support_root, "SupportHand", "left")
 	_support_root.visible = false
 
 	feed.on_weapon_equipped(id, data.mag_capacity, data)
@@ -273,22 +280,132 @@ func setup(id: StringName) -> void:
 	_apply_pose()
 
 
-func _arm_tex(v2_path: String, fallback: Texture2D) -> Texture2D:
-	if ResourceLoader.exists(v2_path):
-		var res := load(v2_path)
+static func _sanitize_skin_id(raw_id: String) -> String:
+	var clean := raw_id.strip_edges()
+	if clean.is_empty() or clean.contains("..") or clean.contains("/") or clean.contains("\\"):
+		return ""
+	return clean
+
+
+static func _skin_arm2_dir(id: String) -> String:
+	var clean := _sanitize_skin_id(id)
+	if clean.is_empty():
+		return SKIN_ROOT + DEFAULT_SKIN + "/arm2/"
+	return SKIN_ROOT + clean + "/arm2/"
+
+
+static func skin_has_arm2(id: String) -> bool:
+	var clean := _sanitize_skin_id(id)
+	if clean.is_empty():
+		return false
+	var dir := _skin_arm2_dir(clean)
+	return ResourceLoader.exists(dir + "upper_arm.png") \
+		and ResourceLoader.exists(dir + "forearm.png") \
+		and ResourceLoader.exists(dir + "hand.png")
+
+
+static func _colorize_neutral_pixels(src: Texture2D, tint: Color) -> Texture2D:
+	if src == null:
+		return null
+	var cache_key := "%s|%d|%d|%d" % [
+		src.resource_path,
+		int(round(tint.r * 255.0)),
+		int(round(tint.g * 255.0)),
+		int(round(tint.b * 255.0)),
+	]
+	if src.resource_path != "" and _arm_tint_cache.has(cache_key):
+		return _arm_tint_cache[cache_key]
+	var img := src.get_image()
+	if img == null or img.is_empty():
+		return src
+	img = img.duplicate()
+	if img.is_compressed():
+		img.decompress()
+	if img.get_format() != Image.FORMAT_RGBA8:
+		img.convert(Image.FORMAT_RGBA8)
+	var w := img.get_width()
+	var h := img.get_height()
+	for y in h:
+		for x in w:
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.01:
+				continue
+			var sat := maxf(c.r, maxf(c.g, c.b)) - minf(c.r, minf(c.g, c.b))
+			if sat > 0.14:
+				continue
+			var lum := c.r
+			img.set_pixel(x, y, Color(
+				clampf(lum * tint.r, 0.0, 1.0),
+				clampf(lum * tint.g, 0.0, 1.0),
+				clampf(lum * tint.b, 0.0, 1.0),
+				c.a))
+	var out := ImageTexture.create_from_image(img)
+	if src.resource_path != "":
+		_arm_tint_cache[cache_key] = out
+	return out
+
+
+func _uses_side_coloring() -> bool:
+	return skin_id == "mannequin"
+
+
+func _arm_tex(part_name: String, fallback: Texture2D, side: String = "") -> Texture2D:
+	var primary_path := _skin_arm2_dir(skin_id) + part_name + ".png"
+	var default_path := _skin_arm2_dir(DEFAULT_SKIN) + part_name + ".png"
+	var chosen_tex: Texture2D = fallback
+	if ResourceLoader.exists(primary_path):
+		var res := load(primary_path)
 		if res is Texture2D:
-			return res
-	return fallback
+			chosen_tex = res as Texture2D
+	elif ResourceLoader.exists(default_path):
+		var res2 := load(default_path)
+		if res2 is Texture2D:
+			chosen_tex = res2 as Texture2D
+	if _uses_side_coloring() and chosen_tex != null:
+		if side == "left":
+			return _colorize_neutral_pixels(chosen_tex, MANNEQUIN_LEFT_TINT)
+		if side == "right":
+			return _colorize_neutral_pixels(chosen_tex, MANNEQUIN_RIGHT_TINT)
+	return chosen_tex
 
 
-func _make_limb(parent: Node2D, node_name: String, tex: Texture2D) -> Sprite2D:
+## 运行时热切换持枪双臂皮肤；非法或缺失 arm2 资源时安全回退 "doll_v2"。
+func set_skin(new_skin_id: String) -> bool:
+	var clean := _sanitize_skin_id(new_skin_id)
+	var valid := not clean.is_empty() and skin_has_arm2(clean)
+	skin_id = clean if valid else DEFAULT_SKIN
+	_refresh_arm_textures()
+	return valid
+
+
+func _refresh_arm_textures() -> void:
+	if _upper_arm != null:
+		var t := _arm_tex("upper_arm", UPPER_ARM_TEX, "right")
+		_upper_arm.texture = t
+		_upper_arm.offset = Vector2(t.get_width() * 0.5, 0.0)
+	if _forearm != null:
+		var t := _arm_tex("forearm", FOREARM_TEX, "right")
+		_forearm.texture = t
+		_forearm.offset = Vector2(t.get_width() * 0.5, 0.0)
+	if _hand != null:
+		_hand.texture = _arm_tex("hand", HAND_TEX, "right")
+	if _support_upper != null:
+		var t := _arm_tex("upper_arm", UPPER_ARM_TEX, "left")
+		_support_upper.texture = t
+		_support_upper.offset = Vector2(t.get_width() * 0.5, 0.0)
+	if _support_forearm != null:
+		var t := _arm_tex("forearm", FOREARM_TEX, "left")
+		_support_forearm.texture = t
+		_support_forearm.offset = Vector2(t.get_width() * 0.5, 0.0)
+	if _support_hand != null:
+		_support_hand.texture = _arm_tex("hand", HAND_TEX, "left")
+
+
+func _make_limb(parent: Node2D, node_name: String, part_name: String,
+		fallback: Texture2D, side: String = "") -> Sprite2D:
 	var limb := Sprite2D.new()
 	limb.name = node_name
-	var use_tex := tex
-	if tex == UPPER_ARM_TEX:
-		use_tex = _arm_tex(V2_UPPER_ARM_PATH, tex)
-	elif tex == FOREARM_TEX:
-		use_tex = _arm_tex(V2_FOREARM_PATH, tex)
+	var use_tex := _arm_tex(part_name, fallback, side)
 	limb.texture = use_tex
 	limb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	limb.scale = Vector2.ONE * ARM_SCALE
@@ -297,10 +414,10 @@ func _make_limb(parent: Node2D, node_name: String, tex: Texture2D) -> Sprite2D:
 	return limb
 
 
-func _make_hand(parent: Node2D, node_name: String) -> Sprite2D:
+func _make_hand(parent: Node2D, node_name: String, side: String = "") -> Sprite2D:
 	var hand := Sprite2D.new()
 	hand.name = node_name
-	hand.texture = _arm_tex(V2_HAND_PATH, HAND_TEX)
+	hand.texture = _arm_tex("hand", HAND_TEX, side)
 	hand.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	hand.scale = Vector2.ONE * ARM_SCALE
 	parent.add_child(hand)
@@ -513,7 +630,13 @@ func _apply_pose() -> void:
 	POSE_IK.solve_support_arm(_support_root, _support_upper, _support_forearm, _support_hand,
 		_pivot, base_anchor, _wrist_local, _gun_len, _elbow_sign, _flipped, show_support,
 		float(st.get("support_ratio", POSE_IK.SUPPORT_GRIP_RATIO)),
-		float(st.get("support_lift", POSE_IK.SUPPORT_LIFT)), reload_prog)
+		float(st.get("support_lift", POSE_IK.SUPPORT_LIFT)), reload_prog, body_direction)
+	if _support_root != null:
+		# 朝右/背面时左副手在远侧置枪与右主手之后（z=-1 略压暗）；朝左/正面时左副手在近侧托护木（z=+1）
+		var support_far := (not _flipped and body_direction != 0) or body_direction == 1
+		_support_root.z_index = -1 if support_far else 1
+		var cur_a := _support_root.modulate.a
+		_support_root.modulate = Color(0.84, 0.87, 0.94, cur_a) if support_far else Color(1.0, 1.0, 1.0, cur_a)
 
 
 ## --- 供弹/动作接口（委托至 WeaponFeedState2D）--------------------------------

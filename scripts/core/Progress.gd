@@ -718,6 +718,14 @@ func set_debug_unlock_all_weapons(enabled: bool) -> bool:
 		progress_mutated.emit()
 	return ok
 
+func character_skin() -> String:
+	return SETTINGS_STORE.character_skin(data)
+
+func set_character_skin(skin_id: String) -> bool:
+	if not SETTINGS_STORE.set_character_skin(data, skin_id):
+		return false
+	return save_data()
+
 func debug_value(key: String) -> float:
 	return SETTINGS_STORE.debug_value(data, key)
 

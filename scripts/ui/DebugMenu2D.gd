@@ -7,6 +7,7 @@ class_name DebugMenu2D
 
 signal closed
 signal minimap_bounds_changed(min_zoom: float, max_zoom: float)
+signal character_skin_changed(skin_id: String)
 
 const TABS := [
 	["combat", "1. 战斗与视野"],
@@ -55,6 +56,7 @@ var _minimap_zoom_max_edit: LineEdit
 var _live_vitals_label: Label
 var _full_restore_button: Button
 var _unlock_weapons_button: Button
+var _skin_toggle_button: Button
 var _status: Label
 var _message: Label
 var _syncing := false
@@ -153,10 +155,18 @@ func _build() -> void:
 		var enabled := bool(pair[0])
 		var button := PixelUI.button(String(pair[1]), 34)
 		button.add_theme_font_size_override("font_size", 18)
-		button.custom_minimum_size.x = 88
+		button.custom_minimum_size.x = 76
 		button.pressed.connect(_set_enabled.bind(enabled))
 		enable_row.add_child(button)
 		_enable_buttons[enabled] = button
+	var skin_sep := VSeparator.new()
+	enable_row.add_child(skin_sep)
+	_skin_toggle_button = PixelUI.button("角色外观：正式皮", 34)
+	_skin_toggle_button.add_theme_font_size_override("font_size", 17)
+	_skin_toggle_button.custom_minimum_size.x = 232
+	_skin_toggle_button.tooltip_text = "一键热切换正式像素皮（doll_v2）与功能分色标准体模（mannequin）"
+	_skin_toggle_button.pressed.connect(toggle_character_skin)
+	enable_row.add_child(_skin_toggle_button)
 	_status = PixelUI.label(enable_row, "", 19, PixelUI.DIM)
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -956,10 +966,49 @@ func _reset_values() -> void:
 		_p.reset_debug()
 	_load_values()
 	_sync_live_player_vitals()
-	_set_message("已重置所有战斗/生存倍率与自动恢复（小地图缩放恢复 0.8×–2.5×）", false)
+	_sync_live_player_skin("doll_v2")
+	_set_message("已重置所有战斗/生存倍率与自动恢复（小地图缩放恢复 0.8×–2.5×，外观恢复正式皮）", false)
 	if _p != null:
 		_p.save_data()
 		minimap_bounds_changed.emit(float(_p.minimap_zoom_min()), float(_p.minimap_zoom_max()))
+		character_skin_changed.emit("doll_v2")
+
+
+func toggle_character_skin() -> String:
+	var cur := _current_character_skin()
+	var next_skin := "mannequin" if cur != "mannequin" else "doll_v2"
+	if _p != null and _p.has_method("set_character_skin"):
+		_p.set_character_skin(next_skin)
+	_sync_live_player_skin(next_skin)
+	_refresh_skin_button(next_skin)
+	_set_message("角色外观已切换为：分色体模 (mannequin)" if next_skin == "mannequin"
+		else "角色外观已切换为：正式皮 (doll_v2)", false)
+	character_skin_changed.emit(next_skin)
+	return next_skin
+
+
+func _current_character_skin() -> String:
+	var player := _active_player()
+	if player != null and player.has_method("get_skin"):
+		return String(player.get_skin())
+	if _p != null and _p.has_method("character_skin"):
+		return String(_p.character_skin())
+	return "doll_v2"
+
+
+func _sync_live_player_skin(skin_id: String) -> void:
+	var player := _active_player()
+	if player != null and player.has_method("set_skin"):
+		player.set_skin(skin_id)
+
+
+func _refresh_skin_button(skin_id: String) -> void:
+	if _skin_toggle_button == null:
+		return
+	var is_mannequin := skin_id == "mannequin"
+	_skin_toggle_button.text = "角色外观：分色体模" if is_mannequin else "角色外观：正式皮"
+	_skin_toggle_button.add_theme_color_override(
+		"font_color", PixelUI.CYAN if is_mannequin else PixelUI.TEXT)
 
 
 func _load_values() -> void:
@@ -985,6 +1034,7 @@ func _load_values() -> void:
 	var zmin := float(_p.minimap_zoom_min()) if (_p != null and _p.has_method("minimap_zoom_min")) else 0.8
 	var zmax := float(_p.minimap_zoom_max()) if (_p != null and _p.has_method("minimap_zoom_max")) else 2.5
 	_sync_minimap_bound_controls(zmin, zmax)
+	_refresh_skin_button(_current_character_skin())
 
 
 func _load_survival_values() -> void:
