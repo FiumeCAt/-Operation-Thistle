@@ -2,9 +2,9 @@
 name: godot-verify
 description: >-
   Use this skill after editing GDScript, scenes, shaders, or data/*.json in
-  HellWalker_DollProtocol to refresh Godot 4.7.2 imports, run the 54-test core
-  2D regression gate, inspect logs via godot-ai MCP, and visually verify
-  screenshots.
+  HellWalker_DollProtocol to refresh Godot 4.7.2 imports, run the 62-test core
+  2D regression gate (parallel LPT + fixed-fps=60), inspect logs via godot-ai
+  MCP, and visually verify screenshots.
 ---
 
 # Godot 4.7.2 编译、回归门禁与视觉验收流程
@@ -22,18 +22,21 @@ $PROJ  = "D:\AI Game\HellWalker\HellWalker_DollProtocol"
 ```
 核查无新增 `SCRIPT ERROR`、`Parse Error`、`Could not find type`（注：`addons/phantom_camera` 自带 `update_button.gd:62` 插件内部噪音，与业务脚本无关）。若 Godot GUI 编辑器正打开且未增删脚本/资源，测试时可加 `-SkipImport` 避免与编辑器争夺 `.godot` 缓存。
 
-## 步骤 2：运行核心 2D 回归门禁（54 个测试）
-使用汇总脚本 [run_core_tests.ps1](./scripts/run_core_tests.ps1)（日志输出至 `out/test_logs/`，自动校验输出摘要而非仅看进程退出码）：
+## 步骤 2：运行核心 2D 回归门禁（62 个测试）
+使用汇总脚本 [run_core_tests.ps1](./scripts/run_core_tests.ps1)（默认启用 8 并发 LPT 调度 + `--fixed-fps 60` 确定性步进，全量约 46–56s；日志输出至 `out/test_logs/`，严格要求 0 失败、0 脚本错误且退出码为 0）：
 
 ```powershell
-# 全量 54 个核心 2D 回归（任务收口前必跑；基线 1537 条断言，0 失败）
+# 全量 62 个核心 2D 回归（任务收口前必跑；基线 1991 条断言，0 失败，0 脚本错误）
 powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1
 
-# 跳过 --import（编辑器正运行或仅验证已有脚本时）
+# 跳过 --import（编辑器正运行或仅验证已有脚本时，约 46s）
 powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1 -SkipImport
 
-# 快速迭代：仅跑与本次改动相关的子集
+# 快速迭代：仅跑与本次改动相关的子集（约 3–8s）
 powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1 -SkipImport -Tests shoot_2d_test,bullet_speed_test,ads_test
+
+# 可选参数：自定义并发度或回退实时帧率排查时序问题
+powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run_core_tests.ps1 -SkipImport -Jobs 4 -RealTime
 ```
 
 ### 可选/共享补充测试（按需运行）
@@ -63,5 +66,5 @@ powershell -ExecutionPolicy Bypass -File .agents/skills/godot-verify/scripts/run
 
 ## 验收标准
 - `--import` 无本项目脚本解析/类型错误；
-- 相关测试及全量 54 项核心 2D 门禁全部 `PASS`（0 fail，无新增 `SCRIPT ERROR`）；
+- 相关测试及全量 62 项核心 2D 门禁全部 `PASS`（0 fail，0 `SCRIPT ERROR`，退出码为 0）；
 - 涉及画面/UI 的改动已通过 `read_file` 实图核验。
