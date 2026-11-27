@@ -326,5 +326,55 @@ func _run() -> void:
 	_check(p.muzzle_flash_mode() == "off", "muzzle flash mode persists across save reload")
 	p.set_muzzle_flash_mode("partial")
 
+	# 血甲与弹药栏自动隐藏设置（auto / vitals_pinned / pinned）持久化 + RunHUD2D 淡出/唤醒行为验证。
+	sm = SettingsMenu2D.new()
+	root.add_child(sm)
+	await process_frame
+	sm.open()
+	_check(sm._hud_hide_buttons.size() == 3 and p.hud_auto_hide_mode() == "auto"
+		and sm._hud_hide_buttons["auto"].text.contains("▶"),
+		"HUD auto-hide setting exposes 3 modes and defaults to auto")
+	sm._set_hud_auto_hide_mode("vitals_pinned")
+	_check(p.hud_auto_hide_mode() == "vitals_pinned",
+		"HUD auto-hide switches to vitals_pinned immediately")
+	sm._set_hud_auto_hide_mode("pinned")
+	sm.queue_free()
+	await process_frame
+	p.load_data()
+	_check(p.hud_auto_hide_mode() == "pinned", "HUD auto-hide mode persists across reload")
+	p.set_hud_auto_hide_mode("auto")
+
+	var hud := RunHUD2D.new()
+	root.add_child(hud)
+	await process_frame
+	hud.set_hud_auto_hide_mode("auto")
+	hud._vitals_hold_t = 0.0
+	hud._weapon_hold_t = 0.0
+	for _i in 20:
+		hud._step_hud_auto_hide(0.05)
+	_check(hud.get_vitals_alpha() < 0.05 and hud.get_weapon_alpha() < 0.05,
+		"HUD auto mode fades out both vitals and weapon plates when idle")
+	hud.notify_weapon_activity()
+	for _i in 10:
+		hud._step_hud_auto_hide(0.05)
+	_check(hud.get_vitals_alpha() > 0.95 and hud.get_weapon_alpha() > 0.95,
+		"firing / weapon activity wakes up HUD plates smoothly")
+	hud.set_hud_auto_hide_mode("vitals_pinned")
+	hud._vitals_hold_t = 0.0
+	hud._weapon_hold_t = 0.0
+	for _i in 20:
+		hud._step_hud_auto_hide(0.05)
+	_check(hud.get_vitals_alpha() > 0.95 and hud.get_weapon_alpha() < 0.05,
+		"vitals_pinned keeps HP/armor visible while hiding weapon plate when idle")
+	hud.set_hud_auto_hide_mode("pinned")
+	hud._vitals_hold_t = 0.0
+	hud._weapon_hold_t = 0.0
+	for _i in 20:
+		hud._step_hud_auto_hide(0.05)
+	_check(hud.get_vitals_alpha() > 0.95 and hud.get_weapon_alpha() > 0.95,
+		"pinned mode keeps both vitals and weapon plates permanently visible")
+	hud.queue_free()
+	await process_frame
+
 	print("\n=== settings 2d: %s (%d ok / %d fail) ===" % ["PASS" if _fail == 0 else "FAIL", _pass, _fail])
 	quit()

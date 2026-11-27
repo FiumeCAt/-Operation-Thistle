@@ -24,15 +24,21 @@ const PICKUP_MERGE_MIN := 0.0
 const PICKUP_MERGE_MAX := 10.0
 
 const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
+const HUD_AUTO_HIDE_MODES := ["auto", "vitals_pinned", "pinned"]
 const MUZZLE_FLASH_MODES := ["full", "partial", "off"]
 const HEARING_DISPLAY_MODES := ["both", "ripple", "ring"]
 const CHARACTER_SKIN_IDS := ["doll_v2", "doll_thistle", "mannequin"]
 const BGM_PLAY_MODES := ["shuffle", "sequential", "single"]
+const OVERHEAD_BAR_PRESETS := {
+	"doll_v2": {"hp": "#44e66f", "armor": "#44a8ff"},
+	"doll_thistle": {"hp": "#34fcfe", "armor": "#f4f7ff"},
+	"mannequin": {"hp": "#44e66f", "armor": "#44a8ff"},
+}
 const EXPORT_FORMAT := "operation_thistle_save"
 const EXPORT_VERSION := 1
 ## 本地偏好设置键集合：重置游戏进度（默认保留设置）或导入存档（可选不覆盖本地偏好）时保留这些键。
 const PREFERENCE_KEYS := [
-	"ammo_display", "fire_rate_display", "armor_display",
+	"ammo_display", "hud_auto_hide_mode", "fire_rate_display", "armor_display",
 	"volume", "sfx_volume", "music_volume", "bgm_play_mode", "bgm_pinned_track",
 	"screen_shake", "bullet_trail_enabled", "hitstop_enabled", "shake_scale",
 	"sample_impacts", "hit_fx_level", "muzzle_flash_mode",
@@ -42,7 +48,7 @@ const PREFERENCE_KEYS := [
 	"typewriter_enabled", "typewriter_speed",
 	"ammo_exact_rounds", "pickup_merge_window",
 	"motion_blur", "scope_motion_blur", "scope_lens_distortion", "player_self_light",
-	"reticle_styles", "laser_color", "reticle_color",
+	"reticle_styles", "laser_color", "reticle_color", "overhead_bar_colors",
 	"ui_theme", "ui_theme_color",
 	"show_fps",
 	"debug_enabled", "debug", "debug_unlock_all_weapons", "character_skin",
@@ -88,6 +94,7 @@ static func defaults() -> Dictionary:
 		"armor_max": 100,
 		"armor_level": 1,
 		"ammo_display": "both",
+		"hud_auto_hide_mode": "auto",
 		"fire_rate_display": "interval",
 		"armor_display": "value",
 		"volume": 0.8,
@@ -120,6 +127,7 @@ static func defaults() -> Dictionary:
 		"reticle_styles": {},
 		"laser_color": DEFAULT_LASER_COLOR,
 		"reticle_color": DEFAULT_RETICLE_COLOR,
+		"overhead_bar_colors": {},
 		"ui_theme": DEFAULT_UI_THEME,
 		"ui_theme_color": DEFAULT_UI_THEME_COLOR,
 		"show_fps": false,

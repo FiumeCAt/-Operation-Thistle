@@ -534,6 +534,8 @@ func _apply_talents() -> void:
 			hud.set_ammo_exact_rounds(bool(progress.ammo_exact_rounds()))
 		elif progress.data is Dictionary:
 			hud.set_ammo_exact_rounds(bool(progress.data.get("ammo_exact_rounds", false)))
+		if progress.has_method("hud_auto_hide_mode"):
+			hud.set_hud_auto_hide_mode(String(progress.hud_auto_hide_mode()))
 	_view_zoom_visual = view_zoom_pct
 	# 护甲：基础存档值 + 护甲组件 + 护甲强化天赋，进入行动时补满（同步叠加调试上限倍率）。
 	var armor_mods := ModDB.modifiers(progress.armor_mods_2d(), true)
@@ -585,10 +587,14 @@ func _on_settings_applied() -> void:
 			hud.set_ammo_exact_rounds(bool(progress.ammo_exact_rounds()))
 		elif progress.data is Dictionary:
 			hud.set_ammo_exact_rounds(bool(progress.data.get("ammo_exact_rounds", false)))
+		if progress.has_method("hud_auto_hide_mode"):
+			hud.set_hud_auto_hide_mode(String(progress.hud_auto_hide_mode()))
 	if doll != null and progress.has_method("debug_mul"):
 		doll.sync_debug_vitals(
 			float(progress.debug_mul("hp_max_mul")),
 			float(progress.debug_mul("armor_max_mul")))
+		doll.sync_overhead_bar_colors(progress)
+		doll.sync_overhead_bars()
 		if hud != null:
 			hud.set_hp(doll.hp, doll.hp_max)
 			hud.set_armor(doll.armor, doll.armor_max)
@@ -743,6 +749,8 @@ func _process(delta: float) -> void:
 	# 右键瞄准只负责前探视野与散布收紧；整体缩放由 Alt+滚轮独立控制。
 	# 与 WeaponRig2D._ads_t 共用同一套开镜速率（1 / ads_time），高倍镜与枪型手感完全同步。
 	var want_ads := 1.0 if (doll.ads and run_state == RunState.ACTIVE) else 0.0
+	if want_ads > 0.5 and hud != null and hud.has_method("notify_weapon_activity"):
+		hud.notify_weapon_activity(1.2)
 	var ads_speed := doll.weapon_rig.get_ads_rate() if doll.weapon_rig != null \
 		else _cam_float(&"ads_zoom_speed", ADS_ZOOM_SPEED)
 	var dbg_progress := get_node_or_null("/root/Progress")
@@ -1083,6 +1091,8 @@ func _trace_pellet(origin: Vector2, direction: Vector2, length: float) -> Dictio
 
 func _on_weapon_fired(muzzle: Vector2, dir: Vector2) -> void:
 	_bgm_combat_hold = 8.0
+	if hud != null and hud.has_method("notify_weapon_activity"):
+		hud.notify_weapon_activity()
 	combat_system.on_weapon_fired(muzzle, dir)
 
 

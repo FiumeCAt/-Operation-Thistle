@@ -65,6 +65,85 @@ static func set_ammo_display(data: Dictionary, mode: String) -> bool:
 	return true
 
 
+static func hud_auto_hide_mode(data: Dictionary) -> String:
+	var mode := String(data.get("hud_auto_hide_mode", "auto"))
+	return mode if SAVE_STORE.HUD_AUTO_HIDE_MODES.has(mode) else "auto"
+
+
+static func set_hud_auto_hide_mode(data: Dictionary, mode: String) -> bool:
+	if not SAVE_STORE.HUD_AUTO_HIDE_MODES.has(mode):
+		return false
+	data["hud_auto_hide_mode"] = mode
+	return true
+
+
+static func overhead_bar_preset(skin_id: String) -> Dictionary:
+	var key := skin_id if SAVE_STORE.OVERHEAD_BAR_PRESETS.has(skin_id) else "doll_v2"
+	var entry: Dictionary = SAVE_STORE.OVERHEAD_BAR_PRESETS[key]
+	return {
+		"hp": Color.html(String(entry["hp"])),
+		"armor": Color.html(String(entry["armor"])),
+	}
+
+
+static func overhead_hp_color(data: Dictionary, skin_id: String) -> Color:
+	var preset := overhead_bar_preset(skin_id)
+	var overrides = data.get("overhead_bar_colors", {})
+	if overrides is Dictionary and overrides.has(skin_id):
+		var per = overrides[skin_id]
+		if per is Dictionary:
+			var raw := String(per.get("hp", ""))
+			if Color.html_is_valid(raw):
+				return Color.html(raw)
+	return preset["hp"]
+
+
+static func overhead_armor_color(data: Dictionary, skin_id: String) -> Color:
+	var preset := overhead_bar_preset(skin_id)
+	var overrides = data.get("overhead_bar_colors", {})
+	if overrides is Dictionary and overrides.has(skin_id):
+		var per = overrides[skin_id]
+		if per is Dictionary:
+			var raw := String(per.get("armor", ""))
+			if Color.html_is_valid(raw):
+				return Color.html(raw)
+	return preset["armor"]
+
+
+static func set_overhead_hp_color(data: Dictionary, skin_id: String, color: Color) -> void:
+	var key := skin_id if SAVE_STORE.CHARACTER_SKIN_IDS.has(skin_id) else "doll_v2"
+	var overrides: Dictionary = {}
+	if data.get("overhead_bar_colors") is Dictionary:
+		overrides = (data["overhead_bar_colors"] as Dictionary).duplicate(true)
+	var per: Dictionary = {}
+	if overrides.get(key) is Dictionary:
+		per = (overrides[key] as Dictionary).duplicate()
+	per["hp"] = "#" + color.to_html(false)
+	overrides[key] = per
+	data["overhead_bar_colors"] = overrides
+
+
+static func set_overhead_armor_color(data: Dictionary, skin_id: String, color: Color) -> void:
+	var key := skin_id if SAVE_STORE.CHARACTER_SKIN_IDS.has(skin_id) else "doll_v2"
+	var overrides: Dictionary = {}
+	if data.get("overhead_bar_colors") is Dictionary:
+		overrides = (data["overhead_bar_colors"] as Dictionary).duplicate(true)
+	var per: Dictionary = {}
+	if overrides.get(key) is Dictionary:
+		per = (overrides[key] as Dictionary).duplicate()
+	per["armor"] = "#" + color.to_html(false)
+	overrides[key] = per
+	data["overhead_bar_colors"] = overrides
+
+
+static func reset_overhead_bar_colors(data: Dictionary, skin_id: String) -> void:
+	if not (data.get("overhead_bar_colors") is Dictionary):
+		return
+	var overrides: Dictionary = (data["overhead_bar_colors"] as Dictionary).duplicate(true)
+	overrides.erase(skin_id)
+	data["overhead_bar_colors"] = overrides
+
+
 static func set_fire_rate_display(data: Dictionary, mode: String) -> bool:
 	if not ["interval", "rpm"].has(mode):
 		return false

@@ -54,6 +54,7 @@ var _back_button: Button
 var _debug_menu: DebugMenu2D
 var _radio_menu: RadioMenu2D
 var _bgm_mode_buttons: Dictionary = {}
+var _hud_hide_buttons: Dictionary = {}
 var _save_timer: Timer
 
 
@@ -331,6 +332,21 @@ func _build_right_column() -> Control:
 		button.pressed.connect(func() -> void: _set_ammo_display(mode))
 		ammo_row.add_child(button)
 		_ammo_buttons[mode] = button
+
+	var hud_hide_row := HBoxContainer.new()
+	hud_hide_row.add_theme_constant_override("separation", 6)
+	rows.add_child(hud_hide_row)
+	var hh_lbl := PixelUI.label(hud_hide_row, "血甲弹药栏", 18, PixelUI.DIM)
+	hh_lbl.custom_minimum_size.x = 110
+	hh_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for entry in [["auto", "自动隐藏"], ["vitals_pinned", "固定血甲"], ["pinned", "全部固定"]]:
+		var hmode := String(entry[0])
+		var hbtn := _option_button(String(entry[1]))
+		hbtn.add_theme_font_size_override("font_size", 15)
+		hbtn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hbtn.pressed.connect(func() -> void: _set_hud_auto_hide_mode(hmode))
+		hud_hide_row.add_child(hbtn)
+		_hud_hide_buttons[hmode] = hbtn
 
 	_add_pickup_merge_row(rows)
 
@@ -895,6 +911,7 @@ func _load_values() -> void:
 	var show_fps := false
 	var pickup_merge := 3.0
 	var bgm_mode := "shuffle"
+	var hud_hide := "auto"
 	if p != null:
 		master = float(p.data.get("volume", 0.8))
 		sfx = float(p.data.get("sfx_volume", 0.8))
@@ -923,6 +940,7 @@ func _load_values() -> void:
 		show_fps = bool(p.show_fps()) if p.has_method("show_fps") else false
 		pickup_merge = float(p.pickup_merge_window()) if p.has_method("pickup_merge_window") else 3.0
 		bgm_mode = String(p.bgm_play_mode()) if p.has_method("bgm_play_mode") else "shuffle"
+		hud_hide = String(p.hud_auto_hide_mode()) if p.has_method("hud_auto_hide_mode") else "auto"
 	_set_slider("master", master * 100.0)
 	_set_slider("sfx", sfx * 100.0)
 	_set_slider("music", music * 100.0)
@@ -946,6 +964,7 @@ func _load_values() -> void:
 	_refresh_fire_buttons(fire_mode)
 	_refresh_armor_display_buttons(armor_mode)
 	_refresh_ammo_buttons(ammo_mode)
+	_refresh_hud_auto_hide_buttons(hud_hide)
 	_refresh_shake_buttons(shake)
 	_refresh_trail_buttons(bullet_trail)
 	_refresh_scope_blur_buttons(scope_blur)
@@ -1013,6 +1032,22 @@ func _set_ammo_display(mode: String) -> void:
 	if p != null:
 		p.set_ammo_display(mode)
 	_refresh_ammo_buttons(mode)
+
+
+func _set_hud_auto_hide_mode(mode: String) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_hud_auto_hide_mode"):
+		p.set_hud_auto_hide_mode(mode)
+	_refresh_hud_auto_hide_buttons(mode)
+
+
+func _refresh_hud_auto_hide_buttons(mode: String) -> void:
+	var names := {"auto": "自动隐藏", "vitals_pinned": "固定血甲", "pinned": "全部固定"}
+	for key in _hud_hide_buttons:
+		var btn: Button = _hud_hide_buttons[key]
+		btn.text = ("▶ " if key == mode else "") + String(names.get(key, key))
+		btn.add_theme_color_override(
+			"font_color", PixelUI.AMBER_BRIGHT if key == mode else PixelUI.TEXT)
 
 
 func _set_ammo_exact_rounds(enabled: bool) -> void:

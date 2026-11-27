@@ -81,17 +81,43 @@ func _run() -> void:
 	menu.character_menu.set_preview_pose(&"run")
 	_check(menu.character_menu.preview_dir == 2 and menu.character_menu.preview_pose == &"run",
 		"character menu updates preview direction and pose cleanly")
+	# 头顶血甲条预设与角色界面自定义调色验证（白裙=亮青/白，猫娘=绿/蓝）
+	_check(menu.character_menu.hp_color_picker != null and menu.character_menu.armor_color_picker != null
+		and menu.character_menu.preview_doll.overhead_bars != null
+		and menu.character_menu.hp_color_picker.color.is_equal_approx(Color.html("#34fcfe"))
+		and menu.character_menu.armor_color_picker.color.is_equal_approx(Color.html("#f4f7ff")),
+		"doll_thistle defaults to bright cyan HP and white armor overhead bars")
+	menu.character_menu.set_overhead_hp_color(Color.html("#ff5c5c"))
+	_check(p == null or p.overhead_hp_color("doll_thistle").is_equal_approx(Color.html("#ff5c5c")),
+		"custom overhead HP bar color persists for selected operator")
+	menu.character_menu.reset_overhead_bar_colors()
+	_check(p == null or p.overhead_hp_color("doll_thistle").is_equal_approx(Color.html("#34fcfe")),
+		"reset_overhead_bar_colors restores operator preset color")
+	menu.character_menu.select_character("doll_v2")
+	await process_frame
+	_check(menu.character_menu.hp_color_picker.color.is_equal_approx(Color.html("#44e66f"))
+		and menu.character_menu.armor_color_picker.color.is_equal_approx(Color.html("#44a8ff")),
+		"doll_v2 defaults to green HP and blue armor overhead bars")
 	menu._unhandled_input(esc)
 	_check(not menu.character_menu.visible, "ESC closes the character menu")
 	if p != null:
 		p.set_character_skin("doll_v2")
 		menu._refresh_dossier()
 
-	# 战术电台：主菜单快捷入口、当前曲名、模式切换持久化与 ESC 关闭
+	# 战术电台：主菜单快捷入口、文件夹按钮、可拖动进度条、暂停/继续、模式切换持久化与 ESC 关闭
 	menu._open_radio()
 	await process_frame
-	_check(menu.radio_menu.visible and menu.radio_menu.now_playing_label.text != "",
-		"radio menu opens from main menu and displays active track")
+	_check(menu.radio_menu.visible and menu.radio_menu.now_playing_label.text != ""
+		and menu.radio_menu.folder_button != null and menu.radio_menu.progress_slider != null
+		and menu.radio_menu.pause_button != null and menu.radio_menu.prev_button != null
+		and menu.radio_menu.next_button != null,
+		"radio menu opens with folder button, progress slider, pause/prev/next controls, and active track")
+	menu.radio_menu.pause_button.pressed.emit()
+	_check(menu.radio_menu.pause_button.text.contains("继续"),
+		"radio pause button toggles playback into paused state")
+	menu.radio_menu.pause_button.pressed.emit()
+	_check(menu.radio_menu.pause_button.text.contains("暂停"),
+		"radio pause button resumes playback cleanly")
 	menu.radio_menu.select_mode("sequential")
 	_check(p == null or p.bgm_play_mode() == "sequential",
 		"radio menu persists sequential play mode to Progress")

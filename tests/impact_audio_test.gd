@@ -295,6 +295,21 @@ func _run() -> void:
 	sfx.set_bgm_pinned_track("")
 	p.set_bgm_play_mode("shuffle")
 	p.set_bgm_pinned_track("")
+	# 播放控制：暂停/继续、进度条跳转与一键目录路径接口
+	sfx.set_bgm_state("menu", 0.05)
+	await process_frame
+	var dur: float = sfx.bgm_track_duration()
+	_check(dur > 1.0, "active BGM track reports valid duration > 1s (%.2fs)" % dur)
+	var paused_on: bool = sfx.bgm_toggle_paused()
+	_check(paused_on and sfx.bgm_is_paused(), "bgm_toggle_paused enters paused state")
+	sfx.bgm_seek(2.5)
+	_check(absf(sfx.bgm_playback_position() - 2.5) < 0.25,
+		"bgm_seek updates playback position while paused (%.2fs)" % sfx.bgm_playback_position())
+	var paused_off: bool = sfx.bgm_toggle_paused()
+	_check(not paused_off and not sfx.bgm_is_paused(), "bgm_toggle_paused resumes playback cleanly")
+	var opened_dir: String = sfx.bgm_open_user_dir()
+	_check(opened_dir != "" and DirAccess.dir_exists_absolute(opened_dir),
+		"bgm_open_user_dir creates and returns valid custom BGM directory")
 	sfx.stop_bgm(0.05)
 
 	print("\n=== impact audio: %s (%d ok / %d fail) ===" % ["PASS" if _fail == 0 else "FAIL", _pass, _fail])

@@ -14,6 +14,9 @@ const PLATE_POS := Vector2(20, -148)
 const PLATE_SIZE := Vector2(560, 132)
 const WEAPON_PLATE_SIZE := Vector2(456, 164)
 const AMMO_DISPLAY_MODES := ["both", "numeric", "graphic"]
+const HUD_AUTO_HIDE_MODES := ["auto", "vitals_pinned", "pinned"]
+const HUD_AUTO_HIDE_DELAY := 4.0
+const HUD_LOW_HP_KEEP_RATIO := 0.35
 const AMMO_DISPLAY_LABELS := {
 	"both": "[J] 图文",
 	"numeric": "[J] 数值",
@@ -49,6 +52,8 @@ var debrief_loot_labels := {}
 var debrief_stat_labels := {}
 
 var _root: Control
+var _status_plate: TextureRect
+var _weapon_plate: TextureRect
 var _minimap: Minimap2D
 var _hint_bar: PanelContainer
 var _hint_rich: RichTextLabel
@@ -66,6 +71,17 @@ var _ammo_well: PanelContainer
 var ammo_container: Control
 var ammo_display_mode := "both"
 var ammo_exact_rounds := false
+var hud_auto_hide_mode := "auto"
+var _vitals_hold_t := HUD_AUTO_HIDE_DELAY
+var _weapon_hold_t := HUD_AUTO_HIDE_DELAY
+var _vitals_alpha := 1.0
+var _weapon_alpha := 1.0
+var _last_hp_val := -1
+var _last_hp_max := -1
+var _last_armor_val := -1
+var _last_armor_max := -1
+var _last_weapon_sig := ""
+var _hp_low_keep := false
 var fire_selector: FireSelectorWidget2D
 var dodge_indicator: DodgeIndicator2D
 var _result_panel: PanelContainer
@@ -112,6 +128,55 @@ func _ready() -> void:
 			set_ammo_exact_rounds(bool(progress.ammo_exact_rounds()))
 		elif progress.data is Dictionary:
 			set_ammo_exact_rounds(bool(progress.data.get("ammo_exact_rounds", false)))
+		if progress.has_method("hud_auto_hide_mode"):
+			set_hud_auto_hide_mode(String(progress.hud_auto_hide_mode()))
+		elif progress.data is Dictionary:
+			set_hud_auto_hide_mode(String(progress.data.get("hud_auto_hide_mode", "auto")))
+
+
+func set_hud_auto_hide_mode(mode: String) -> void:
+	var clean := mode if HUD_AUTO_HIDE_MODES.has(mode) else "auto"
+	hud_auto_hide_mode = clean
+	if clean == "pinned":
+		_vitals_alpha = 1.0
+		_weapon_alpha = 1.0
+	elif clean == "vitals_pinned":
+		_vitals_alpha = 1.0
+	_vitals_hold_t = maxf(_vitals_hold_t, 2.5)
+	_weapon_hold_t = maxf(_weapon_hold_t, 2.5)
+	_apply_hud_fade_alpha()
+
+
+func get_hud_auto_hide_mode() -> String:
+	return hud_auto_hide_mode
+
+
+func get_vitals_alpha() -> float:
+	return _vitals_alpha
+
+
+func get_weapon_alpha() -> float:
+	return _weapon_alpha
+
+
+func notify_weapon_activity(hold_sec := HUD_AUTO_HIDE_DELAY) -> void:
+	_weapon_hold_t = maxf(_weapon_hold_t, hold_sec)
+	_vitals_hold_t = maxf(_vitals_hold_t, hold_sec)
+
+
+func notify_vitals_activity(hold_sec := HUD_AUTO_HIDE_DELAY) -> void:
+	_vitals_hold_t = maxf(_vitals_hold_t, hold_sec)
+
+
+func _apply_hud_fade_alpha() -> void:
+	if _status_plate != null:
+		_status_plate.modulate.a = _vitals_alpha
+	if dodge_indicator != null:
+		dodge_indicator.modulate.a = _vitals_alpha
+	if _weapon_plate != null:
+		_weapon_plate.modulate.a = _weapon_alpha
+	if fire_selector != null:
+		fire_selector.modulate.a = _weapon_alpha
 
 
 func set_ammo_exact_rounds(enabled: bool) -> void:
@@ -234,6 +299,7 @@ func show_bgm_toast(title: String) -> void:
 ## 左下：生成式金属板 + 两行信息（生命/资源、目标），不再放头像。
 func _build_status_plate() -> void:
 	var plate := TextureRect.new()
+	_status_plate = plate
 	plate.texture = PLATE_TEX
 	plate.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	plate.stretch_mode = TextureRect.STRETCH_SCALE
@@ -508,6 +574,7 @@ static func _format_pickup_bbcode(text: String, color: Color) -> String:
 ## 右下：独立图形化供弹容器展示区 + 枪名 / 弹匣数值 / 备弹 / 状态 / 换弹进度，共用生成式金属底板。
 func _build_weapon_panel() -> void:
 	var plate := TextureRect.new()
+	_weapon_plate = plate
 	plate.texture = WEAPON_PLATE_TEX
 	plate.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	plate.stretch_mode = TextureRect.STRETCH_SCALE
@@ -619,7 +686,7 @@ func _build_weapon_panel() -> void:
 
 ## 鼠标指针是否正位于 HUD 可点击控件（如快慢机拨片）上，供 WeaponRig2D 拦截误开火。
 func is_pointer_over_interactive() -> bool:
-	if not visible or fire_selector == null or not fire_selector.visible:
+	if not visible or fire_selector == null or not fire_selector.visible or _weapon_alpha < 0.35:
 		return false
 	var vp := get_viewport()
 	if vp == null:
@@ -755,6 +822,11 @@ func _debrief_column() -> PanelContainer:
 
 func set_hp(current: int, maximum: int) -> void:
 	var ratio := clampf(float(current) / maxf(1.0, float(maximum)), 0.0, 1.0)
+	_hp_low_keep = ratio < HUD_LOW_HP_KEEP_RATIO
+	if _last_hp_val >= 0 and (current != _last_hp_val or maximum != _last_hp_max):
+		notify_vitals_activity()
+	_last_hp_val = current
+	_last_hp_max = maximum
 	_health.set_ratio(ratio)
 	hp_label.text = "%d / %d" % [current, maximum]
 	var tier := 0 if ratio < 0.30 else (1 if ratio < 0.65 else 2)
@@ -766,6 +838,10 @@ func set_hp(current: int, maximum: int) -> void:
 
 func set_armor(current: int, maximum: int) -> void:
 	var ratio := clampf(float(current) / maxf(1.0, float(maximum)), 0.0, 1.0)
+	if _last_armor_val >= 0 and (current != _last_armor_val or maximum != _last_armor_max):
+		notify_vitals_activity()
+	_last_armor_val = current
+	_last_armor_max = maximum
 	_armor_bar.set_ratio(ratio)
 	armor_label.text = "护甲 %d" % current
 	var broken := current <= 0
@@ -776,6 +852,8 @@ func set_armor(current: int, maximum: int) -> void:
 
 
 func set_dodge(ready_ratio: float, dodging: bool, invuln: bool, cooldown_left: float) -> void:
+	if dodging or cooldown_left > 0.01:
+		notify_vitals_activity(2.2)
 	if dodge_indicator != null:
 		dodge_indicator.set_dodge_state(ready_ratio, dodging, invuln, cooldown_left)
 
@@ -872,11 +950,19 @@ func update_weapon(rig) -> void:
 		else (PixelUI.GOLD if mag_ratio <= 0.25 else PixelUI.TEXT)
 	_count.add_theme_color_override("font_color", count_col)
 	var reloading: bool = rig.reload_t > 0.0
+	var switching: bool = rig.switch_t > 0.0
+	var fire_m := String(rig.get_fire_mode()) if rig.has_method("get_fire_mode") else ""
+	var w_sig := "%s|%s|%d|%d|%s|%d" % [
+		String(data.id), String(data.ammo_id), rig.mag, reserve_cnt, fire_m, int(rig.is_holstered())]
+	if _last_weapon_sig != "" and w_sig != _last_weapon_sig:
+		notify_weapon_activity()
+	_last_weapon_sig = w_sig
+	if reloading or switching or rig.is_drawing() or rig.is_stowing() or rig.mag <= 0:
+		notify_weapon_activity(2.0)
 	if ammo_container != null:
 		var style: StringName = data.mag_style if ("mag_style" in data) else WeaponDB.mag_style(data.id)
 		var scale_ratio: float = float(data.mag_scale) if ("mag_scale" in data) else 1.0
 		ammo_container.configure(rig.mag, data.mag_capacity, style, scale_ratio, reloading, ammo_exact_rounds)
-	var switching: bool = rig.switch_t > 0.0
 	var state_color := PixelUI.OK
 	if rig.is_drawing():
 		_state.text = "拔枪中"
@@ -1035,8 +1121,28 @@ func _process(delta: float) -> void:
 		_bgm_toast.modulate.a = clampf(_bgm_toast_t / 0.75, 0.0, 1.0)
 		if _bgm_toast_t <= 0.0:
 			_bgm_toast.visible = false
+	_step_hud_auto_hide(delta)
 	for item in expired:
 		_feed_items.erase(item)
+
+
+func _step_hud_auto_hide(delta: float) -> void:
+	var pin_vitals := hud_auto_hide_mode != "auto" or _hp_low_keep
+	var pin_weapon := hud_auto_hide_mode == "pinned"
+	if _vitals_hold_t > 0.0:
+		_vitals_hold_t = maxf(_vitals_hold_t - delta, 0.0)
+	if _weapon_hold_t > 0.0:
+		_weapon_hold_t = maxf(_weapon_hold_t - delta, 0.0)
+	var target_v := 1.0 if (pin_vitals or _vitals_hold_t > 0.0) else 0.0
+	var target_w := 1.0 if (pin_weapon or _weapon_hold_t > 0.0) else 0.0
+	var rate_v := 8.5 if target_v > _vitals_alpha else 2.2
+	var rate_w := 8.5 if target_w > _weapon_alpha else 2.2
+	var next_v := move_toward(_vitals_alpha, target_v, delta * rate_v)
+	var next_w := move_toward(_weapon_alpha, target_w, delta * rate_w)
+	if absf(next_v - _vitals_alpha) > 0.0005 or absf(next_w - _weapon_alpha) > 0.0005:
+		_vitals_alpha = next_v
+		_weapon_alpha = next_w
+		_apply_hud_fade_alpha()
 
 
 ## 像素机械快慢机拨片（F 全自动 / S 半自动）：置于右下武器面板左侧，支持鼠标点击与 B 键联动。

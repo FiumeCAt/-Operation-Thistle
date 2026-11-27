@@ -9,9 +9,15 @@ class_name CharacterMenu2D
 signal closed
 signal character_changed(skin_id: String)
 
-const PANEL_SIZE := Vector2(1140, 648)
-const PREVIEW_SIZE := Vector2i(460, 344)
+const PANEL_SIZE := Vector2(1160, 716)
+const PREVIEW_SIZE := Vector2i(460, 326)
 const FLOOR_TEX_PATH := "res://assets/art/env/pixel_floor_256.png"
+const HP_SWATCHES: Array[String] = [
+	"#44e66f", "#34fcfe", "#ff5c5c", "#ffd166", "#b388ff", "#f4f7ff",
+]
+const ARMOR_SWATCHES: Array[String] = [
+	"#44a8ff", "#f4f7ff", "#34fcfe", "#ffaa44", "#44e66f", "#c792ea",
+]
 
 const OPERATORS: Array[Dictionary] = [
 	{
@@ -58,6 +64,9 @@ var preview_doll: Doll2D
 var operator_cards: Dictionary = {}
 var dir_buttons: Dictionary = {}
 var pose_buttons: Dictionary = {}
+var hp_color_picker: ColorPickerButton
+var armor_color_picker: ColorPickerButton
+var reset_bar_colors_button: Button
 
 var _panel: PixelUI.PixelPanel
 var _title_label: Label
@@ -350,7 +359,100 @@ func _build_showcase_column() -> Control:
 		btn.pressed.connect(set_preview_pose.bind(pid))
 		pose_row.add_child(btn)
 		pose_buttons[pid] = btn
+
+	# 头顶血条 / 护甲条配色自定义区（支持角色默认预设与任意色盘自定义）
+	_build_overhead_bar_color_box(col)
 	return col
+
+
+func _build_overhead_bar_color_box(parent: Node) -> void:
+	var box := PanelContainer.new()
+	box.name = "OverheadBarColorBox"
+	var st := PixelUI.panel_style(PixelUI.BG_LIGHT, 1, Color(PixelUI.theme_accent(), 0.35))
+	st.content_margin_left = 12
+	st.content_margin_right = 12
+	st.content_margin_top = 8
+	st.content_margin_bottom = 8
+	box.add_theme_stylebox_override("panel", st)
+	parent.add_child(box)
+
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	box.add_child(v)
+
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 8)
+	v.add_child(top)
+	var title := PixelUI.label(top, "头顶血甲条配色（按角色独立保存）", 15, PixelUI.theme_accent())
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	reset_bar_colors_button = PixelUI.button("恢复角色预设", 26)
+	reset_bar_colors_button.name = "ResetOverheadBarColorsButton"
+	reset_bar_colors_button.add_theme_font_size_override("font_size", 14)
+	reset_bar_colors_button.custom_minimum_size.x = 126
+	reset_bar_colors_button.pressed.connect(reset_overhead_bar_colors)
+	top.add_child(reset_bar_colors_button)
+
+	var hp_row := HBoxContainer.new()
+	hp_row.add_theme_constant_override("separation", 6)
+	v.add_child(hp_row)
+	var hp_lbl := PixelUI.label(hp_row, "生命条", 15, PixelUI.theme_dim())
+	hp_lbl.custom_minimum_size.x = 58
+	hp_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for hex_val in HP_SWATCHES:
+		hp_row.add_child(_make_color_swatch(Color.html(hex_val), true))
+	hp_color_picker = ColorPickerButton.new()
+	hp_color_picker.name = "OverheadHpColorPicker"
+	hp_color_picker.custom_minimum_size = Vector2(54, 24)
+	hp_color_picker.focus_mode = Control.FOCUS_NONE
+	hp_color_picker.edit_alpha = false
+	hp_color_picker.tooltip_text = "自定义头顶生命条颜色"
+	hp_color_picker.color_changed.connect(func(c: Color) -> void: set_overhead_hp_color(c))
+	hp_row.add_child(hp_color_picker)
+
+	var ar_row := HBoxContainer.new()
+	ar_row.add_theme_constant_override("separation", 6)
+	v.add_child(ar_row)
+	var ar_lbl := PixelUI.label(ar_row, "护甲条", 15, PixelUI.theme_dim())
+	ar_lbl.custom_minimum_size.x = 58
+	ar_lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	for hex_val in ARMOR_SWATCHES:
+		ar_row.add_child(_make_color_swatch(Color.html(hex_val), false))
+	armor_color_picker = ColorPickerButton.new()
+	armor_color_picker.name = "OverheadArmorColorPicker"
+	armor_color_picker.custom_minimum_size = Vector2(54, 24)
+	armor_color_picker.focus_mode = Control.FOCUS_NONE
+	armor_color_picker.edit_alpha = false
+	armor_color_picker.tooltip_text = "自定义头顶护甲条颜色"
+	armor_color_picker.color_changed.connect(func(c: Color) -> void: set_overhead_armor_color(c))
+	ar_row.add_child(armor_color_picker)
+
+	var hint := PixelUI.label(ar_row, "预设：猫娘 绿/蓝 · 白裙 亮青/白", 13, PixelUI.theme_dim())
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+
+func _make_color_swatch(c: Color, is_hp: bool) -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(24, 24)
+	btn.focus_mode = Control.FOCUS_NONE
+	var st := StyleBoxFlat.new()
+	st.bg_color = c
+	st.border_color = Color(0.02, 0.03, 0.04, 0.92)
+	st.set_border_width_all(1)
+	var hov := st.duplicate() as StyleBoxFlat
+	hov.border_color = Color.WHITE
+	hov.set_border_width_all(2)
+	btn.add_theme_stylebox_override("normal", st)
+	btn.add_theme_stylebox_override("hover", hov)
+	btn.add_theme_stylebox_override("pressed", hov)
+	btn.pressed.connect(func() -> void:
+		if is_hp:
+			set_overhead_hp_color(c)
+		else:
+			set_overhead_armor_color(c))
+	return btn
 
 
 func _build_preview_scene(vp: SubViewport) -> void:
@@ -395,9 +497,14 @@ func _ensure_preview_doll() -> void:
 	if doll_scene != null:
 		preview_doll = doll_scene.instantiate() as Doll2D
 		stage.add_child(preview_doll)
-		preview_doll.position = Vector2(PREVIEW_SIZE.x * 0.5, 294.0)
-		preview_doll.scale = Vector2(1.92, 1.92)
+		preview_doll.position = Vector2(PREVIEW_SIZE.x * 0.5, 292.0)
+		preview_doll.scale = Vector2(1.76, 1.76)
 		preview_doll.set_physics_process(false)
+		preview_doll.hp_max = 100
+		preview_doll.hp = 82
+		preview_doll.armor_max = 100
+		preview_doll.armor = 68
+		preview_doll.sync_overhead_bars()
 		preview_doll.equip_weapon_id(&"akm")
 
 
@@ -478,6 +585,56 @@ func _sync_preview_weapon(p: Node) -> void:
 func _apply_preview_skin(skin_id: String) -> void:
 	if preview_doll != null and preview_doll.has_method("set_skin"):
 		preview_doll.set_skin(skin_id)
+		preview_doll.sync_overhead_bar_colors()
+		preview_doll.sync_overhead_bars()
+	_refresh_bar_color_pickers()
+
+
+func set_overhead_hp_color(color: Color) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_overhead_hp_color"):
+		p.set_overhead_hp_color(color, selected_skin_id)
+	if preview_doll != null:
+		var ar_col: Color = p.overhead_armor_color(selected_skin_id) if (p != null and p.has_method("overhead_armor_color")) else Color.html("#44a8ff")
+		preview_doll.set_overhead_bar_colors(color, ar_col)
+	_refresh_bar_color_pickers()
+	if _status_label != null:
+		_status_label.text = "已更新 %s 的头顶生命条颜色" % operator_short_label(selected_skin_id)
+
+
+func set_overhead_armor_color(color: Color) -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("set_overhead_armor_color"):
+		p.set_overhead_armor_color(color, selected_skin_id)
+	if preview_doll != null:
+		var hp_col: Color = p.overhead_hp_color(selected_skin_id) if (p != null and p.has_method("overhead_hp_color")) else Color.html("#44e66f")
+		preview_doll.set_overhead_bar_colors(hp_col, color)
+	_refresh_bar_color_pickers()
+	if _status_label != null:
+		_status_label.text = "已更新 %s 的头顶护甲条颜色" % operator_short_label(selected_skin_id)
+
+
+func reset_overhead_bar_colors() -> void:
+	var p := get_node_or_null("/root/Progress")
+	if p != null and p.has_method("reset_overhead_bar_colors"):
+		p.reset_overhead_bar_colors(selected_skin_id)
+	if preview_doll != null:
+		preview_doll.sync_overhead_bar_colors(p)
+	_refresh_bar_color_pickers()
+	if _status_label != null:
+		_status_label.text = "已恢复 %s 的默认头顶血甲条预设配色" % operator_short_label(selected_skin_id)
+
+
+func _refresh_bar_color_pickers() -> void:
+	var p := get_node_or_null("/root/Progress")
+	var hp_col: Color = p.overhead_hp_color(selected_skin_id) if (p != null and p.has_method("overhead_hp_color")) else (
+		Color.html("#34fcfe") if selected_skin_id == "doll_thistle" else Color.html("#44e66f"))
+	var ar_col: Color = p.overhead_armor_color(selected_skin_id) if (p != null and p.has_method("overhead_armor_color")) else (
+		Color.html("#f4f7ff") if selected_skin_id == "doll_thistle" else Color.html("#44a8ff"))
+	if hp_color_picker != null:
+		hp_color_picker.color = hp_col
+	if armor_color_picker != null:
+		armor_color_picker.color = ar_col
 
 
 func _toggle_preview_back_gear() -> void:

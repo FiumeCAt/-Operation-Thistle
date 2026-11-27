@@ -489,6 +489,39 @@ func bgm_user_dir() -> String:
 	return _bgm.catalog.ensure_user_dir() if _bgm != null else ProjectSettings.globalize_path("user://bgm/")
 
 
+func bgm_open_user_dir() -> String:
+	var dir_path := bgm_user_dir()
+	if DisplayServer.get_name() != "headless":
+		OS.shell_open(dir_path)
+	return dir_path
+
+
+func bgm_is_paused() -> bool:
+	return _bgm.is_paused() if _bgm != null else false
+
+
+func bgm_set_paused(paused: bool) -> void:
+	if _bgm != null:
+		_bgm.set_paused(paused)
+
+
+func bgm_toggle_paused() -> bool:
+	return _bgm.toggle_paused() if _bgm != null else false
+
+
+func bgm_playback_position() -> float:
+	return _bgm.get_playback_position() if _bgm != null else 0.0
+
+
+func bgm_track_duration() -> float:
+	return _bgm.get_track_duration() if _bgm != null else 0.0
+
+
+func bgm_seek(seconds: float) -> void:
+	if _bgm != null:
+		_bgm.seek(seconds)
+
+
 func stop_bgm(fade_sec := 0.8) -> void:
 	if _bgm != null:
 		_bgm.stop(fade_sec)

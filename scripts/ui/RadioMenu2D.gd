@@ -7,7 +7,7 @@ class_name RadioMenu2D
 
 signal closed
 
-const PANEL_SIZE := Vector2(820, 580)
+const PANEL_SIZE := Vector2(860, 636)
 const MODE_DEFS: Array[Dictionary] = [
 	{"id": "shuffle", "label": "随机轮播", "tip": "同池随机切歌，自动防连播同一首"},
 	{"id": "sequential", "label": "顺序播放", "tip": "按曲目列表依次循环播放"},
@@ -18,8 +18,15 @@ var _panel: PixelUI.PixelPanel
 var _title_label: Label
 var _divider: HSeparator
 var now_playing_label: Label
+var progress_slider: HSlider
+var pause_button: Button
+var prev_button: Button
+var next_button: Button
+var folder_button: Button
 var _now_title: Label
 var _now_meta: Label
+var _time_cur_label: Label
+var _time_total_label: Label
 var _mode_hint: Label
 var _dir_hint: Label
 var _mode_buttons: Dictionary = {}
@@ -27,6 +34,8 @@ var _track_list: VBoxContainer
 var _track_buttons: Dictionary = {}
 var _close_button: Button
 var _sfx_connected := false
+var _dragging_progress := false
+var _suppress_slider_signal := false
 
 
 func _ready() -> void:
@@ -36,6 +45,7 @@ func _ready() -> void:
 	PixelUI.apply_theme(self)
 	_build()
 	visible = false
+	set_process(false)
 
 
 func _build() -> void:
@@ -80,36 +90,72 @@ func _build() -> void:
 	rows.add_child(now_box)
 
 	var now_col := VBoxContainer.new()
-	now_col.add_theme_constant_override("separation", 4)
+	now_col.add_theme_constant_override("separation", 6)
 	now_box.add_child(now_col)
 	_now_title = PixelUI.emphasize(PixelUI.label(now_col, "♪ 未播放", 22, PixelUI.theme_accent_bright()), 2, 1)
 	now_playing_label = _now_title
 	_now_meta = PixelUI.label(now_col, "状态：待机", 15, PixelUI.theme_dim())
 
-	# 切歌与刷新控制栏
+	# 可拖动播放进度条（实时显示当前时间 / 总时长，拖动或点击即可跳转）
+	var prog_row := HBoxContainer.new()
+	prog_row.add_theme_constant_override("separation", 10)
+	now_col.add_child(prog_row)
+	_time_cur_label = PixelUI.label(prog_row, "00:00", 15, PixelUI.theme_text())
+	_time_cur_label.custom_minimum_size.x = 48
+	_time_cur_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+	progress_slider = HSlider.new()
+	progress_slider.name = "BgmProgressSlider"
+	progress_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	progress_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	progress_slider.min_value = 0.0
+	progress_slider.max_value = 100.0
+	progress_slider.step = 0.1
+	progress_slider.scrollable = false
+	progress_slider.focus_mode = Control.FOCUS_NONE
+	progress_slider.drag_started.connect(_on_progress_drag_started)
+	progress_slider.drag_ended.connect(_on_progress_drag_ended)
+	progress_slider.value_changed.connect(_on_progress_value_changed)
+	prog_row.add_child(progress_slider)
+
+	_time_total_label = PixelUI.label(prog_row, "00:00", 15, PixelUI.theme_dim())
+	_time_total_label.custom_minimum_size.x = 48
+	_time_total_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_time_total_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+	# 播放控制栏（上一曲 / 暂停继续 / 下一曲 / 锁定单曲 / 刷新曲库）
 	var ctrl_row := HBoxContainer.new()
 	ctrl_row.add_theme_constant_override("separation", 8)
 	rows.add_child(ctrl_row)
-	var prev_btn := PixelUI.button("上一曲", 38)
-	prev_btn.add_theme_font_size_override("font_size", 17)
-	prev_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	prev_btn.pressed.connect(_on_prev)
-	ctrl_row.add_child(prev_btn)
+	prev_button = PixelUI.button("|◀ 上一曲", 40)
+	prev_button.name = "PrevTrackButton"
+	prev_button.add_theme_font_size_override("font_size", 16)
+	prev_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	prev_button.pressed.connect(_on_prev)
+	ctrl_row.add_child(prev_button)
 
-	var next_btn := PixelUI.button("下一曲", 38)
-	next_btn.add_theme_font_size_override("font_size", 17)
-	next_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	next_btn.pressed.connect(_on_next)
-	ctrl_row.add_child(next_btn)
+	pause_button = PixelUI.button("|| 暂停", 40)
+	pause_button.name = "PauseTrackButton"
+	pause_button.add_theme_font_size_override("font_size", 16)
+	pause_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pause_button.pressed.connect(_on_toggle_pause)
+	ctrl_row.add_child(pause_button)
 
-	var pin_btn := PixelUI.button("锁定当前曲", 38)
-	pin_btn.add_theme_font_size_override("font_size", 17)
+	next_button = PixelUI.button("下一曲 ▶|", 40)
+	next_button.name = "NextTrackButton"
+	next_button.add_theme_font_size_override("font_size", 16)
+	next_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	next_button.pressed.connect(_on_next)
+	ctrl_row.add_child(next_button)
+
+	var pin_btn := PixelUI.button("锁定当前曲", 40)
+	pin_btn.add_theme_font_size_override("font_size", 16)
 	pin_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	pin_btn.pressed.connect(_on_pin_current)
 	ctrl_row.add_child(pin_btn)
 
-	var refresh_btn := PixelUI.button("刷新曲库", 38)
-	refresh_btn.add_theme_font_size_override("font_size", 17)
+	var refresh_btn := PixelUI.button("刷新曲库", 40)
+	refresh_btn.add_theme_font_size_override("font_size", 16)
 	refresh_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	refresh_btn.pressed.connect(_on_refresh)
 	ctrl_row.add_child(refresh_btn)
@@ -145,18 +191,47 @@ func _build() -> void:
 	_track_list.add_theme_constant_override("separation", 6)
 	scroll.add_child(_track_list)
 
-	# 自定义音乐目录提示 + 返回按钮
+	# 自定义音乐目录图形按钮（一键打开文件夹导入）+ 路径提示 + 返回按钮
 	var footer := HBoxContainer.new()
-	footer.add_theme_constant_override("separation", 12)
+	footer.add_theme_constant_override("separation", 10)
 	rows.add_child(footer)
+
+	folder_button = _build_folder_button()
+	footer.add_child(folder_button)
+
 	_dir_hint = PixelUI.label(footer, "", 13, PixelUI.theme_dim())
 	_dir_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_dir_hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_dir_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_close_button = PixelUI.button("返回", 40)
+
+	_close_button = PixelUI.button("返回", 42)
 	_close_button.add_theme_font_size_override("font_size", 18)
-	_close_button.custom_minimum_size.x = 140
+	_close_button.custom_minimum_size.x = 128
 	_close_button.pressed.connect(close_menu)
 	footer.add_child(_close_button)
+
+
+func _build_folder_button() -> Button:
+	var btn := PixelUI.button("", 42)
+	btn.name = "OpenBgmFolderButton"
+	btn.custom_minimum_size = Vector2(142, 42)
+	btn.tooltip_text = "一键打开自定义音乐文件夹（放入 .ogg / .mp3 / .wav 后点击刷新曲库）"
+	btn.pressed.connect(_on_open_folder)
+	var row := HBoxContainer.new()
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(row)
+	var icon := _FolderGraphicIcon.new()
+	icon.custom_minimum_size = Vector2(22, 18)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon)
+	var lbl := PixelUI.label(row, "导入目录", 16, PixelUI.theme_accent_bright())
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return btn
 
 
 func open() -> void:
@@ -169,14 +244,91 @@ func open() -> void:
 		_dir_hint.text = "自定义音乐目录（支持 .ogg / .mp3 / .wav）：%s" % udir
 	_rebuild_track_list()
 	_refresh_state()
+	_sync_progress_bar(true)
 	visible = true
+	set_process(true)
 	if _close_button != null:
 		_close_button.grab_focus()
 
 
 func close_menu() -> void:
 	visible = false
+	set_process(false)
+	_dragging_progress = false
 	closed.emit()
+
+
+func _process(_delta: float) -> void:
+	if not visible:
+		return
+	if not _dragging_progress:
+		_sync_progress_bar(false)
+
+
+func _on_toggle_pause() -> void:
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx != null and sfx.has_method("bgm_toggle_paused"):
+		sfx.bgm_toggle_paused()
+	_refresh_state()
+	_sync_progress_bar(true)
+
+
+func _on_open_folder() -> void:
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx != null and sfx.has_method("bgm_open_user_dir"):
+		var opened := String(sfx.bgm_open_user_dir())
+		if _dir_hint != null:
+			_dir_hint.text = "已打开目录：%s（放入音频后点击「刷新曲库」即可播放）" % opened
+
+
+func _on_progress_drag_started() -> void:
+	_dragging_progress = true
+
+
+func _on_progress_drag_ended(value_changed: bool) -> void:
+	_dragging_progress = false
+	if value_changed and progress_slider != null:
+		_seek_to(progress_slider.value)
+
+
+func _on_progress_value_changed(val: float) -> void:
+	if _suppress_slider_signal:
+		return
+	if _time_cur_label != null:
+		_time_cur_label.text = _format_mmss(val)
+	# 点击轨道（非拖拽状态）时直接跳转
+	if not _dragging_progress:
+		_seek_to(val)
+
+
+func _seek_to(sec: float) -> void:
+	var sfx := get_node_or_null("/root/Sfx")
+	if sfx != null and sfx.has_method("bgm_seek"):
+		sfx.bgm_seek(sec)
+	_sync_progress_bar(true)
+
+
+func _sync_progress_bar(force_range: bool) -> void:
+	if progress_slider == null:
+		return
+	var sfx := get_node_or_null("/root/Sfx")
+	var dur := float(sfx.bgm_track_duration()) if (sfx != null and sfx.has_method("bgm_track_duration")) else 0.0
+	var pos := float(sfx.bgm_playback_position()) if (sfx != null and sfx.has_method("bgm_playback_position")) else 0.0
+	_suppress_slider_signal = true
+	if force_range or absf(progress_slider.max_value - maxf(dur, 1.0)) > 0.05:
+		progress_slider.max_value = maxf(dur, 1.0)
+	progress_slider.editable = dur > 0.05
+	progress_slider.value = clampf(pos, 0.0, progress_slider.max_value)
+	_suppress_slider_signal = false
+	if _time_cur_label != null:
+		_time_cur_label.text = _format_mmss(pos)
+	if _time_total_label != null:
+		_time_total_label.text = _format_mmss(dur)
+
+
+static func _format_mmss(seconds: float) -> String:
+	var total := maxi(0, int(floor(seconds)))
+	return "%02d:%02d" % [int(total / 60), total % 60]
 
 
 func _ensure_sfx_connected() -> void:
@@ -307,13 +459,19 @@ func _refresh_state() -> void:
 	var cur_id := String(cur.get("id", ""))
 	var cur_title := String(cur.get("title", "未播放"))
 	var pinned := String(sfx.bgm_pinned_track()) if (sfx != null and sfx.has_method("bgm_pinned_track")) else ""
+	var paused := bool(sfx.bgm_is_paused()) if (sfx != null and sfx.has_method("bgm_is_paused")) else false
 	if _now_title != null:
-		_now_title.text = "♪ 正在播放：%s" % cur_title
+		_now_title.text = ("♪ 已暂停：%s" if paused else "♪ 正在播放：%s") % cur_title
+	if pause_button != null:
+		pause_button.text = "▶ 继续" if paused else "|| 暂停"
+		pause_button.add_theme_color_override("font_color",
+			PixelUI.GOLD if paused else PixelUI.theme_text())
 	if _now_meta != null:
 		var src := "自定义曲库" if bool(cur.get("custom", false)) else "内置曲库"
 		var mode_cn := "随机轮播" if mode == "shuffle" else ("顺序播放" if mode == "sequential" else "固定单曲")
 		var pin_note := " · 已锁定单曲" if (mode == "single" and not pinned.is_empty()) else ""
-		_now_meta.text = "来源：%s  ·  模式：%s%s" % [src, mode_cn, pin_note]
+		var state_note := " · 已暂停" if paused else ""
+		_now_meta.text = "来源：%s  ·  模式：%s%s%s" % [src, mode_cn, pin_note, state_note]
 	for md in MODE_DEFS:
 		var mid := String(md["id"])
 		var btn: Button = _mode_buttons.get(mid)
@@ -345,3 +503,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		close_menu()
 		get_viewport().set_input_as_handled()
+
+
+## 矢量像素风文件夹图形图标：一键打开本地自定义 BGM 文件夹。
+class _FolderGraphicIcon extends Control:
+	func _draw() -> void:
+		var acc := PixelUI.theme_accent()
+		var bright := PixelUI.theme_accent_bright()
+		var dark := Color(0.05, 0.06, 0.09, 0.95)
+		# 文件夹标签页（左上）
+		draw_rect(Rect2(1, 1, 9, 4), bright, true)
+		# 文件夹后背板
+		draw_rect(Rect2(1, 4, 20, 13), acc, true)
+		# 文件夹前盖板（略浅形成层次）
+		draw_rect(Rect2(2, 7, 18, 9), bright, true)
+		# 暗边高光与轮廓线
+		draw_rect(Rect2(2, 6, 18, 1), dark, true)
+		draw_rect(Rect2(1, 4, 20, 13), dark, false, 1.0)

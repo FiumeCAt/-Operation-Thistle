@@ -753,6 +753,41 @@ func set_character_skin(skin_id: String) -> bool:
 		return false
 	return save_data()
 
+func hud_auto_hide_mode() -> String:
+	return SETTINGS_STORE.hud_auto_hide_mode(data)
+
+func set_hud_auto_hide_mode(mode: String) -> bool:
+	if not SETTINGS_STORE.set_hud_auto_hide_mode(data, mode):
+		return false
+	return save_data()
+
+func overhead_bar_preset(skin_id := "") -> Dictionary:
+	var sid := character_skin() if skin_id.is_empty() else skin_id
+	return SETTINGS_STORE.overhead_bar_preset(sid)
+
+func overhead_hp_color(skin_id := "") -> Color:
+	var sid := character_skin() if skin_id.is_empty() else skin_id
+	return SETTINGS_STORE.overhead_hp_color(data, sid)
+
+func overhead_armor_color(skin_id := "") -> Color:
+	var sid := character_skin() if skin_id.is_empty() else skin_id
+	return SETTINGS_STORE.overhead_armor_color(data, sid)
+
+func set_overhead_hp_color(color: Color, skin_id := "") -> bool:
+	var sid := character_skin() if skin_id.is_empty() else skin_id
+	SETTINGS_STORE.set_overhead_hp_color(data, sid, color)
+	return save_data()
+
+func set_overhead_armor_color(color: Color, skin_id := "") -> bool:
+	var sid := character_skin() if skin_id.is_empty() else skin_id
+	SETTINGS_STORE.set_overhead_armor_color(data, sid, color)
+	return save_data()
+
+func reset_overhead_bar_colors(skin_id := "") -> bool:
+	var sid := character_skin() if skin_id.is_empty() else skin_id
+	SETTINGS_STORE.reset_overhead_bar_colors(data, sid)
+	return save_data()
+
 func debug_value(key: String) -> float:
 	return SETTINGS_STORE.debug_value(data, key)
 

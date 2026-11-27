@@ -106,6 +106,8 @@ var weapon_rig: WeaponRig2D
 var rig: DollRig2D
 ## Phase 7B 主力模块化像素骨骼（SubViewport 160×160 像素光栅化 + 二段腿 + 弹簧发/衣摆 + 眨眼）。
 var rig_v2: DollRigV2
+## 头顶细长紧凑双条状态显示（生命 + 护甲，无纹理、无数字，配色按角色预设或自定义）。
+var overhead_bars: Node2D
 @export var use_modular_rig_v2 := true
 ## 当前角色皮肤包 ID（默认 "doll_v2"，支持 "mannequin" 等热切换并同步 WeaponRig2D 持枪双臂）。
 var skin_id := "doll_v2"
@@ -228,6 +230,7 @@ func set_skin(new_skin_id: String) -> bool:
 	var target := RIG_V2.sanitize_skin_id(new_skin_id) if ok else RIG_V2.DEFAULT_SKIN
 	if skin_id == target and (rig_v2 == null or rig_v2.skin_id == target) \
 			and (weapon_rig == null or weapon_rig.skin_id == target):
+		sync_overhead_bar_colors()
 		return ok
 	skin_id = target
 	if rig_v2 != null:
@@ -235,6 +238,7 @@ func set_skin(new_skin_id: String) -> bool:
 		skin_id = rig_v2.skin_id
 	if weapon_rig != null:
 		weapon_rig.set_skin(skin_id)
+	sync_overhead_bar_colors()
 	return ok
 
 
@@ -341,6 +345,51 @@ func _ready() -> void:
 	body.scale = _base_body_scale
 	if use_modular_rig_v2:
 		_enable_rig_v2()
+	_build_overhead_bars()
+	sync_overhead_bar_colors()
+	sync_overhead_bars()
+
+
+func _build_overhead_bars() -> void:
+	if overhead_bars != null:
+		return
+	var bars := _OverheadBars2D.new()
+	bars.name = "OverheadBars"
+	bars.position = Vector2(0.0, -134.0)
+	bars.z_index = 40
+	var unshaded := CanvasItemMaterial.new()
+	unshaded.light_mode = CanvasItemMaterial.LIGHT_MODE_UNSHADED
+	bars.material = unshaded
+	add_child(bars)
+	overhead_bars = bars
+
+
+func set_overhead_bar_colors(hp_col: Color, armor_col: Color) -> void:
+	if overhead_bars == null:
+		_build_overhead_bars()
+	if overhead_bars != null and overhead_bars.has_method("set_colors"):
+		overhead_bars.set_colors(hp_col, armor_col)
+
+
+func sync_overhead_bar_colors(progress_node: Node = null) -> void:
+	var p := progress_node if progress_node != null else get_node_or_null("/root/Progress")
+	var sid := get_skin()
+	if p != null and p.has_method("overhead_hp_color") and p.has_method("overhead_armor_color"):
+		set_overhead_bar_colors(p.overhead_hp_color(sid), p.overhead_armor_color(sid))
+	else:
+		if sid == "doll_thistle":
+			set_overhead_bar_colors(Color.html("#34fcfe"), Color.html("#f4f7ff"))
+		else:
+			set_overhead_bar_colors(Color.html("#44e66f"), Color.html("#44a8ff"))
+
+
+func sync_overhead_bars() -> void:
+	if overhead_bars == null:
+		return
+	var hp_ratio := clampf(float(hp) / maxf(1.0, float(hp_max)), 0.0, 1.0)
+	var armor_ratio := clampf(float(armor) / maxf(1.0, float(armor_max)), 0.0, 1.0) if armor_max > 0 else 0.0
+	overhead_bars.set_ratios(hp_ratio, armor_ratio, armor_max > 0)
+	overhead_bars.visible = hp > 0
 
 
 func _exit_tree() -> void:
@@ -641,6 +690,7 @@ func take_damage(amount: float, ap: float = 0.0) -> void:
 	var hp_damage: int = int(res["hp_damage"])
 	armor = int(res["new_armor"])
 	hp = int(res["new_hp"])
+	sync_overhead_bars()
 	invuln = _cfg_float(&"hurt_invuln_sec", 0.12)
 	_hurt_flash = _cfg_float(&"hurt_flash_sec", 0.16)
 	var hurt_sfx := get_node_or_null("/root/Sfx")
@@ -657,9 +707,11 @@ func take_damage(amount: float, ap: float = 0.0) -> void:
 
 func repair_armor(amount: int) -> void:
 	armor = clampi(armor + amount, 0, armor_max)
+	sync_overhead_bars()
 
 func heal(amount: int) -> void:
 	hp = mini(hp + amount, hp_max)
+	sync_overhead_bars()
 
 
 ## 记录开局由天赋/装备决定的基础生命与护甲上限，并立即套用当前调试倍率。
@@ -680,6 +732,7 @@ func set_base_vitals(new_base_hp_max: int, new_base_armor_max: int, fill_current
 	else:
 		hp = clampi(hp, 0, hp_max)
 		armor = clampi(armor, 0, armor_max)
+	sync_overhead_bars()
 
 
 ## 按调试倍率实时同步生命/护甲上限，并等比缩放/钳制当前值（存活时绝不因降倍率误杀）。
@@ -710,6 +763,7 @@ func sync_debug_vitals(hp_mul: float, armor_mul: float) -> void:
 			armor = 0
 		armor_max = new_amax
 		_applied_armor_mul = clean_arm
+	sync_overhead_bars()
 
 
 ## 调试一键满血满甲：先同步上限倍率再补满当前值。
@@ -721,6 +775,7 @@ func full_restore() -> void:
 	armor = armor_max
 	_hp_regen_acc = 0.0
 	_armor_regen_acc = 0.0
+	sync_overhead_bars()
 
 
 ## 调试生存步进：同步上限倍率并按绝对值（点/秒）累计生命与护甲自动恢复。
@@ -1088,3 +1143,55 @@ func _direction_index(input_vector: Vector2) -> int:
 	if absf(input_vector.x) > absf(input_vector.y):
 		return 3 if input_vector.x > 0.0 else 2
 	return 0 if input_vector.y > 0.0 else 1
+
+
+## 头顶简洁细长双条状态指示（上条生命、下条护甲）：无纹理、无数字、纯平色块，仅比例变化时重绘。
+class _OverheadBars2D extends Node2D:
+	const BAR_W := 40.0
+	const HP_H := 3.0
+	const ARMOR_H := 2.5
+	const GAP_H := 1.0
+	const PAD := 1.0
+
+	var hp_ratio := 1.0
+	var armor_ratio := 1.0
+	var show_armor := true
+	var hp_color := Color.html("#44e66f")
+	var armor_color := Color.html("#44a8ff")
+
+	func set_ratios(new_hp: float, new_armor: float, has_armor: bool) -> void:
+		var ch := clampf(new_hp, 0.0, 1.0)
+		var ca := clampf(new_armor, 0.0, 1.0)
+		if absf(ch - hp_ratio) < 0.001 and absf(ca - armor_ratio) < 0.001 and has_armor == show_armor:
+			return
+		hp_ratio = ch
+		armor_ratio = ca
+		show_armor = has_armor
+		queue_redraw()
+
+	func set_colors(new_hp_col: Color, new_armor_col: Color) -> void:
+		if hp_color.is_equal_approx(new_hp_col) and armor_color.is_equal_approx(new_armor_col):
+			return
+		hp_color = new_hp_col
+		armor_color = new_armor_col
+		queue_redraw()
+
+	func _draw() -> void:
+		var half_w := BAR_W * 0.5
+		var total_h := HP_H + (GAP_H + ARMOR_H if show_armor else 0.0)
+		var top_y := -total_h * 0.5
+		# 极细深色底框，保证明暗地面都能一眼看清占比且无杂乱纹理
+		draw_rect(
+			Rect2(-half_w - PAD, top_y - PAD, BAR_W + PAD * 2.0, total_h + PAD * 2.0),
+			Color(0.02, 0.03, 0.05, 0.74), true)
+		# 生命条（上）
+		var hp_bg := Rect2(-half_w, top_y, BAR_W, HP_H)
+		draw_rect(hp_bg, Color(0.10, 0.12, 0.16, 0.88), true)
+		if hp_ratio > 0.001:
+			draw_rect(Rect2(-half_w, top_y, BAR_W * hp_ratio, HP_H), hp_color, true)
+		# 护甲条（下）
+		if show_armor:
+			var ar_y := top_y + HP_H + GAP_H
+			draw_rect(Rect2(-half_w, ar_y, BAR_W, ARMOR_H), Color(0.10, 0.12, 0.16, 0.88), true)
+			if armor_ratio > 0.001:
+				draw_rect(Rect2(-half_w, ar_y, BAR_W * armor_ratio, ARMOR_H), armor_color, true)

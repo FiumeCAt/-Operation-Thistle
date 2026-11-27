@@ -7,6 +7,7 @@ class_name BgmPlayer
 ## 4) 预留 set_context(context) 条件/权重选曲扩展接口（区域、波次、Boss/撤离阶段）。
 
 signal track_changed(track_info: Dictionary)
+signal playback_state_changed(is_paused: bool)
 
 const BUS_SERVICE := preload("res://scripts/audio/AudioBusService.gd")
 const CATALOG_SCRIPT := preload("res://scripts/audio/BgmCatalog.gd")
@@ -37,6 +38,8 @@ var _fade_dur := 1.2
 var _fade_from_db := SILENT_DB
 var _target_db := -12.0
 var _paused_for_mute := false
+var _paused_by_user := false
+var _paused_pos := 0.0
 
 
 func setup(samples_ref: SfxSamples, fallback_ambient: AudioStream = null) -> void:
@@ -91,7 +94,88 @@ func inactive_player() -> AudioStreamPlayer:
 
 func is_playing() -> bool:
 	var a := active_player()
-	return a != null and a.playing
+	return a != null and a.playing and not a.stream_paused
+
+
+func is_paused() -> bool:
+	return _paused_by_user
+
+
+func set_paused(paused: bool) -> void:
+	if _track_a == null:
+		setup(_samples, _fallback_stream)
+	var cur := active_player()
+	if paused:
+		if not _paused_by_user:
+			_paused_by_user = true
+			if cur != null and cur.stream != null:
+				_paused_pos = get_playback_position()
+				cur.stream_paused = true
+			var prev := inactive_player()
+			if prev != null and prev.playing:
+				prev.stop()
+			playback_state_changed.emit(true)
+	else:
+		if _paused_by_user:
+			_paused_by_user = false
+			if not BUS_SERVICE.is_music_muted() and _state != "none" and cur != null:
+				if cur.stream == null and not _current_track.is_empty():
+					cur.stream = catalog.load_stream(_current_track, play_mode == "single")
+				if cur.stream != null:
+					cur.volume_db = _target_db
+					if cur.playing:
+						cur.stream_paused = false
+					else:
+						cur.stream_paused = false
+						cur.play(clampf(_paused_pos, 0.0, maxf(get_track_duration() - 0.05, 0.0)))
+					_fade_t = 1.0
+			playback_state_changed.emit(false)
+
+
+func toggle_paused() -> bool:
+	set_paused(not _paused_by_user)
+	return _paused_by_user
+
+
+func get_track_duration() -> float:
+	var cur := active_player()
+	if cur != null and cur.stream != null:
+		return maxf(float(cur.stream.get_length()), 0.0)
+	return 0.0
+
+
+func get_playback_position() -> float:
+	var cur := active_player()
+	var dur := get_track_duration()
+	if _paused_by_user:
+		return clampf(_paused_pos, 0.0, dur) if dur > 0.0 else maxf(_paused_pos, 0.0)
+	if cur != null and cur.playing:
+		var pos := maxf(cur.get_playback_position(), 0.0)
+		return fposmod(pos, dur) if dur > 0.01 else pos
+	return clampf(_paused_pos, 0.0, dur) if dur > 0.0 else 0.0
+
+
+func seek(seconds: float) -> void:
+	var cur := active_player()
+	if cur == null or cur.stream == null:
+		return
+	var dur := get_track_duration()
+	var target := clampf(seconds, 0.0, maxf(dur - 0.05, 0.0)) if dur > 0.0 else maxf(seconds, 0.0)
+	_paused_pos = target
+	if _paused_for_mute or BUS_SERVICE.is_music_muted():
+		return
+	if _paused_by_user:
+		if cur.playing:
+			cur.seek(target)
+			cur.stream_paused = true
+		return
+	if cur.playing:
+		cur.seek(target)
+	else:
+		cur.stream_paused = false
+		cur.volume_db = _target_db
+		cur.play(target)
+		_fade_t = 1.0
 
 
 func set_play_mode(mode: String) -> void:
@@ -208,8 +292,13 @@ func _crossfade_to_track(track: Dictionary, fade_sec: float) -> void:
 	var outgoing := active_player()
 	var incoming := inactive_player()
 	_active_is_a = not _active_is_a
+	_paused_pos = 0.0
+	if _paused_by_user:
+		_paused_by_user = false
+		playback_state_changed.emit(false)
 
 	incoming.stream = next_stream
+	incoming.stream_paused = false
 	incoming.bus = BUS_SERVICE.MUSIC_BUS
 	_fade_from_db = outgoing.volume_db if (outgoing != null and outgoing.playing) else SILENT_DB
 	_fade_t = 0.0
@@ -232,7 +321,7 @@ func _crossfade_to_track(track: Dictionary, fade_sec: float) -> void:
 
 
 func _on_player_finished(is_a: bool) -> void:
-	if is_a != _active_is_a or _state == "none" or _paused_for_mute:
+	if is_a != _active_is_a or _state == "none" or _paused_for_mute or _paused_by_user:
 		return
 	var cur := active_player()
 	if cur == null:
@@ -279,15 +368,16 @@ func _sync_mute_state() -> void:
 		return
 	if _paused_for_mute:
 		_paused_for_mute = false
-		if _state != "none":
+		if _state != "none" and not _paused_by_user:
 			var cur := active_player()
 			if cur.stream == null and not _current_track.is_empty():
 				cur.stream = catalog.load_stream(_current_track, play_mode == "single")
 			if cur.stream == null:
 				cur.stream = _resolve_legacy_fallback(_state)
 			cur.volume_db = _target_db
+			cur.stream_paused = false
 			if cur.stream != null and not cur.playing:
-				cur.play()
+				cur.play(clampf(_paused_pos, 0.0, maxf(get_track_duration() - 0.05, 0.0)))
 			_fade_t = 1.0
 
 
